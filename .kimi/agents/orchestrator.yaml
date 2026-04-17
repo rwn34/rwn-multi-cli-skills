@@ -1,0 +1,56 @@
+version: 1
+agent:
+  extend: default
+  name: orchestrator
+  system_prompt_path: ./system/orchestrator.md
+  allowed_tools:
+    - "kimi_cli.tools.agent:Agent"
+    - "kimi_cli.tools.ask_user:AskUserQuestion"
+    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.web:FetchURL"
+    - "kimi_cli.tools.plan.enter:EnterPlanMode"
+    - "kimi_cli.tools.plan:ExitPlanMode"
+  subagents:
+    coder-executor:
+      path: ./coder-executor.yaml
+      description: "General software engineering: implement features, fix bugs, write code."
+    reviewer:
+      path: ./reviewer.yaml
+      description: "Read-only code review: correctness, style, security, test coverage."
+    tester:
+      path: ./tester.yaml
+      description: "Test execution, coverage analysis, and fixing failing tests."
+    debugger:
+      path: ./debugger.yaml
+      description: "Bug diagnosis, log analysis, and small one-off fixes."
+    refactorer:
+      path: ./refactorer.yaml
+      description: "Structural refactoring: renames, moves, extraction, dead-code removal."
+    doc-writer:
+      path: ./doc-writer.yaml
+      description: "Documentation: READMEs, API docs, changelogs, inline comments."
+    security-auditor:
+      path: ./security-auditor.yaml
+      description: "Security review: dependency audits, secret detection, vulnerability scanning."
+    ui-engineer:
+      path: ./ui-engineer.yaml
+      description: "UI/UX implementation: components, styles, frontend features."
+    e2e-tester:
+      path: ./e2e-tester.yaml
+      description: "End-to-end testing: validate user workflows and UI interactions."
+    infra-engineer:
+      path: ./infra-engineer.yaml
+      description: "Infrastructure: CI/CD, Docker, K8s, deployment configs."
+    release-engineer:
+      path: ./release-engineer.yaml
+      description: "Release engineering: version bumps, git tags, release notes, publishing."
+    data-migrator:
+      path: ./data-migrator.yaml
+      description: "Database migrations: schema changes, data transformations, seed scripts."

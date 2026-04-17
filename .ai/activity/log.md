@@ -17,6 +17,71 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-04-17 17:36 — kiro-cli
+- Action: Implemented 13 Kiro agent configs (orchestrator + 12 subagents). Validated Claude and Kimi implementations. All three CLIs now have full agent catalogs. Moved all validation handoffs to done.
+- Files: .kiro/agents/{orchestrator,coder,reviewer,tester,debugger,refactorer,doc-writer,security-auditor,ui-engineer,e2e-tester,infra-engineer,release-engineer,data-migrator}.json (13 new, replaced old project.json)
+- Decisions: Used Kiro-native toolsSettings.fs_write.allowedPaths/deniedPaths for hard path enforcement (Kiro's advantage over Claude/Kimi). Set orchestrator as default via chat.defaultAgent. Each subagent loads karpathy-guidelines steering + skills.
+## 2026-04-17 17:30 — kimi-cli
+- Action: Implemented 13 agent configs for Kimi CLI per handoff 009 from kiro-cli.
+- Files: .kimi/agents/*.yaml (13 new), .kimi/agents/system/*.md (13 new), .ai/handoffs/to-kiro/open/004-validate-kimi-agent-configs.md (new)
+- Decisions: Used `extend: default` for all agents to reduce duplication. Enforced path/shell restrictions via system prompts because Kimi lacks native path-level write filtering and shell command whitelisting. Mapped abstract spec tools (`fs_read`, `fs_write`, `execute_bash`, etc.) to Kimi's native tool names (`ReadFile`, `WriteFile`, `Shell`, etc.). Excluded `Agent` (no nesting), `AskUserQuestion`, `SetTodoList`, and plan-mode tools from all subagents.
+
+## 2026-04-17 17:50 — claude-code
+- Action: Implemented all 13 Claude-native agent configs per handoff `to-claude/006-implement-agent-configs.md` from kiro-cli. Created `.claude/agents/{orchestrator,coder,reviewer,tester,debugger,refactorer,doc-writer,security-auditor,ui-engineer,e2e-tester,infra-engineer,release-engineer,data-migrator}.md` — each with Claude-native `tools:` frontmatter whitelist and a system prompt encoding the SSOT's write scope, shell scope, and behavior rules. Added `"agent": "orchestrator"` at the top level of `.claude/settings.json` (merged with existing hooks block, preserving the activity-log injection/reminder). Wrote validation handoff `.ai/handoffs/to-kiro/open/004-validate-claude-agent-configs.md` for Kiro to cross-check, with full tool-name mapping table (SSOT→Claude), enforcement-mechanism choices, and Claude-specific limitations documented.
+- Files: .claude/agents/orchestrator.md (new), .claude/agents/coder.md (new), .claude/agents/reviewer.md (new), .claude/agents/tester.md (new), .claude/agents/debugger.md (new), .claude/agents/refactorer.md (new), .claude/agents/doc-writer.md (new), .claude/agents/security-auditor.md (new), .claude/agents/ui-engineer.md (new), .claude/agents/e2e-tester.md (new), .claude/agents/infra-engineer.md (new), .claude/agents/release-engineer.md (new), .claude/agents/data-migrator.md (new), .claude/settings.json (edit — added agent field), .ai/handoffs/to-kiro/open/004-validate-claude-agent-configs.md (new, handback), .ai/handoffs/to-claude/open/006-implement-agent-configs.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Soft-enforced path/shell restrictions via system prompts rather than `permissions.deny` rules — Claude's permissions are session-scoped, not per-subagent, so per-agent path scoping can't be expressed in settings (would block orchestrator's legitimate framework writes along with subagent writes). If drift appears in practice, the fallback is a PreToolUse hook inspecting subagent_type + file_path. Added `AskUserQuestion` to orchestrator and release-engineer for explicit confirm flows (Claude-native UX primitive, matches SSOT's "dry-run before any publish/tag" intent). Settings change takes effect on next session restart — current session still running with default persona. Did not edit `.kimi/` or `.kiro/` — edit-boundary rule respected.
+
+## 2026-04-17 17:21 — kiro-cli
+- Action: Created implementation handoffs to Claude (006) and Kimi (009) to build all 13 agent configs in their native formats. Each CLI implements using their own conventions. Both must write a validation handoff back to kiro-cli when done.
+- Files: .ai/handoffs/to-claude/open/006-implement-agent-configs.md (new), .ai/handoffs/to-kimi/open/009-implement-agent-configs.md (new)
+- Decisions: Each CLI chooses their own enforcement mechanisms (tool lists, permissions, hooks, prompts). Handoff-back pattern: Claude/Kimi write to to-kiro/open/ for validation after implementation.
+## 2026-04-17 17:20 — kimi-cli
+- Action: Synced agent-catalog instruction from SSOT to Kimi steering per handoff 008 from kiro-cli.
+- Files: .kimi/steering/agent-catalog.md (new)
+- Decisions: —
+
+## 2026-04-17 17:35 — claude-code
+- Action: Executed handoff `to-claude/005-sync-agent-catalog.md` from kiro-cli. Created `.claude/skills/agent-catalog/SKILL.md` (81 lines / 5,083 B) with the spec frontmatter (`name: agent-catalog`, description per handoff), provenance pointer to `.ai/instructions/agent-catalog/principles.md`, and the full SSOT body appended. Body diff vs SSOT returned no output — byte-for-byte identical. Both my pushbacks from handoff 004 (keep `release-engineer` separate from `infra-engineer`; collapse 3 browser agents to 2) landed in the final catalog. Also noted `.ai/reports/` now exists with its own README.
+- Files: .claude/skills/agent-catalog/SKILL.md (new), .ai/handoffs/to-claude/open/005-sync-agent-catalog.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: No deviations from the handoff spec. Same frontmatter pattern as `.claude/skills/orchestrator-pattern/SKILL.md` — keeps Claude skill authoring consistent across the framework's instruction-class content. Did NOT implement any agent configs yet (`.claude/agents/*.md` files for the 12 subagents) — that's a separate work item and requires per-agent system prompt authoring, tool whitelist per Claude's native names, and settings.json wiring for main-thread orchestrator persona.
+
+## 2026-04-17 17:12 — kiro-cli
+- Action: Finalized 13-agent catalog (orchestrator + 12 subagents). Wrote .ai/instructions/agent-catalog/principles.md as SSOT. Synced to .kiro/steering/agent-catalog.md. Created .ai/reports/ with README for diagnoser output. Handoffs to Claude (005) and Kimi (008) for sync.
+- Files: .ai/instructions/agent-catalog/principles.md (new), .kiro/steering/agent-catalog.md (new), .ai/reports/README.md (new), .ai/handoffs/to-claude/open/005-sync-agent-catalog.md (new), .ai/handoffs/to-kimi/open/008-sync-agent-catalog.md (new)
+- Decisions: Final 12 subagents: coder, reviewer, tester, debugger, refactorer, doc-writer, security-auditor, ui-engineer, e2e-tester, infra-engineer, release-engineer, data-migrator. Incorporated all three CLIs' feedback. Created .ai/reports/ for diagnoser output.
+## 2026-04-17 17:15 — kimi-cli
+- Action: Completed handoffs 006 and 007. Wrote agent catalog proposal (.ai/research/agent-catalog-kimi.md) and feedback on the proposed final catalog (.ai/research/agent-catalog-feedback-kimi.md).
+- Files: .ai/research/agent-catalog-kimi.md (new), .ai/research/agent-catalog-feedback-kimi.md (new)
+- Decisions: Advocated for keeping refactorer, release-engineer, and data-migrator as separate agents rather than merging into coder/infra-engineer. Flagged Kimi's lack of native path-level write restriction as a medium risk, suggest hook-based enforcement. Recommended core 6 + 4 later, or a 12-agent revised catalog if the user prefers full specialization.
+
+## 2026-04-17 17:25 — claude-code
+- Action: Reviewed the proposed final 10-agent catalog per handoff `to-claude/004-review-agent-catalog.md` from kiro-cli. Wrote `.ai/research/agent-catalog-feedback-claude.md` with tight bullet-point feedback: agreed bits, two real pushbacks (keep `deployer` separate from `infra-engineer`; validate the 3 browser agents against actual UI-work volume), smaller polish asks (enumerate "test files" concretely; stand up `.ai/reports/` before the first diagnoser writes there), gaps (path restrictions are CLI-dependent — Kiro hard-enforces, Claude/Kimi fall back to prompt discipline), and Claude-specific implementation notes (no native per-agent path scoping on Edit/Write, built-in subagents cover some roles for free, serial subagent execution vs Kiro's DAG).
+- Files: .ai/research/agent-catalog-feedback-claude.md (new), .ai/handoffs/to-claude/open/004-review-agent-catalog.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Kept the response concise per handoff's "bullet points not essays" ask. Did not prescribe a merge path — user decides. Most important pushback: `deployer` deserves its own slot because deploy commands are the highest-risk action and benefit from dedicated discipline (dry-run + confirm + rollback rehearsal in the system prompt). Second pushback: 3-of-10 browser agents is heavy weighting unless UI work dominates the project domain — collapse to 2 (`ui-engineer` + `e2e-tester`) if not. Flagged that the `.ai/reports/` folder introduced by this catalog isn't created yet and needs its own README / naming convention / archive decision before diagnosers can write there.
+
+## 2026-04-17 16:58 — kiro-cli
+- Action: Consolidated all three agent catalog proposals. User decided on final 10: coder, reviewer, tester, debugger, doc-writer, security-auditor, ui-ux-designer, ui-ux-tester, workflow-tester, infra-engineer. Merged refactorer/release-engineer/data-migrator into coder/infra-engineer. Created handoffs to Claude (004) and Kimi (007) for feedback before finalizing.
+- Files: .ai/handoffs/to-claude/open/004-review-agent-catalog.md (new), .ai/handoffs/to-kimi/open/007-review-agent-catalog.md (new)
+- Decisions: User wants 10 exactly. Debugger can apply small fixes. Diagnosers write to .ai/reports/. 3 browser-interactive agents for UI/UX work. Refactorer merged into coder via prompt constraint.
+## 2026-04-17 17:05 — kimi-cli
+- Action: Wrote detailed 10-agent taxonomy proposal to .ai/research/agent-taxonomy-proposal-kimi.md for cross-CLI discussion with Kiro and Claude.
+- Files: .ai/research/agent-taxonomy-proposal-kimi.md (new)
+- Decisions: Separated agents into Diagnosers (read-only, report findings) and Executors (write-capable, make changes). Proposed 10 specialized agents covering testing, debugging, refactoring, docs, security, performance, infra, dependencies, migrations, and releases.
+
+## 2026-04-17 17:15 — claude-code
+- Action: Proposed 10 specialized subagents for the orchestrator pattern. Wrote `.ai/research/agent-catalog-claude.md` satisfying both (a) user's direct request to suggest 10 agents with tool allowlists/restrictions, and (b) kiro-cli's parallel handoff `to-claude/open/003-propose-agent-catalog.md`. The 10: `coder` (Tier 2 workhorse), `reviewer` (Tier 0 quality review), `tester` (Tier 1 scoped to tests), `debugger` (Tier 2 repro-first), `refactorer` (Tier 2 behavior-preserving), `explorer` (Tier 0 investigation), `security-auditor` (Tier 0 security scan), `doc-writer` (Tier 1 scoped to docs), `infra-engineer` (Tier 1 scoped to IaC), `deployer` (Tier 1, highest-risk, deploy commands).
+- Files: .ai/research/agent-catalog-claude.md (new, matches Kiro's expected filename), .ai/handoffs/to-claude/open/003-propose-agent-catalog.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Organized around trust tiers (0/1/2) rather than domains, since tiers drive the tool-allowlist shape. Included routing heuristics for the orchestrator so it can pick the lowest-tier agent that fits the task. Flagged open questions for the three-way merge — especially whether `coder` and `refactorer` / `debugger` should collapse into one Tier-2 agent with variant system prompts (saves config, loses role-specific discipline). Split `security-auditor` from `reviewer` because their skill sets / tools diverge meaningfully. Recommended landing a minimal core (orchestrator + coder + reviewer + one more) first, then expanding.
+
+## 2026-04-17 16:40 — kiro-cli
+- Action: Proposed 10 specialized subagents for orchestrator pattern. Wrote .ai/research/agent-catalog-kiro.md. Created handoffs to Claude (003) and Kimi (006) to propose their own catalogs independently.
+- Files: .ai/research/agent-catalog-kiro.md (new), .ai/handoffs/to-claude/open/003-propose-agent-catalog.md (new), .ai/handoffs/to-kimi/open/006-propose-agent-catalog.md (new)
+- Decisions: Proposed core 4 (coder, reviewer, tester, researcher) + 6 specialized (refactorer, documenter, devops, db-migrator, git-ops, scaffolder). Recommended starting with core 4, adding others as needed.
+## 2026-04-17 17:00 — claude-code
+- Action: Validated kimi-cli's execution of handoffs 004 (orchestrator-pattern sync) and 005 (archive-folder skip rule). (a) `.kimi/steering/orchestrator-pattern.md` — diff vs SSOT `.ai/instructions/orchestrator-pattern/principles.md` returned no output (byte-for-byte match). (b) `.kimi/steering/00-ai-contract.md` — spec-verbatim `## Archive folders (skip during routine reads)` section present as a peer after `## Cross-CLI handoffs`, with only the targeted addition. Handoff queue is now fully drained — all three `open/` dirs empty. (Note: my own 002-sync-orchestrator-pattern was also moved to `to-claude/done/`, presumably by Kiro during validation.)
+- Files: —
+- Decisions: Read-only validation this turn — no edits. All three CLIs now have orchestrator-pattern principles loaded (Kimi steering, Kiro steering, Claude skill) and the archive-skip rule in their always-loaded contracts. Framework cleanly aligned.
+
 ## 2026-04-17 16:35 — kimi-cli
 - Action: Executed handoffs 004 and 005. Synced orchestrator-pattern principles from SSOT to .kimi/steering/orchestrator-pattern.md, and added archive-folder skip rule to .kimi/steering/00-ai-contract.md.
 - Files: .kimi/steering/orchestrator-pattern.md (new), .kimi/steering/00-ai-contract.md (edit)

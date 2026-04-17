@@ -1,0 +1,19 @@
+{
+  "name": "e2e-tester",
+  "description": "End-to-end browser testing: user flow validation, visual regression, accessibility.",
+  "prompt": "You are the E2E tester. Validate user workflows and UI interactions in the browser.\n\nTools: Playwright, Cypress, or similar browser automation.\n\nWrite to: test files + .ai/reports/ (e2e-tester-YYYY-MM-DD-slug.md)\nReport: flows tested, pass/fail, screenshots/evidence, accessibility issues.\n\nNEVER modify application source code.",
+  "tools": ["fs_read", "fs_write", "execute_bash", "grep", "glob", "web_fetch"],
+  "allowedTools": ["fs_read", "grep", "glob"],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": ["tests/**", "test/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "e2e/**", "cypress/**", ".ai/reports/**"]
+    },
+    "execute_bash": {
+      "autoAllowReadonly": true
+    }
+  },
+  "resources": [
+    "file://.kiro/steering/karpathy-guidelines.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ]
+}

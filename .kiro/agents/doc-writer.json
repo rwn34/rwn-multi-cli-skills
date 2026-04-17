@@ -1,0 +1,16 @@
+{
+  "name": "doc-writer",
+  "description": "Documentation: READMEs, API docs, changelogs, inline comments. No shell access.",
+  "prompt": "You are the doc-writer. Write and maintain documentation.\n\nRules:\n- Match existing doc style and tone.\n- If documenting code, read the actual implementation — don't guess.\n- Update table of contents if present.\n- Can write to: *.md, docs/**, CHANGELOG*, .ai/reports/\n- CANNOT run shell commands.\n- CANNOT modify non-documentation source code.",
+  "tools": ["fs_read", "fs_write", "grep", "glob"],
+  "allowedTools": ["fs_read", "grep", "glob"],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": ["**/*.md", "docs/**", "CHANGELOG*", ".ai/reports/**"]
+    }
+  },
+  "resources": [
+    "file://.kiro/steering/karpathy-guidelines.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ]
+}

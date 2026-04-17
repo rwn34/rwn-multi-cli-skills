@@ -1,0 +1,75 @@
+# Agent Catalog
+
+Final catalog of 13 agents (orchestrator + 12 subagents) for the multi-CLI project.
+All three CLIs implement these agents in their native config format.
+
+## Agents
+
+| # | Agent | Class | Tools | Write scope | Shell scope |
+|---|---|---|---|---|---|
+| 0 | `orchestrator` | Default | fs_read, fs_write, grep, glob, code, introspect, knowledge, web_search, web_fetch, todo_list, subagent | `.ai/**`, `.kiro/**`, `.kimi/**`, `.claude/**` | None |
+| 1 | `coder` | Executor | fs_read, fs_write, execute_bash, grep, glob, code | Anywhere except framework dirs | Unrestricted |
+| 2 | `reviewer` | Diagnoser | fs_read, grep, glob, code, introspect, fs_write | `.ai/reports/` only | None |
+| 3 | `tester` | Executor | fs_read, fs_write, execute_bash, grep, glob, code | Test files + `.ai/reports/` | Test runners + coverage |
+| 4 | `debugger` | Executor | fs_read, fs_write, execute_bash, grep, glob, code, web_search, web_fetch | Anywhere + `.ai/reports/` | Unrestricted |
+| 5 | `refactorer` | Executor | fs_read, fs_write, execute_bash, grep, glob, code | Anywhere except framework dirs | Test runners only |
+| 6 | `doc-writer` | Executor | fs_read, fs_write, grep, glob | `*.md`, `docs/**`, `CHANGELOG*`, `.ai/reports/` | None |
+| 7 | `security-auditor` | Diagnoser | fs_read, grep, glob, execute_bash, web_search, web_fetch, fs_write | `.ai/reports/` only | Scanners only |
+| 8 | `ui-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, code, web_fetch | Anywhere except framework dirs | Unrestricted + browser tools |
+| 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Test files + `.ai/reports/` | Browser tools + test runners |
+| 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build only |
+| 11 | `release-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Version files + `CHANGELOG*` | git tag, npm publish, dry-run first |
+| 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob | `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
+
+## Agent classes
+
+- **Default (orchestrator):** Read + delegate + framework-only writes. Cannot touch project source.
+- **Executor:** Can write and run commands within its declared scope.
+- **Diagnoser:** Primarily read-only. Can write reports to `.ai/reports/` and test files where noted.
+
+## Framework directories (orchestrator-only writes)
+
+`.ai/**`, `.kiro/**`, `.kimi/**`, `.claude/**` — only the orchestrator writes here.
+All subagents are denied write access to these paths.
+
+## Reports directory
+
+`.ai/reports/` — diagnosers write structured reports here. Naming convention:
+`<agent>-<YYYY-MM-DD>-<slug>.md`. Each report includes severity levels and
+file/line references where applicable.
+
+## Write scope details
+
+### Test files (tester, e2e-tester)
+`tests/**`, `test/**`, `**/__tests__/**`, `*.test.*`, `*.spec.*`, `*_test.*`,
+`*_spec.*`, `conftest.py`, `jest.config.*`, `pytest.ini`, `.coveragerc`
+
+### IaC/CI dirs (infra-engineer)
+`Dockerfile*`, `.github/**`, `docker-compose*`, `*.yml`, `*.yaml`, `scripts/**`,
+`infrastructure/**`, `infra/**`, `terraform/**`, `k8s/**`, `helm/**`
+
+### Version files (release-engineer)
+`VERSION`, `package.json` (version field only), `pyproject.toml` (version field only),
+`Cargo.toml` (version field only), `CHANGELOG*`, `.github/release.yml`
+
+### Migration files (data-migrator)
+`migrations/**`, `seeds/**`, `schema.*`, `alembic/**`, `prisma/**`
+
+## Enforcement per CLI
+
+| Mechanism | Kiro | Claude | Kimi |
+|---|---|---|---|
+| Tool whitelist | `tools` array (hard) | `tools:` frontmatter (hard) | `allowed_tools` / `exclude_tools` (hard) |
+| Path restriction | `toolsSettings.fs_write.allowedPaths` (hard) | `permissions.deny` or prompt (soft) | Prompt + PostToolUse hook (soft) |
+| Shell restriction | `toolsSettings.execute_bash.allowedCommands` (hard) | Prompt (soft) | Prompt + hook (soft) |
+
+## Agent behavior rules
+
+1. **Orchestrator** never writes project source. Delegates all mutations.
+2. **Executors** follow Karpathy guidelines: surgical changes, simplicity first.
+3. **Diagnosers** never modify code under review. Reports go to `.ai/reports/`.
+4. **Debugger** can apply small fixes (one-liners, typos, missing imports). Larger fixes delegate to coder.
+5. **Refactorer** must run tests before AND after every change. Aborts on regression.
+6. **Release-engineer** must dry-run before any publish/tag. Refuses if tests fail or tree is dirty.
+7. **Data-migrator** must produce reversible migrations (up + down).
+8. All subagents report back: files touched, commands run, test results, deviations from brief.
