@@ -79,28 +79,19 @@ When an architectural decision, spec, or standard is missing for something you'r
 
 ## Root file policy
 
-Only three files are allowed at the repo root:
+Repo root is strict. The authoritative list of permitted root files and their
+categories lives in `docs/architecture/0001-root-file-exceptions.md` — read it
+when you need to know what's allowed. Summary for delegation briefs:
 
-- `AGENTS.md` — CLI-agnostic project pointer (Kimi auto-reads, cross-tool convention)
-- `README.md` — project README
-- `CLAUDE.md` — Claude Code's always-loaded memory (root is Claude's native path)
+- Project kinds live in directories: `src/`, `tests/`, `docs/`, `infra/`,
+  `migrations/`, `scripts/`, `tools/`, `config/`, `assets/`.
+- Framework dirs (`.`-prefixed: `.ai/`, `.claude/`, `.kimi/`, `.kiro/`, `.git/`)
+  are exempt from the "loose-file-at-root" question by nature.
+- Anything else at root needs an ADR entry before creation.
 
-Everything else lives in a directory:
-
-| Kind | Location |
-|---|---|
-| Source | `src/` (with `src/app/`, `src/lib/`, `src/types/`) |
-| Tests | `tests/` (with `tests/unit/`, `tests/integration/`, `tests/e2e/`) |
-| Docs | `docs/` (see above) |
-| Infra (Docker, k8s, Terraform, CI) | `infra/` (with `infra/docker/`, `infra/k8s/`, `infra/terraform/`, `infra/ci/`) |
-| DB migrations + seeds | `migrations/` |
-| Automation scripts | `scripts/` |
-| Dev tooling configs (Playwright, linters) | `tools/` |
-| App config (`package.json`, `tsconfig.json`, `.env`, etc.) | `config/` |
-| Static assets | `assets/` |
-
-Framework dirs (`.ai/`, `.claude/`, `.kimi/`, `.kiro/`, `.git/`) are `.`-prefixed and exempt from this policy by definition.
-
-When delegating, enforce "no new files at root" by default. Include the destination directory in the brief so subagents don't need to guess.
-
-**Exceptions**: some tooling physically requires files at root (git requires `.gitignore` at root; GitHub Actions requires `.github/workflows/` at root; some language runtimes require their manifest at root — e.g. `package.json` for standard npm, `pyproject.toml` for some Python tools, `go.mod` for Go). When a subagent reports a genuine tooling constraint forcing a root file, surface it to the user for an explicit exception before approving. Don't approve exceptions silently — the policy is intentionally strict and exceptions should be documented in `docs/architecture/` or `docs/standards/` so they're discoverable later.
+When delegating: include the destination directory in the brief so subagents
+don't guess. If a subagent reports a tooling constraint requiring a root file
+not in the ADR, surface it to the user for approval — on approval, delegate
+`doc-writer` to amend the ADR, THEN approve the write. The
+`.claude/hooks/pretool-write-edit.sh` hook enforces this — unapproved root
+writes are blocked at the tool layer.

@@ -39,6 +39,14 @@ paste-ready file to `.ai/handoffs/to-<kimi|kiro>/open/NNN-slug.md`. See
 non-trivial work, glance at `.ai/handoffs/to-claude/open/` — anything there is a
 task addressed to you.
 
+## Root file policy
+
+Repo root is strict. Permitted root files are listed in
+`docs/architecture/0001-root-file-exceptions.md` — the authoritative ADR. If you
+need to create a file at root and it is not covered, surface to the user for ADR
+amendment before writing. The `PreToolUse` hook at
+`.claude/hooks/pretool-write-edit.sh` will otherwise block the write.
+
 ## Archive folders (do not read during routine work)
 
 Folders matching `.ai/**/archive/` (`.ai/activity/archive/`,

@@ -47,6 +47,13 @@ You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
 `.ai/handoffs/to-kiro/open/` when you need those CLIs to change files in their
 folders.
 
+## Root file policy
+
+The project enforces a strict root-file policy with documented exceptions. See
+`docs/architecture/0001-root-file-exceptions.md` for the full allowlist and the
+process for adding new exceptions. Any root file not listed there requires
+orchestrator approval and an ADR amendment before creation.
+
 ## Archive folders (skip during routine reads)
 
 Folders matching `.ai/**/archive/` (`.ai/activity/archive/`,

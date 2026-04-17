@@ -53,3 +53,10 @@ historical content. Do NOT read them during routine operations. Only consult whe
 user explicitly references historical activity or archived research (e.g., "what
 happened last month?", "pull up the old research on X"). See each archive folder's
 `README.md` for the archival protocol if you're asked to perform an archive move.
+
+## Root file policy
+
+Strict: only files explicitly listed in the ADR are permitted at project root.
+See `docs/architecture/0001-root-file-exceptions.md` for the full exception list
+and the process for adding new exceptions. Do not re-state the list here — the ADR
+is the single authority.
