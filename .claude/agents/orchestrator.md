@@ -62,3 +62,17 @@ UserPromptSubmit hook injects recent entries at every turn — you always see th
 - `karpathy-guidelines` — coding discipline to convey in delegation briefs
 - `orchestrator-pattern` — the architecture you operate inside
 - `agent-catalog` — the 13-agent reference
+
+## Project knowledge — `docs/**`
+
+Project-specific knowledge lives at `docs/` at the repo root:
+
+- `docs/architecture/` — ADRs, system design decisions (constraints for all changes)
+- `docs/specs/` — feature specs and requirements (what to build)
+- `docs/standards/` — coding conventions for this project (how to build it)
+- `docs/guides/` — how-to guides, onboarding
+- `docs/api/` — API reference docs
+
+Read the relevant sections when planning non-trivial work. When delegating, include the exact `docs/` paths the subagent should consult in the brief — all subagents have `Read` but won't look on their own unless told to.
+
+When an architectural decision, spec, or standard is missing for something you're about to do, stop and ask — or propose adding one before the work lands (delegate the doc-write to `doc-writer`).

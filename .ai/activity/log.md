@@ -17,6 +17,47 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-04-17 21:15 — claude-code
+- Action: Executed handoff `to-claude/009-add-docs-resource.md` from kiro-cli — wired project knowledge at `docs/` into 5 Claude agents. Appended a "Project knowledge — `docs/**`" section to each of `.claude/agents/{orchestrator,coder,reviewer,refactorer,doc-writer}.md`, tailored per role: orchestrator gets the full docs/ map + delegation guidance ("include docs/ paths in subagent briefs"); coder reads `standards/` + `specs/` + relevant ADRs before implementing; reviewer checks `standards/` for compliance and ADRs for architectural review; refactorer treats `architecture/` as a constraint on "behavior-preserving" (ADR violation = not preserving behavior); doc-writer owns the whole tree and watches for cross-linking / duplicate detection / voice consistency.
+- Files: .claude/agents/orchestrator.md (edit), .claude/agents/coder.md (edit), .claude/agents/reviewer.md (edit), .claude/agents/refactorer.md (edit), .claude/agents/doc-writer.md (edit), .ai/handoffs/to-claude/open/009-add-docs-resource.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Chose system-prompt instruction over a separate mechanism (skill / settings / hook) because (a) all 5 agents already have `Read` in their tool lists, so no frontmatter changes were needed, and (b) Claude doesn't have a declarative per-agent `resources:` field like Kiro does — prose-in-prompt is the Claude-native mechanism. Each section is short and role-specific rather than a generic "read docs/" bullet — the orchestrator delegates with specific paths, coder consumes standards/specs, reviewer cites standards as findings, refactorer treats ADRs as constraints, doc-writer owns the tree. Also tied the sections back to existing workflow patterns (e.g. "orchestrator can route a doc-writer task if coder finds a standard gap") so project knowledge stays grounded in the agent-catalog's delegation map.
+
+## 2026-04-17 20:55 — claude-code
+- Action: Reviewed the proposed `project/` directory-structure per handoff `to-claude/008-review-project-structure.md` from kiro-cli. Wrote feedback to `.ai/research/project-structure-feedback-claude.md` — agreed with intent (clear product boundary + simpler agent scopes, framework dirs stay outside), pushed back against the `project/` wrapper mechanism. Main concerns: (1) tooling expects canonical paths at repo root (package.json, pyproject.toml, Dockerfile, .github/workflows/, etc.) — wrapping in `project/` forces per-tool cwd juggling indefinitely; (2) CHANGELOG / manifests create "is it product or meta?" ambiguity that breaks the "one boundary" promise; (3) repo looks like a monorepo pattern without the monorepo benefits. Proposed an alternative: keep everything at root, convert subagent scopes from negative-filtered ("anywhere except framework dirs") to positive-allowlists ("only `src/**`, `tests/**`, etc.") — captures the real benefit (scope simplification) without the cost (tooling friction).
+- Files: .ai/research/project-structure-feedback-claude.md (new), .ai/handoffs/to-claude/open/008-review-project-structure.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Held back from vetoing — if user chooses `project/`, Claude-side migration is ~30 min of system-prompt edits across 10 subagents and is not a blocker. Just flagged that the recurring tooling tax (every `npm`/`pytest`/`docker build` invocation needing wrapper cwd handling, every IDE project-root override, every CI workflow needing path adjustments) doesn't go away after migration — it's ongoing. The alternative (positive-allowlist scopes at root) captures the proposal's stated benefit (agent scope clarity) for free.
+
+## 2026-04-17 20:50 — kimi-cli
+- Action: Reviewed project/ structure proposal per handoff 011 from kiro-cli. Wrote feedback to .ai/research/project-structure-feedback-kimi.md.
+- Files: .ai/research/project-structure-feedback-kimi.md (new)
+- Decisions: Approved concept with modifications — drop vendor/, merge scripts+tools, rename assets→static, clarify root config vs project/config distinction. Noted that project/ prefix makes Kimi's prompt-based path enforcement more reliable.
+
+## 2026-04-17 21:23 — kiro-cli
+- Action: Created full project directory structure (src/, tests/, infra/, migrations/, scripts/, tools/, config/, assets/ with subfolders). Created root README.md with root file policy (only AGENTS.md, README.md, CLAUDE.md at root). Updated orchestrator prompt to enforce root policy. Handoffs to Claude (010) and Kimi (013).
+- Files: README.md (new), src/**/*, tests/**/*, infra/**/*, migrations/**/*, scripts/*, tools/**/*, config/*, assets/**/* (dirs + .gitkeep + READMEs), .kiro/agents/orchestrator.json (edit), .ai/handoffs/to-claude/open/010-project-structure-root-policy.md (new), .ai/handoffs/to-kimi/open/013-project-structure-root-policy.md (new)
+- Decisions: Root file policy: only AGENTS.md, README.md, CLAUDE.md at root. All project files (package.json, Dockerfile, .env, etc.) go in their respective directories, not root.
+## 2026-04-17 21:02 — kiro-cli
+- Action: Created docs/ directory structure (architecture/, specs/, standards/, guides/, api/) with README. Added file://docs/**/*.md resource to orchestrator, coder, reviewer, refactorer, doc-writer agent configs. Handoffs to Claude (009) and Kimi (012).
+- Files: docs/README.md (new), .kiro/agents/{orchestrator,coder,reviewer,refactorer,doc-writer}.json (edit), .ai/handoffs/to-claude/open/009-add-docs-resource.md (new), .ai/handoffs/to-kimi/open/012-add-docs-resource.md (new)
+- Decisions: docs/ is project knowledge (not AI instructions). No replication to .ai/. Agents read directly via file:// resource pointer. Only agents that need project context get the resource (5 of 13).
+## 2026-04-17 20:46 — kiro-cli
+- Action: Proposed project/ directory structure to consolidate all project files under one root. Created handoffs to Claude (008) and Kimi (011) for feedback.
+- Files: .ai/handoffs/to-claude/open/008-review-project-structure.md (new), .ai/handoffs/to-kimi/open/011-review-project-structure.md (new)
+- Decisions: Framework dirs (.ai/, .kiro/, .kimi/, .claude/) stay outside project/. Everything product-related goes inside. Simplifies agent write scopes.
+## 2026-04-17 18:15 — kimi-cli
+- Action: Updated infra-engineer to include git operations per handoff 010 from kiro-cli. Added git commands to shell scope and updated agent-catalog behavior rules.
+- Files: .kimi/agents/infra-engineer.yaml (edit), .kimi/agents/system/infra-engineer.md (edit), .kimi/steering/agent-catalog.md (edit)
+- Decisions: —
+
+## 2026-04-17 18:20 — claude-code
+- Action: Executed handoff `to-claude/007-infra-engineer-git-ops.md` from kiro-cli — added git operations to infra-engineer's shell scope on the Claude side. Updated `.claude/agents/infra-engineer.md`: expanded description to mention git-ops delegation from orchestrator, renamed Shell scope section to "plan / validate / build + git operations", enumerated the allowed git verbs (add/commit/push/branch/checkout/merge/pull/rebase/stash/status/log/diff), explicitly denied the release-cutting ones (`git tag`, `git push --tags`, `git push --force`), and added a behavior bullet about honoring the orchestrator's commit-message / branch-name instructions verbatim. Synced the updated catalog into `.claude/skills/agent-catalog/SKILL.md` — row 10 shell-scope column and new behavior rule 8 per the SSOT. Also first substantive work in the resumed session running as the orchestrator persona — Bash tool correctly absent from my toolbox, Edit/Write scoped to `.claude/**` worked as expected.
+- Files: .claude/agents/infra-engineer.md (edit), .claude/skills/agent-catalog/SKILL.md (edit), .ai/handoffs/to-claude/open/007-infra-engineer-git-ops.md (status→DONE inline; left in open/ for kiro-cli to validate + move)
+- Decisions: Did the SKILL.md sync as two targeted Edits rather than a full Write-rewrite — the rest of the body is already identical to SSOT, and minimal-diff edits are cheaper to review. Also noted explicitly in the system-prompt behavior list that infra-engineer must NOT force-push or cut tags on behalf of orchestrator — those route through release-engineer per the existing delegation map.
+
+## 2026-04-17 18:09 — kiro-cli
+- Action: Added git operations to infra-engineer's shell scope. Updated SSOT, synced to Kiro steering, updated Kiro agent config. Handoffs to Claude (007) and Kimi (010) to update their configs.
+- Files: .ai/instructions/agent-catalog/principles.md (edit), .kiro/steering/agent-catalog.md (sync), .kiro/agents/infra-engineer.json (edit), .ai/handoffs/to-claude/open/007-infra-engineer-git-ops.md (new), .ai/handoffs/to-kimi/open/010-infra-engineer-git-ops.md (new)
+- Decisions: Git operations (add, commit, push, branch, merge) belong to infra-engineer, not orchestrator. Orchestrator has no shell — delegates git mutations to infra-engineer.
 ## 2026-04-17 17:36 — kiro-cli
 - Action: Implemented 13 Kiro agent configs (orchestrator + 12 subagents). Validated Claude and Kimi implementations. All three CLIs now have full agent catalogs. Moved all validation handoffs to done.
 - Files: .kiro/agents/{orchestrator,coder,reviewer,tester,debugger,refactorer,doc-writer,security-auditor,ui-engineer,e2e-tester,infra-engineer,release-engineer,data-migrator}.json (13 new, replaced old project.json)

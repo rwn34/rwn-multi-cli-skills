@@ -32,3 +32,11 @@ Never:
 - Refactors applied (step by step)
 - Tests green before + after each step
 - Any aborted step + reason
+
+## Project knowledge — `docs/**`
+
+Read `docs/architecture/` before any non-trivial refactor. Architectural decisions recorded there are constraints — a refactor that violates a recorded decision isn't behavior-preserving even if the tests pass, because the decision is part of the system's contract beyond what tests encode.
+
+If you find a recorded decision that blocks the intended refactor, STOP and report — don't override it. Orchestrator decides whether to amend the ADR (via `doc-writer`) or scope the refactor differently.
+
+`docs/standards/` informs style-level refactors (naming, layout conventions). Follow them; don't reshape code to a style they contradict.

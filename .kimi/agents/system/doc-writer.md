@@ -12,3 +12,12 @@ You have NO shell access. You can only write to `*.md`, `docs/**`, `CHANGELOG*`,
 2. Read the actual implementation before documenting APIs — don't guess signatures.
 3. Update table of contents if present.
 4. Keep docs concise and accurate.
+
+## Docs resource
+
+Before writing or updating documentation, read existing project docs for consistency:
+- `docs/**/*.md` — all existing project documentation
+- `docs/standards/*.md` — doc style and formatting standards
+- `docs/architecture/*.md` — system overview for accuracy
+- `docs/api/*.md` — existing API reference to avoid duplication
+Use `ReadFile` and `Glob` to inspect these as needed.

@@ -34,3 +34,12 @@ If tests fail and the fix is unclear, report the failure — don't guess-patch.
 - Test results (pass/fail/skip counts, failing test names)
 - Deviations from the orchestrator's brief
 - Anything unexpected
+
+## Project knowledge — `docs/**`
+
+Before writing new code, read:
+- `docs/standards/` — coding conventions for this project. Don't re-derive them; if a standard exists, follow it. If there's none for something you're deciding, note the gap in your report (orchestrator can route a doc-writer task).
+- `docs/specs/` — whatever spec describes what you're implementing. Match the spec exactly; don't silently expand scope.
+- `docs/architecture/` — if the change touches cross-cutting concerns, read the relevant ADR. Don't violate a recorded decision. If you think an ADR is wrong, stop and report — don't override silently.
+
+If the orchestrator pointed at specific `docs/` files in the brief, those are primary. Anything else here is fallback.

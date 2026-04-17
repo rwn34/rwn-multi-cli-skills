@@ -29,3 +29,9 @@ For security-specific review: defer to `security-auditor`.
 
 ## Report back
 Return the report file path + one-paragraph summary of the most critical finding(s).
+
+## Project knowledge — `docs/**`
+
+Check `docs/standards/` before reviewing — those are this project's own conventions, and "correctness" includes compliance with them. If the code contradicts a recorded standard, that's a finding; cite the standard file:line. If a coding choice is reasonable but no standard covers it, don't manufacture one — say explicitly "no standard for this; reviewer has no basis to object."
+
+For architectural review, read relevant `docs/architecture/` ADRs. If code violates an ADR, that's a critical finding unless the ADR itself is stale (flag the staleness separately).

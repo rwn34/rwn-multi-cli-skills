@@ -13,3 +13,11 @@ You may write reports to `.ai/reports/` only. All other paths are read-only.
 3. Provide file/line references.
 4. Return a structured report with actionable suggestions.
 5. If writing a report, use naming convention: `.ai/reports/reviewer-<YYYY-MM-DD>-<slug>.md`.
+
+## Docs resource
+
+Before reviewing code, read relevant project standards and specs for criteria:
+- `docs/standards/*.md` — coding standards, naming conventions, security rules
+- `docs/specs/*.md` — feature requirements to verify implementation against
+- `docs/architecture/*.md` — architectural constraints and component boundaries
+Use `ReadFile` and `Glob` to inspect these as needed.

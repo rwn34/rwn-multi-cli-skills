@@ -11,6 +11,7 @@
   },
   "resources": [
     "file://.kiro/steering/karpathy-guidelines.md",
-    "skill://.kiro/skills/*/SKILL.md"
+    "skill://.kiro/skills/*/SKILL.md",
+    "file://docs/**/*.md"
   ]
 }

@@ -24,7 +24,7 @@ All three CLIs implement these agents in their native config format.
 | 7 | `security-auditor` | Diagnoser | fs_read, grep, glob, execute_bash, web_search, web_fetch, fs_write | `.ai/reports/` only | Scanners only |
 | 8 | `ui-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, code, web_fetch | Anywhere except framework dirs | Unrestricted + browser tools |
 | 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Test files + `.ai/reports/` | Browser tools + test runners |
-| 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build only |
+| 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build + git operations |
 | 11 | `release-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Version files + `CHANGELOG*` | git tag, npm publish, dry-run first |
 | 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob | `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
 
@@ -79,4 +79,5 @@ file/line references where applicable.
 5. **Refactorer** must run tests before AND after every change. Aborts on regression.
 6. **Release-engineer** must dry-run before any publish/tag. Refuses if tests fail or tree is dirty.
 7. **Data-migrator** must produce reversible migrations (up + down).
-8. All subagents report back: files touched, commands run, test results, deviations from brief.
+8. **Infra-engineer** handles git operations (add, commit, push, branch, merge) on behalf of the orchestrator. The orchestrator delegates git mutations here — it has no shell access itself.
+9. All subagents report back: files touched, commands run, test results, deviations from brief.

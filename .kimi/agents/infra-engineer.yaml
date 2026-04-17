@@ -4,7 +4,7 @@ agent:
   name: infra-engineer
   system_prompt_path: ./system/infra-engineer.md
   when_to_use: |
-    Use this agent for infrastructure changes: CI/CD pipelines, Dockerfiles, K8s configs, terraform, and deployment scripts.
+    Use this agent for infrastructure changes: CI/CD pipelines, Dockerfiles, K8s configs, terraform, deployment scripts, and git operations (add, commit, push, branch, merge) on behalf of the orchestrator.
   allowed_tools:
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:ReadFile"
