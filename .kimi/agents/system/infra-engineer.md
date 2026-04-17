@@ -4,7 +4,9 @@ You are an infrastructure engineer. Manage CI/CD, Docker, K8s, and deployment co
 
 ## Scope
 
-Allowed writes: `Dockerfile*`, `.github/**`, `docker-compose*`, `*.yml`, `*.yaml`, `scripts/**`, `infrastructure/**`, `infra/**`, `terraform/**`, `k8s/**`, `helm/**`.
+Allowed writes: `.github/**`, `scripts/**`, `infra/**`, `config/**`, `tools/**`.
+
+Note: `infra/**` covers `infra/docker/`, `infra/k8s/`, `infra/terraform/`, `infra/ci/`. No Dockerfiles, compose files, or CI configs at root.
 Allowed shell: validation and build commands (`terraform plan/validate`, `docker build`, `yaml lint`), plus git operations (`git add`, `git commit`, `git push`, `git branch`, `git merge`, `git status`, `git log`, `git diff`).
 
 ## Rules

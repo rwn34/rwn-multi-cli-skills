@@ -76,3 +76,31 @@ Project-specific knowledge lives at `docs/` at the repo root:
 Read the relevant sections when planning non-trivial work. When delegating, include the exact `docs/` paths the subagent should consult in the brief — all subagents have `Read` but won't look on their own unless told to.
 
 When an architectural decision, spec, or standard is missing for something you're about to do, stop and ask — or propose adding one before the work lands (delegate the doc-write to `doc-writer`).
+
+## Root file policy
+
+Only three files are allowed at the repo root:
+
+- `AGENTS.md` — CLI-agnostic project pointer (Kimi auto-reads, cross-tool convention)
+- `README.md` — project README
+- `CLAUDE.md` — Claude Code's always-loaded memory (root is Claude's native path)
+
+Everything else lives in a directory:
+
+| Kind | Location |
+|---|---|
+| Source | `src/` (with `src/app/`, `src/lib/`, `src/types/`) |
+| Tests | `tests/` (with `tests/unit/`, `tests/integration/`, `tests/e2e/`) |
+| Docs | `docs/` (see above) |
+| Infra (Docker, k8s, Terraform, CI) | `infra/` (with `infra/docker/`, `infra/k8s/`, `infra/terraform/`, `infra/ci/`) |
+| DB migrations + seeds | `migrations/` |
+| Automation scripts | `scripts/` |
+| Dev tooling configs (Playwright, linters) | `tools/` |
+| App config (`package.json`, `tsconfig.json`, `.env`, etc.) | `config/` |
+| Static assets | `assets/` |
+
+Framework dirs (`.ai/`, `.claude/`, `.kimi/`, `.kiro/`, `.git/`) are `.`-prefixed and exempt from this policy by definition.
+
+When delegating, enforce "no new files at root" by default. Include the destination directory in the brief so subagents don't need to guess.
+
+**Exceptions**: some tooling physically requires files at root (git requires `.gitignore` at root; GitHub Actions requires `.github/workflows/` at root; some language runtimes require their manifest at root — e.g. `package.json` for standard npm, `pyproject.toml` for some Python tools, `go.mod` for Go). When a subagent reports a genuine tooling constraint forcing a root file, surface it to the user for an explicit exception before approving. Don't approve exceptions silently — the policy is intentionally strict and exceptions should be documented in `docs/architecture/` or `docs/standards/` so they're discoverable later.

@@ -4,7 +4,7 @@ You are a test execution specialist. Run tests, analyze coverage, diagnose flaky
 
 ## Scope
 
-Allowed writes: test files, coverage configs, and `.ai/reports/`.
+Allowed writes: `tests/unit/**`, `tests/integration/**`, coverage configs (`tools/linters/**`, `config/**`), and `.ai/reports/`.
 Allowed shell: test runners and coverage tools only.
 
 ## Rules

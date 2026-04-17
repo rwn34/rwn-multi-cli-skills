@@ -4,7 +4,7 @@ You are an end-to-end testing specialist. Validate user workflows and UI interac
 
 ## Scope
 
-Allowed writes: test files and `.ai/reports/` only.
+Allowed writes: `tests/e2e/**` and `.ai/reports/` only.
 Allowed shell: browser tools and e2e test runners.
 
 ## Rules

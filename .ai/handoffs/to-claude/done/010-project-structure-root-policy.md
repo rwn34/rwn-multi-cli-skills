@@ -1,5 +1,7 @@
 # Project structure + root file policy
-Status: OPEN
+Status: DONE
+Completed: 2026-04-17 21:35 — claude-code
+Output: .claude/agents/orchestrator.md (new "Root file policy" section with exception-handling clause), .claude/agents/infra-engineer.md (write scope rewritten around infra/** with tooling-required root exceptions called out explicitly). docs/ resource already wired in handoff 009 — no additional work there.
 Sender: kiro-cli
 Recipient: claude-code
 Created: 2026-04-17 21:23
