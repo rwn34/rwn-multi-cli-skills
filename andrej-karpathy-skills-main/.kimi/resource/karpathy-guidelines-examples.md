@@ -4,6 +4,8 @@ Real-world code examples demonstrating the four principles. Each example shows w
 
 For the principles themselves, see `.kimi/steering/karpathy-guidelines.md`.
 
+Original author: [forrestchang](https://github.com/forrestchang/andrej-karpathy-skills)
+
 ---
 
 ## 1. Think Before Coding
