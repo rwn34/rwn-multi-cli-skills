@@ -1,0 +1,52 @@
+# Default: auto-detect text vs binary, normalize LF on commit, native on checkout.
+# Prevents CRLF/LF wars between Windows and *nix contributors.
+* text=auto eol=lf
+
+# Shell scripts: always LF (Windows editors must not introduce CRLF)
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+
+# Windows scripts: always CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Explicit text (defensive — should already be covered by auto)
+*.md text
+*.yml text
+*.yaml text
+*.json text
+*.toml text
+*.ini text
+*.cfg text
+*.xml text
+
+# Explicit binary (no line-ending conversion, no diff by default)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.svg binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.tgz binary
+*.bz2 binary
+*.7z binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.mp4 binary
+*.mov binary
+*.webm binary
+*.mp3 binary
+*.wav binary
+*.flac binary
+*.ogg binary

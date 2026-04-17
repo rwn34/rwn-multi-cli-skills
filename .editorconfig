@@ -1,0 +1,32 @@
+# Universal baseline for this project. Language-specific overrides go in language-owned
+# config later (e.g. .prettierrc, pyproject.toml tool.black) per the root-file policy.
+# ADR: docs/architecture/0001-root-file-exceptions.md (category C — editor-mandated).
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Python and Go conventionally indent with 4 spaces / tabs respectively.
+[*.py]
+indent_size = 4
+
+[*.go]
+indent_style = tab
+
+# Makefiles REQUIRE actual tabs; not negotiable.
+[Makefile]
+indent_style = tab
+
+# Markdown — preserve trailing whitespace (two-space line-break is meaningful).
+[*.md]
+trim_trailing_whitespace = false
+
+# Shell scripts — keep consistent across OSs.
+[*.{sh,bash,zsh}]
+end_of_line = lf

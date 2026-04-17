@@ -1,0 +1,32 @@
+{
+  "_comment_about_this_file": "This is a template. Copy to .mcp.json (personal, gitignored) and uncomment the servers you actually use. The `_*` fields are comments — MCP config loaders ignore unknown keys. Pre-wiring servers the machine doesn't have installed causes connection errors on session start, so keep it opt-in.",
+  "mcpServers": {
+    "_github_example": {
+      "_comment": "GitHub MCP — useful for release-engineer (releases, workflow dispatch, PR ops) and reviewer (comment/PR context). Requires a GitHub personal access token with `repo` scope. Install: npx -y @modelcontextprotocol/server-github",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN"
+      }
+    },
+    "_playwright_example": {
+      "_comment": "Playwright MCP — useful for ui-engineer + e2e-tester (browser automation, screenshots, DOM inspection). Install Playwright first: npm i -D @playwright/test.",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
+    "_postgres_example": {
+      "_comment": "Postgres MCP — useful for data-migrator when the project uses Postgres. Set DATABASE_URL in your env (or use .env.local, which is gitignored). Install: npx -y @modelcontextprotocol/server-postgres",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "$DATABASE_URL"]
+    },
+    "_cloudflare_example": {
+      "_comment": "Cloudflare MCP — useful for infra-engineer and release-engineer when deploys target Cloudflare Workers / R2 / D1 / KV. Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.",
+      "command": "npx",
+      "args": ["-y", "@cloudflare/mcp-server"],
+      "env": {
+        "CLOUDFLARE_API_TOKEN": "$CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID": "$CLOUDFLARE_ACCOUNT_ID"
+      }
+    }
+  }
+}

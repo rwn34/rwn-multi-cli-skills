@@ -1,0 +1,77 @@
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Editors ----
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+
+# ---- Build artifacts (language-agnostic; specific languages add their own when chosen) ----
+dist/
+build/
+out/
+target/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.next/
+.turbo/
+.cache/
+coverage/
+.nyc_output/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Secrets (the sensitive-file hook also blocks writes — this prevents accidental commits) ----
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+.aws/
+.ssh/
+
+# ---- AI CLI local / personal overrides (shared config is committed; personal settings are not) ----
+.claude/settings.local.json
+.kimi/*.local.*
+.kiro/*.local.*
+
+# ---- MCP local config (the .example is committed; the actual .mcp.json is personal) ----
+.mcp.json
+
+# ---- Runtime / temp ----
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# ---- Persistence stores ----
+*.sqlite
+*.sqlite3
+*.db
+
+# ---- Platform-specific ----
+.gradle/
+.vs/

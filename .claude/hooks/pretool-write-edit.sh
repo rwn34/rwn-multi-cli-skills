@@ -57,15 +57,22 @@ case "$rel" in
         block "SSH config directory (.ssh/). Do not write SSH configs from an agent. Ask the user to edit manually." ;;
 esac
 
-# Rule 3 — root-file policy. Only AGENTS.md, README.md, CLAUDE.md at root.
+# Rule 3 — root-file policy.
+# Authoritative allowlist: docs/architecture/0001-root-file-exceptions.md.
 # Path is at root iff it contains no "/" and is not empty.
 case "$rel" in
     */*) exit 0 ;;    # has slash → not at root → allow
     "") exit 0 ;;     # empty → skip
-    .*) exit 0 ;;     # .`-prefixed → framework dir → handled by rule 1 for .kimi/.kiro, allowed for .ai/.claude
+    .*) exit 0 ;;     # .`-prefixed → framework / tooling (ADR categories B/C/D/E handle these)
+    # Category A — docs entry points
     AGENTS.md|README.md|CLAUDE.md) exit 0 ;;
+    LICENSE|LICENSE.*) exit 0 ;;
+    CHANGELOG|CHANGELOG.*) exit 0 ;;
+    CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md) exit 0 ;;
+    # Categories F/G/H — amend this allowlist alongside the ADR when a language or tool is chosen.
+    # Examples to uncomment later: package.json, pyproject.toml, Cargo.toml, go.mod, .nvmrc, .python-version, .tool-versions
     *)
-        block "Writing '$rel' at repo root violates the root-file policy. Only AGENTS.md / README.md / CLAUDE.md are allowed at root; put this file in src/, tests/, docs/, infra/, config/, migrations/, scripts/, tools/, or assets/. If a tooling exception is genuinely required (e.g. package.json for npm), raise it to the user for explicit approval and document the exception in docs/architecture/ or docs/standards/." ;;
+        block "Writing '$rel' at repo root violates the root-file policy. See docs/architecture/0001-root-file-exceptions.md for the allowlist. If this is a tooling-required exception not yet in the ADR, surface it to the user for approval + ADR amendment before creating." ;;
 esac
 
 exit 0

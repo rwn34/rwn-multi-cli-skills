@@ -1,6 +1,7 @@
 #!/bin/bash
 # Hook 1: Root file guard
-# Block writes to project root except AGENTS.md, README.md, CLAUDE.md
+# Block writes to project root except files listed in ADR Category A
+# See docs/architecture/0001-root-file-exceptions.md for the full allowlist
 
 read JSON
 
