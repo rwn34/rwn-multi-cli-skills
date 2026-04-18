@@ -21,11 +21,26 @@ if echo "$FILE_PATH" | grep -q '/'; then
     exit 0
 fi
 
-# Path is at root level — check allowlist (ADR Category A: docs entry points)
+# Path is at root level — check allowlist (ADR categories A–E)
 case "$BASENAME" in
-    AGENTS.md|README.md|CLAUDE.md|LICENSE|LICENSE.*|CHANGELOG|CHANGELOG.*|CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md|.mcp.json|.mcp.json.example)
+    # Category A — docs entry points
+    AGENTS.md|README.md|CLAUDE.md|LICENSE|LICENSE.*|CHANGELOG|CHANGELOG.*|CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md)
         exit 0
         ;;
+    # Categories B/C/D/E — dotfiles and tooling
+    .gitignore|.gitattributes)
+        exit 0
+        ;;
+    .editorconfig)
+        exit 0
+        ;;
+    .dockerignore|.gitlab-ci.yml)
+        exit 0
+        ;;
+    .mcp.json|.mcp.json.example)
+        exit 0
+        ;;
+
     *)
         echo "BLOCKED: Writing '$BASENAME' to project root is not allowed. See docs/architecture/0001-root-file-exceptions.md for the full allowlist. Move this file to the appropriate subdirectory (e.g., config/, infra/, src/)." >&2
         exit 2

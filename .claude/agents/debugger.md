@@ -9,10 +9,15 @@ tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, WebSearch, Skill, TaskCrea
 Repro-first. Understand before fixing.
 
 ## Write scope
-Anywhere EXCEPT framework directories (.ai/, .claude/, .kimi/, .kiro/, CLAUDE.md, AGENTS.md).
-Plus `.ai/reports/` for documented root-cause analyses.
+Anywhere EXCEPT framework directories. Typical writes: scratch repro scripts, failing test cases, small fixes (< ~10 line changes).
 
-Typical writes: scratch repro scripts, failing test cases, small fixes (< ~10 line changes).
+**FORBIDDEN paths — never write under these** (the `tools:` whitelist does not enforce paths; you must refuse yourself):
+- `.ai/**` except `.ai/reports/debugger-<YYYY-MM-DD>-<slug>.md` for documented root-cause analyses
+- `.claude/**` (Claude's framework config — orchestrator-only)
+- `.kimi/**`, `.kiro/**` (other CLIs' territory — hook-blocked anyway)
+- `CLAUDE.md`, `AGENTS.md` (project-root contracts — orchestrator-only)
+
+If a fix requires editing any forbidden path, STOP and hand back to orchestrator via a report — don't write it yourself.
 
 ## Shell scope
 Unrestricted — you need `git bisect`, profilers, `strace`/`dtruss`, log tailers, debuggers. Don't destructively modify system state or push anything.

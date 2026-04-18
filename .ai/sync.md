@@ -18,6 +18,9 @@ disagree, regenerate from here. Never edit the replicas directly.
 | `.ai/instructions/orchestrator-pattern/principles.md` | `.claude/skills/orchestrator-pattern/SKILL.md` (body only; Claude frontmatter stays) | Claude skill |
 | `.ai/instructions/orchestrator-pattern/principles.md` | `.kimi/steering/orchestrator-pattern.md` | Kimi steering |
 | `.ai/instructions/orchestrator-pattern/principles.md` | `.kiro/steering/orchestrator-pattern.md` | Kiro steering |
+| `.ai/instructions/agent-catalog/principles.md` | `.claude/skills/agent-catalog/SKILL.md` (body only; Claude frontmatter stays) | Claude skill |
+| `.ai/instructions/agent-catalog/principles.md` | `.kimi/steering/agent-catalog.md` | Kimi steering |
+| `.ai/instructions/agent-catalog/principles.md` | `.kiro/steering/agent-catalog.md` | Kiro steering |
 
 ## Copy commands
 
@@ -35,9 +38,14 @@ cp .ai/instructions/orchestrator-pattern/principles.md .kimi/steering/orchestrat
 cp .ai/instructions/orchestrator-pattern/principles.md .kiro/steering/orchestrator-pattern.md
 # Claude SKILL.md needs frontmatter — do not blind-copy. Replace body only.
 
-# Claude SKILL.md and Kiro SKILL.md need CLI-specific frontmatter — do not blind-copy.
-# Keep the existing frontmatter + provenance comments, then replace the body below
-# with the current contents of principles.md (Claude) or examples.md (Kiro).
+# agent-catalog
+cp .ai/instructions/agent-catalog/principles.md .kimi/steering/agent-catalog.md
+cp .ai/instructions/agent-catalog/principles.md .kiro/steering/agent-catalog.md
+# Claude SKILL.md needs frontmatter — body-only replace.
+
+# Claude SKILL.md files need CLI-specific frontmatter + provenance comments —
+# do not blind-copy. Keep the existing frontmatter header, then replace the body
+# below the `<!-- SSOT: ... -->` line with the current contents of principles.md.
 ```
 
 ### PowerShell
@@ -50,6 +58,9 @@ Copy-Item .ai/instructions/karpathy-guidelines/examples.md   .claude/skills/karp
 # orchestrator-pattern
 Copy-Item .ai/instructions/orchestrator-pattern/principles.md .kimi/steering/orchestrator-pattern.md
 Copy-Item .ai/instructions/orchestrator-pattern/principles.md .kiro/steering/orchestrator-pattern.md
+# agent-catalog
+Copy-Item .ai/instructions/agent-catalog/principles.md .kimi/steering/agent-catalog.md
+Copy-Item .ai/instructions/agent-catalog/principles.md .kiro/steering/agent-catalog.md
 # (Kiro SKILL.md has a frontmatter header and is regenerated manually — see .ai/cli-map.md)
 ```
 

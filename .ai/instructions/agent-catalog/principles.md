@@ -13,10 +13,10 @@ All three CLIs implement these agents in their native config format.
 | 3 | `tester` | Executor | fs_read, fs_write, execute_bash, grep, glob, code | Test files + `.ai/reports/` | Test runners + coverage |
 | 4 | `debugger` | Executor | fs_read, fs_write, execute_bash, grep, glob, code, web_search, web_fetch | Anywhere + `.ai/reports/` | Unrestricted |
 | 5 | `refactorer` | Executor | fs_read, fs_write, execute_bash, grep, glob, code | Anywhere except framework dirs | Test runners only |
-| 6 | `doc-writer` | Executor | fs_read, fs_write, grep, glob | `*.md`, `docs/**`, `CHANGELOG*`, `.ai/reports/` | None |
+| 6 | `doc-writer` | Executor | fs_read, fs_write, grep, glob | `*.md`, `docs/**`, `CHANGELOG*`, `LICENSE*`, `README*`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `.ai/reports/` | None |
 | 7 | `security-auditor` | Diagnoser | fs_read, grep, glob, execute_bash, web_search, web_fetch, fs_write | `.ai/reports/` only | Scanners only |
 | 8 | `ui-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, code, web_fetch | Anywhere except framework dirs | Unrestricted + browser tools |
-| 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Test files + `.ai/reports/` | Browser tools + test runners |
+| 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | E2E test files + `.ai/reports/` | Browser tools + test runners |
 | 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build + git operations |
 | 11 | `release-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Version files + `CHANGELOG*` | git tag, npm publish, dry-run first |
 | 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob | `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
@@ -40,13 +40,28 @@ file/line references where applicable.
 
 ## Write scope details
 
-### Test files (tester, e2e-tester)
+### Test files (tester)
 `tests/**`, `test/**`, `**/__tests__/**`, `*.test.*`, `*.spec.*`, `*_test.*`,
 `*_spec.*`, `conftest.py`, `jest.config.*`, `pytest.ini`, `.coveragerc`
 
-### IaC/CI dirs (infra-engineer)
-`Dockerfile*`, `.github/**`, `docker-compose*`, `*.yml`, `*.yaml`, `scripts/**`,
-`infrastructure/**`, `infra/**`, `terraform/**`, `k8s/**`, `helm/**`
+### E2E test files (e2e-tester — superset of tester scope)
+Everything in the tester list above, plus E2E-framework dirs at root:
+`e2e/**`, `tests/e2e/**`, `**/*.e2e.*`, `playwright/**`, `cypress/**`.
+Plus E2E config files: `playwright.config.*`, `cypress.config.*`.
+
+### IaC/CI paths (infra-engineer)
+Primary directory scope — everything here is inside `infra/**`:
+`infra/**` (covers `infra/docker/Dockerfile*`, `infra/docker/docker-compose*`,
+`infra/terraform/**`, `infra/k8s/**`, `infra/helm/**`, `infra/ci/**`), `scripts/**`,
+`tools/**`.
+
+Root-level exceptions (permitted per ADR-0001 category D and tooling requirements):
+`.github/workflows/**` (GitHub Actions — GitHub-mandated location), `.gitlab-ci.yml`,
+`.circleci/**`, `.buildkite/**`, `.dockerignore`.
+
+`Dockerfile` and `docker-compose.yml` at repo root are NOT permitted by ADR-0001 —
+use `infra/docker/` instead. Amend the ADR first if a project-specific tooling
+constraint requires the root location.
 
 ### Version files (release-engineer)
 `VERSION`, `package.json` (version field only), `pyproject.toml` (version field only),

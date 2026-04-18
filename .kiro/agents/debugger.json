@@ -5,6 +5,9 @@
   "tools": ["fs_read", "fs_write", "execute_bash", "grep", "glob", "code", "web_search", "web_fetch"],
   "allowedTools": ["fs_read", "grep", "glob", "code", "web_search", "web_fetch"],
   "toolsSettings": {
+    "fs_write": {
+      "deniedPaths": [".kiro/**", ".kimi/**", ".claude/**"]
+    },
     "execute_bash": {
       "autoAllowReadonly": true
     }

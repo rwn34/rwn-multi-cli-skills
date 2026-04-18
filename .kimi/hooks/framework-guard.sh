@@ -1,7 +1,8 @@
 #!/bin/bash
 # Hook 2: Framework directory guard
 # Block writes to other CLIs' framework directories (.claude/, .kiro/)
-# .ai/ and .kimi/ are allowed (kimi-cli owns these)
+# .kimi/ is Kimi's own territory. .ai/ is shared with other CLIs
+# (allowed for orchestrator; subagent writes restricted per agent config).
 
 read JSON
 

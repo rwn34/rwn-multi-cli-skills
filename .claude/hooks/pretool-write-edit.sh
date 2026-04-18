@@ -63,12 +63,19 @@ esac
 case "$rel" in
     */*) exit 0 ;;    # has slash → not at root → allow
     "") exit 0 ;;     # empty → skip
-    .*) exit 0 ;;     # .`-prefixed → framework / tooling (ADR categories B/C/D/E handle these)
     # Category A — docs entry points
     AGENTS.md|README.md|CLAUDE.md) exit 0 ;;
     LICENSE|LICENSE.*) exit 0 ;;
     CHANGELOG|CHANGELOG.*) exit 0 ;;
     CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md) exit 0 ;;
+    # Category B — git-mandated dotfiles
+    .gitignore|.gitattributes) exit 0 ;;
+    # Category C — editor-mandated dotfile
+    .editorconfig) exit 0 ;;
+    # Category D — platform / CI-vendor dotfiles at root
+    .dockerignore|.gitlab-ci.yml) exit 0 ;;
+    # Category E — MCP convention
+    .mcp.json|.mcp.json.example) exit 0 ;;
     # Categories F/G/H — amend this allowlist alongside the ADR when a language or tool is chosen.
     # Examples to uncomment later: package.json, pyproject.toml, Cargo.toml, go.mod, .nvmrc, .python-version, .tool-versions
     *)

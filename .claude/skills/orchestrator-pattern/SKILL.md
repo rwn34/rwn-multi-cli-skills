@@ -25,6 +25,12 @@ The orchestrator **can** write to framework paths: `.ai/`, `.kiro/`, `.kimi/`,
 `.claude/`. This lets it manage handoffs, activity log entries, research docs, and
 CLI config without needing to delegate trivial framework housekeeping.
 
+**Per-CLI nuance:** while the SSOT permits orchestrator writes to all four
+framework dirs, each CLI's implementation narrows this to its own dir + the
+shared `.ai/`. Cross-CLI writes (e.g., Claude editing `.kimi/`) always go
+through the handoff queue — never direct. This preserves per-CLI ownership
+of native config so each CLI manages its own conventions.
+
 ## Agent roles
 
 ### Orchestrator (default agent)

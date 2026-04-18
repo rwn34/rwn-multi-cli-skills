@@ -6,7 +6,7 @@
   "allowedTools": ["fs_read", "grep", "glob"],
   "toolsSettings": {
     "fs_write": {
-      "allowedPaths": ["**/*.md", "docs/**", "CHANGELOG*", "LICENSE", "LICENSE.*", "SECURITY.md", "CODE_OF_CONDUCT.md", ".ai/reports/**"]
+      "allowedPaths": ["**/*.md", "docs/**", "CHANGELOG*", "LICENSE*", "README*", ".ai/reports/**"]
     }
   },
   "resources": [

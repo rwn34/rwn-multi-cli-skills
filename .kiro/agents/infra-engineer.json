@@ -6,7 +6,7 @@
   "allowedTools": ["fs_read", "grep", "glob", "web_search", "web_fetch"],
   "toolsSettings": {
     "fs_write": {
-      "allowedPaths": ["Dockerfile*", ".github/**", "docker-compose*", "**/*.yml", "**/*.yaml", "scripts/**", "infrastructure/**", "infra/**", "terraform/**", "k8s/**", "helm/**"]
+      "allowedPaths": ["infra/**", "scripts/**", "tools/**", ".github/workflows/**", ".circleci/**", ".buildkite/**", ".gitlab-ci.yml", ".dockerignore"]
     },
     "execute_bash": {
       "autoAllowReadonly": true

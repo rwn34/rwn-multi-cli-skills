@@ -19,11 +19,23 @@ case "$CMD_LOWER" in
         echo "BLOCKED: rm -rf / or rm -rf /* is extremely dangerous and not allowed." >&2
         exit 2
         ;;
+    *"rm -rf *"*)
+        echo "BLOCKED: rm -rf * is dangerous in the wrong directory. Use rm with explicit file list." >&2
+        exit 2
+        ;;
+    *"rm -rf ~"*)
+        echo "BLOCKED: rm -rf ~ destroys your home directory." >&2
+        exit 2
+        ;;
+    *"rm -rf ."*)
+        echo "BLOCKED: rm -rf . deletes the current directory." >&2
+        exit 2
+        ;;
 esac
 
-# git push --force / -f
-if echo "$CMD_LOWER" | grep -qE 'git\s+push\s+.*(--force|-f)\b'; then
-    echo "BLOCKED: git push --force is dangerous on shared branches. Use git push --force-with-lease or delegate to infra-engineer." >&2
+# git push --force / -f / --force-with-lease
+if echo "$CMD_LOWER" | grep -qE 'git\s+push\s+.*(--force|-f|--force-with-lease)\b'; then
+    echo "BLOCKED: git push --force or --force-with-lease is dangerous on shared branches. Delegate to infra-engineer." >&2
     exit 2
 fi
 
@@ -33,9 +45,15 @@ if echo "$CMD_LOWER" | grep -qE 'git\s+reset\s+.*--hard\b'; then
     exit 2
 fi
 
-# DROP TABLE / DROP DATABASE
-if echo "$CMD_LOWER" | grep -qE '\bdrop\s+table\b|\bdrop\s+database\b'; then
-    echo "BLOCKED: DROP TABLE/DATABASE is destructive. Use migrations or delegate to data-migrator." >&2
+# DROP TABLE / DROP DATABASE / DROP SCHEMA
+if echo "$CMD_LOWER" | grep -qE '\bdrop\s+table\b|\bdrop\s+database\b|\bdrop\s+schema\b'; then
+    echo "BLOCKED: DROP TABLE/DATABASE/SCHEMA is destructive. Use migrations or delegate to data-migrator." >&2
+    exit 2
+fi
+
+# TRUNCATE TABLE
+if echo "$CMD_LOWER" | grep -qE '\btruncate\s+table\b'; then
+    echo "BLOCKED: TRUNCATE TABLE is destructive. Use migrations or delegate to data-migrator." >&2
     exit 2
 fi
 
