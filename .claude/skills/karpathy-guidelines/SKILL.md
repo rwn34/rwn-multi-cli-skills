@@ -4,9 +4,10 @@ description: Behavioral guidelines to reduce common LLM coding mistakes. Use whe
 license: MIT
 ---
 
+<!-- SSOT: .ai/instructions/karpathy-guidelines/principles.md — regenerate via .ai/sync.md -->
+
 <!-- Source: https://x.com/karpathy/status/2015883857489522876 -->
 <!-- Adapted from: https://github.com/forrestchang/andrej-karpathy-skills -->
-<!-- SSOT: .ai/instructions/karpathy-guidelines/principles.md — regenerate via .ai/sync.md -->
 
 # Karpathy Guidelines
 
