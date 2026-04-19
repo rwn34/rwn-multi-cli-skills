@@ -45,6 +45,7 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 ### E. AI framework
 
 - `.ai/` — shared multi-CLI framework state and SSOT
+- `.archive/` — framework cold storage (old reports, resolved handoffs, activity rollups; see `.archive/README.md`)
 - `.claude/` — Claude Code config
 - `.kimi/` — Kimi CLI config
 - `.kiro/` — Kiro CLI config
@@ -87,3 +88,4 @@ Framework dirs (`.`-prefixed directories under E) are exempt from the "loose fil
 - `.kimi/steering/00-ai-contract.md` (update to reference-only)
 - `.kiro/steering/00-ai-contract.md` (update to reference-only)
 - Research docs that led to this decision: `.ai/research/template-completeness-claude.md`, `.ai/research/template-completeness-kimi.md`, `.ai/research/project-structure-feedback-claude.md`, `.ai/research/project-structure-feedback-kimi.md`
+- `.archive/README.md` — archive protocol doc (layout, triggers, move commands)
