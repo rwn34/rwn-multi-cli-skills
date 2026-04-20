@@ -18,16 +18,16 @@
   ],
   "hooks": {
     "preToolUse": [
-      { "matcher": "fs_write", "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/root-file-guard.sh" },
-      { "matcher": "fs_write", "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/framework-dir-guard.sh" },
-      { "matcher": "fs_write", "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/sensitive-file-guard.sh" },
-      { "matcher": "execute_bash", "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/destructive-cmd-guard.sh" }
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/root-file-guard.sh" },
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/framework-dir-guard.sh" },
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/sensitive-file-guard.sh" },
+      { "matcher": "execute_bash", "command": "bash .kiro/hooks/destructive-cmd-guard.sh" }
     ],
     "agentSpawn": [
-      { "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/activity-log-inject.sh" }
+      { "command": "bash .kiro/hooks/activity-log-inject.sh" }
     ],
     "stop": [
-      { "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" .kiro/hooks/activity-log-remind.sh" }
+      { "command": "bash .kiro/hooks/activity-log-remind.sh" }
     ]
   }
 }
