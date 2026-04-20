@@ -1,0 +1,37 @@
+name: framework-check
+
+# Self-test suite for the multi-CLI framework. Runs all four per-CLI hook
+# test matrices plus the SSOT drift checker. Intent: catch regressions in
+# hook behavior or replica drift before they land on master.
+#
+# All steps are plain bash — no compile/cache needed. Linux-only (bash is
+# native on ubuntu-latest).
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/*.md'
+
+jobs:
+  framework-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Claude hooks test suite
+        run: bash .claude/hooks/test_hooks.sh
+
+      - name: Kimi hooks test suite
+        run: bash .kimi/hooks/test_hooks.sh
+
+      - name: Kiro hooks test suite
+        run: bash .kiro/hooks/test_hooks.sh
+
+      - name: SSOT drift check
+        run: bash .ai/tools/check-ssot-drift.sh
