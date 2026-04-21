@@ -23,10 +23,15 @@ block() {
 }
 
 # Dangerous rm patterns — broad targets (/ ~ * .)
-case " $norm " in
-    *"rm -rf /"*|*"rm -rf / "*|*"rm -rf ~"*|*"rm -rf *"*|*"rm -rf ."*|*"rm -fr /"*|*"rm -fr ~"*|*"rm -fr *"*|*"rm -fr ."*|*"rm -r -f /"*|*"rm -f -r /"*|*"rm --recursive --force /"*|*"rm --force --recursive /"*)
-        block "'rm -rf' with a broad target (/, ~, *, .) is destructive. Use a specific path, or ask the user to run it manually." ;;
-esac
+# Boundary-aware: the target must be followed by whitespace, a shell separator
+# (; & |), or end-of-string. Otherwise `rm -rf /tmp/foo` would false-positive
+# on a naive substring match against `rm -rf /`.
+rm_flags='(-[rRfF]+|-r[[:space:]]+-f|-f[[:space:]]+-r|--recursive[[:space:]]+--force|--force[[:space:]]+--recursive)'
+rm_target='(/|~|\*|\.)'
+rm_tail='([[:space:]]|[;|&]|$)'
+if [[ " $norm " =~ [[:space:]]rm[[:space:]]+${rm_flags}[[:space:]]+${rm_target}${rm_tail} ]]; then
+    block "'rm -rf' with a broad target (/, ~, *, .) is destructive. Use a specific path, or ask the user to run it manually."
+fi
 
 # Force push — any variant (including --force-with-lease, which is still risky)
 case " $norm " in

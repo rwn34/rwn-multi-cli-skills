@@ -47,6 +47,12 @@ run_test "t16 git status allowed"        "$BH" '{"tool_input":{"command":"git st
 # --- bonus: fail-open on empty/unparseable stdin ---
 run_test "t17 empty stdin fail-open"     "$WE" ''                                                        0
 
+# --- pretool-bash: rm -rf boundary (false-positive regression) ---
+run_test "t18 rm -rf /tmp/foo allowed"   "$BH" '{"tool_input":{"command":"rm -rf /tmp/foo"}}'            0
+run_test "t19 rm -rf / trailing space"   "$BH" '{"tool_input":{"command":"rm -rf / "}}'                  2
+run_test "t20 rm -rf /;echo ok blocked"  "$BH" '{"tool_input":{"command":"rm -rf /;echo ok"}}'           2
+run_test "t21 rm -rf /usr allowed"       "$BH" '{"tool_input":{"command":"rm -rf /usr"}}'                0
+
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"
