@@ -13,7 +13,7 @@ Subagent sessions do not execute `preToolUse` hooks declared in the subagent's o
 
 High — safety hooks (`fs_write` guards, `execute_bash` guards) declared on subagent configs have zero effect. Any root-file-policy, sensitive-file-policy, or destructive-command-policy implemented via Kiro hooks is bypassed automatically every time a subagent is spawned.
 
-## Filed:
+## Filed: https://github.com/kirodotdev/Kiro/issues/7671 (2026-04-21)
 
 ## Environment
 
