@@ -42,7 +42,9 @@ execute for the main agent (orchestrator) session.
 confused context could still push a subagent into unsafe behavior. A Kiro
 runtime fix is the only hard guarantee.
 
-**Upstream bug filed:** <pending — user action> (link TBD)
+**Project tracking issue:** https://github.com/efransiscus/rwn-multi-cli-skills/issues/1 (filed 2026-04-21). Close when Kiro upstream fix is released AND empirical re-verification per handoff 017 passes.
+
+**Upstream bug filed:** <pending — user action> (to be filed at https://github.com/kirodotdev/Kiro/issues/new; paste-ready URL at `.ai/reports/kiro-bug-prefilled-issue-url.txt`)
 
 **What NOT to do because of this:**
 - Do not rely solely on Kiro's hook layer for subagent safety. Combine with
