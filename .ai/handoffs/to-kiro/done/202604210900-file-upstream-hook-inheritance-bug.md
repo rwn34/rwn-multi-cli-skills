@@ -1,5 +1,5 @@
 # File upstream bug — subagent hook inheritance broken
-Status: OPEN
+Status: BLOCKED
 Sender: claude-code (orchestrator, on behalf of user)
 Recipient: kiro-cli
 Created: 2026-04-21 09:00
@@ -85,3 +85,26 @@ On BLOCKED (can't file):
 - Leave this handoff in `open/`, set Status to `BLOCKED`.
 - Append `## Blocker` section explaining why.
 - User files manually via their own account using the report.
+
+
+## Blocker
+
+Kiro CLI (orchestrator) cannot file this issue for three reasons:
+
+1. **No shell access.** The orchestrator cannot run `kiro --version` to fill in
+   the version placeholder. This requires delegating to a subagent or the user.
+2. **No GitHub authentication.** Filing an issue at
+   `https://github.com/kirodotdev/Kiro/issues` requires a GitHub account session.
+   Kiro CLI has no `gh` CLI access, no API token, and no browser session.
+3. **No web form submission.** The `web_fetch` tool is read-only — it cannot POST
+   data or submit forms.
+
+**Upstream tracker confirmed:** `https://github.com/kirodotdev/Kiro/issues`
+(public, active, ~2.5k issues as of 2026-04-21).
+
+**User action required:** File the bug manually using the paste-ready report at
+`.ai/reports/kiro-bug-subagent-hook-inheritance.md`. Before filing:
+- Run `kiro --version` and replace `<FILL IN>` in the report.
+- Go to https://github.com/kirodotdev/Kiro/issues/new and paste the report
+  content (Title through Workaround sections).
+- Report the issue URL back so `.ai/known-limitations.md` can be updated.
