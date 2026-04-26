@@ -78,3 +78,11 @@ id_ed25519*
 
 # ---- MCP runtime cache (Playwright MCP server scratch dir) ----
 .playwright-mcp/
+
+# ---- Code knowledge graphs (local DBs and caches; config.json may be committed) ----
+.codegraph/*
+!.codegraph/config.json
+.kirograph/*
+!.kirograph/config.json
+.kimigraph/*
+!.kimigraph/config.json

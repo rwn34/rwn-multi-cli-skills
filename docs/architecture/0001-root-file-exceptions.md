@@ -49,7 +49,10 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 - `.claude/` — Claude Code config
 - `.kimi/` — Kimi CLI config
 - `.kiro/` — Kiro CLI config
-- `.mcp.json` or `.mcp.json.example` — Claude Code MCP convention
+- `.mcp.json` or `.mcp.json.example` — MCP server configuration (Claude Code + Kimi CLI convention)
+- `.codegraph/` — CodeGraph local knowledge graph (Claude Code tool)
+- `.kirograph/` — KiroGraph local knowledge graph (Kiro CLI tool)
+- `.kimigraph/` — KimiGraph local knowledge graph (Kimi CLI tool)
 
 ### F. Language manifests (allowlist extended only when a language is chosen — amend this ADR at that time)
 

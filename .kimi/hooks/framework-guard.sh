@@ -10,10 +10,10 @@ FILE_PATH=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('to
 
 [ -z "$FILE_PATH" ] && exit 0
 
-# Block .claude/ and .kiro/ directories
+# Block other CLIs' framework and graph directories
 case "$FILE_PATH" in
-    .claude/*|.kiro/*)
-        echo "BLOCKED: Writing to '$FILE_PATH' is not allowed. .claude/ and .kiro/ are owned by other CLIs. Use .ai/ or .kimi/ for framework-level files." >&2
+    .claude/*|.kiro/*|.codegraph/*|.kirograph/*)
+        echo "BLOCKED: Writing to '$FILE_PATH' is not allowed. That path is owned by another CLI. Use .ai/ or .kimi/ for framework-level files." >&2
         exit 2
         ;;
     *)

@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "languages": [
+    "typescript",
+    "javascript",
+    "python",
+    "go",
+    "rust",
+    "java",
+    "c",
+    "cpp",
+    "csharp",
+    "ruby",
+    "php",
+    "swift",
+    "kotlin",
+    "protobuf"
+  ],
+  "exclude": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    ".git/**",
+    "*.min.js",
+    "*.bundle.js",
+    "__pycache__/**",
+    ".venv/**",
+    ".tox/**",
+    "coverage/**",
+    "*.log"
+  ],
+  "maxFileSize": 1048576,
+  "extractDocstrings": true,
+  "trackCallSites": true,
+  "embedSymbols": true,
+  "embeddingModel": "nomic-ai/nomic-embed-text-v1.5",
+  "embeddingBatchSize": 32
+}

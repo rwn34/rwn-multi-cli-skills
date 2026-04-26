@@ -27,6 +27,9 @@ run_test "t3-root-allows-src"      ".kimi/hooks/root-guard.sh"     '{"tool_input
 run_test "t4-fw-allows-ai"         ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".ai/handoffs/test.md"}}'  0
 run_test "t5-fw-blocks-claude"     ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".claude/agents/test.md"}}' 2
 run_test "t6-fw-blocks-kiro"       ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".kiro/agents/test.json"}}' 2
+run_test "t27-fw-allows-kimigraph" ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".kimigraph/config.json"}}' 0
+run_test "t28-fw-blocks-codegraph" ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".codegraph/codegraph.db"}}' 2
+run_test "t29-fw-blocks-kirograph" ".kimi/hooks/framework-guard.sh" '{"tool_input":{"file_path":".kirograph/kirograph.db"}}' 2
 
 # --- sensitive-guard ---
 run_test "t7-sens-blocks-env"      ".kimi/hooks/sensitive-guard.sh" '{"tool_input":{"file_path":".env"}}'              2

@@ -54,6 +54,36 @@ runtime fix is the only hard guarantee.
 
 ---
 
+## Code graph index staleness (all three CLIs)
+
+**Status:** Characterized 2026-04-26 by kimi-cli.
+
+**What:** CodeGraph, KimiGraph, and KiroGraph all maintain a local SQLite index of
+code symbols. When source files change, the index must be re-synced. Each tool has
+auto-sync, but with different reliability:
+
+| Tool | Sync mechanism | Subagent writes synced? |
+|---|---|---|
+| CodeGraph | OS file watcher (FSEvents/inotify/ReadDirectoryChangesW) | Yes (OS-level, agent-agnostic) |
+| KimiGraph | OS file watcher (`fs.watch`) | Yes (OS-level, agent-agnostic) |
+| KiroGraph | Kiro hooks (`fileEdited`/`fileCreated`/`fileDeleted`/`agentStop`) | **No** — blocked by Kiro subagent hook-inheritance bug |
+
+**Impact:** If a Kiro subagent edits files, KiroGraph's index goes stale silently.
+The next `kirograph_context` or `kirograph_search` may return outdated symbol
+locations or miss new symbols entirely.
+
+**Mitigation:**
+1. Run `kirograph sync` manually after subagent-heavy sessions.
+2. All three tools run a pre-query freshness check; if they detect a mismatch,
+   some will warn. Do not ignore warnings — run `sync`.
+3. For critical refactors, run a full `kirograph index --force` before starting.
+
+**Acceptance:** Stale index is an advisory failure mode, not a safety issue. The
+worst case is wrong code locations in exploration results (LLM can verify by
+reading the file). No data loss risk.
+
+---
+
 ## Kimi CLI — bash guards wired into global config
 
 **Status:** Characterized 2026-04-19 22:30 by kimi-cli (handoff 031). Snippet created 2026-04-19 23:30 (handoff 032). **Pasted and wired 2026-04-20.**

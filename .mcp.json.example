@@ -27,6 +27,21 @@
         "CLOUDFLARE_API_TOKEN": "$CLOUDFLARE_API_TOKEN",
         "CLOUDFLARE_ACCOUNT_ID": "$CLOUDFLARE_ACCOUNT_ID"
       }
+    },
+    "_codegraph_example": {
+      "_comment": "CodeGraph — semantic code knowledge graph for Claude Code. Reduces exploration tool calls by 90%+. Install: npx @colbymchenry/codegraph",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    },
+    "_kimigraph_example": {
+      "_comment": "KimiGraph — semantic code knowledge graph for Kimi CLI. Reduces exploration tool calls by 90%+. Install: npm install -g rwn-kimigraph",
+      "command": "kimigraph",
+      "args": ["serve", "--mcp"]
+    },
+    "_kirograph_example": {
+      "_comment": "KiroGraph — semantic code knowledge graph for Kiro CLI. Reduces exploration tool calls by 90%+. Install: npm install -g kirograph",
+      "command": "kirograph",
+      "args": ["serve", "--mcp"]
     }
   }
 }
