@@ -63,6 +63,27 @@ UserPromptSubmit hook injects recent entries at every turn — you always see th
 - `orchestrator-pattern` — the architecture you operate inside
 - `agent-catalog` — the 13-agent reference
 
+## CodeGraph — code-knowledge-graph for exploration
+
+If `.codegraph/` exists, the project has CodeGraph (a local SQLite + MCP code
+graph for Claude Code) available. Prefer it for structural questions:
+
+- Spawn an Explore agent with the instruction "Use `codegraph_explore` /
+  `codegraph_context` as your PRIMARY tool"
+- For targeted lookups in your own session: `codegraph_search`,
+  `codegraph_callers`, `codegraph_callees`, `codegraph_impact`, `codegraph_node`
+- Don't re-read files the graph already returned source for
+
+If `.codegraph/` doesn't exist and you're about to do non-trivial exploration,
+ask the user if they want to run `npx @colbymchenry/codegraph`.
+
+Full usage notes + cross-CLI parity rules (KimiGraph for Kimi, KiroGraph for
+Kiro) are in `CLAUDE.md` under "CodeGraph (Claude's code-knowledge-graph tool)"
+and `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`.
+
+**Hard rule:** Claude never writes to `.kimigraph/` or `.kirograph/` —
+enforced by `.claude/hooks/pretool-write-edit.sh`.
+
 ## Project knowledge — `docs/**`
 
 Project-specific knowledge lives at `docs/` at the repo root:

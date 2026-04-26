@@ -65,3 +65,66 @@ protocol if you're asked to perform an archive move.
 
 - `karpathy-guidelines` — auto-activates on coding tasks via its description. See
   `.claude/skills/karpathy-guidelines/SKILL.md`.
+
+## CodeGraph (Claude's code-knowledge-graph tool)
+
+CodeGraph is a local SQLite knowledge graph of this codebase, queryable via MCP.
+It parses source with tree-sitter and exposes structural lookups (symbols, callers,
+callees, impact, search) — typical exploration drops from 10+ file reads to 1
+graph query. Repo: https://github.com/colbymchenry/codegraph. Install:
+`npx @colbymchenry/codegraph`.
+
+### When CodeGraph is active
+
+If `.codegraph/` exists, prefer the graph for structural questions before reading
+files:
+
+1. Spawn an Explore agent for broad questions ("how does X work?", "what calls Y?")
+   and tell it: "This project has CodeGraph initialized. Use `codegraph_explore` /
+   `codegraph_context` as your PRIMARY tool — it returns full source sections in
+   one call."
+2. Do NOT re-read files that the graph already returned source for.
+3. Fall back to `Grep`/`Glob`/`Read` only for files the graph flags as "additional
+   relevant" or when the graph returns no results.
+4. The main session may use lightweight tools directly: `codegraph_search`,
+   `codegraph_callers`, `codegraph_callees`, `codegraph_impact`, `codegraph_node`.
+
+### When CodeGraph is NOT active
+
+If `.codegraph/` doesn't exist, ask the user once at the start of substantive
+exploration work:
+
+> "This project doesn't have CodeGraph initialized. Want me to run
+> `npx @colbymchenry/codegraph` to build a graph for faster exploration?"
+
+### Quick reference
+
+| Tool | Use for |
+|---|---|
+| `codegraph_explore` | Primary exploration — full source sections in one call |
+| `codegraph_context` | Build task context from natural-language prompt |
+| `codegraph_search` | Find symbols by name (FTS5) |
+| `codegraph_callers` | Who calls this symbol |
+| `codegraph_callees` | What this symbol calls |
+| `codegraph_impact` | What's affected by changing a symbol |
+| `codegraph_node` | Single symbol details + source |
+
+(Run `codegraph --help` after install for the authoritative tool list.)
+
+### Limitations
+
+- Dynamic imports, reflection, and runtime-generated calls are invisible to static analysis.
+- **Embeddings are not supported** — CodeGraph is FTS5-only. For semantic similarity,
+  KimiGraph or KiroGraph (their respective CLIs' tools) offer opt-in vector search.
+- Index is auto-synced via OS file watcher. If the watcher misses changes, run the
+  manual sync command (`codegraph sync` or equivalent — check `codegraph --help`).
+- CodeGraph's installer registers MCP globally in `~/.claude.json` by default;
+  prefer migrating the entry to project-local `.mcp.json` for portability.
+
+### Cross-CLI parity
+
+This project also has KimiGraph (`.kimigraph/`) for Kimi CLI and KiroGraph
+(`.kirograph/`) for Kiro CLI — same architecture, different host CLIs. **Claude
+never writes to `.kimigraph/` or `.kirograph/`** (enforced by
+`.claude/hooks/pretool-write-edit.sh`). See
+`.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md` for the full plan.

@@ -3,15 +3,10 @@
 # Blocks writes that violate (1) framework-dir rule, (2) sensitive-file rule, (3) root-file policy.
 # Reads tool call JSON from stdin; exit 2 + stderr to block with a reason.
 
-input=$(cat)
-
 # Extract file_path via python (jq not reliably installed on Windows/Git Bash)
-path=$(echo "$input" | python -c "import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('tool_input', {}).get('file_path', ''))
-except Exception:
-    print('')" 2>/dev/null)
+path=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+      python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+      echo "")
 
 # No path? allow (nothing to evaluate)
 [ -z "$path" ] && exit 0
@@ -41,6 +36,10 @@ case "$rel" in
         block ".kimi/ is Kimi CLI's territory. Claude never writes there. Use .ai/handoffs/to-kimi/open/NNN-slug.md to request the change." ;;
     .kiro|.kiro/*)
         block ".kiro/ is Kiro CLI's territory. Claude never writes there. Use .ai/handoffs/to-kiro/open/NNN-slug.md to request the change." ;;
+    .kimigraph|.kimigraph/*)
+        block ".kimigraph/ is Kimi's code-graph territory (KimiGraph tool). Claude never writes there." ;;
+    .kirograph|.kirograph/*)
+        block ".kirograph/ is Kiro's code-graph territory (KiroGraph tool). Claude never writes there." ;;
 esac
 
 # Rule 2 — sensitive-file patterns. Block even for orchestrator; user must write manually.
