@@ -1,0 +1,39 @@
+# Configures GitHub's auto-generated release notes for this repo.
+# The release workflow (.github/workflows/release.yml) sets
+# `generate_release_notes: true` on softprops/action-gh-release; that action
+# asks the GitHub API to produce notes per these rules.
+#
+# Caveat — category matching is PR-label-driven. This repo currently lands
+# changes via direct-to-master commits (Conventional Commits), so the API
+# falls back to listing commit messages under "Other changes" until PRs
+# carrying the labels below appear. That's expected; sections fill in once
+# PR-driven flow starts.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: Features
+      labels:
+        - feat
+        - feature
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - fix
+        - bug
+    - title: Documentation
+      labels:
+        - docs
+        - documentation
+    - title: Internal / chores
+      labels:
+        - chore
+        - refactor
+        - ci
+        - build
+    - title: Other changes
+      labels:
+        - "*"

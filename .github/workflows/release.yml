@@ -1,0 +1,73 @@
+name: release
+
+# Triggered when a vX.Y.Z (or vX.Y.Z-pre.N) tag is pushed. Builds the
+# multi-cli-install Node package, packages the bash installers, and creates
+# a GitHub Release with auto-generated notes (rules in .github/release.yml)
+# and downloadable assets attached. Pre-release detection is purely
+# tag-shape based — any tag containing "-" (e.g. v0.0.1-pre.1, v0.1.0-rc.1)
+# is marked pre-release.
+#
+# This workflow does NOT publish to npm — that gate is owned by
+# release-engineer and is held until real-project validation.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history is required so the auto-notes generator can diff
+          # this tag against the previous one.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tools/multi-cli-install/package-lock.json
+
+      - name: Install + build multi-cli-install
+        working-directory: tools/multi-cli-install
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package multi-cli-install tarball
+        run: |
+          mkdir -p dist-release
+          tar -czf "dist-release/multi-cli-install-${GITHUB_REF_NAME}.tar.gz" \
+            -C tools multi-cli-install \
+            --exclude='multi-cli-install/node_modules' \
+            --exclude='multi-cli-install/test' \
+            --exclude='multi-cli-install/.turbo'
+
+      - name: Package bash installers tarball
+        run: |
+          tar -czf "dist-release/bash-installers-${GITHUB_REF_NAME}.tar.gz" \
+            -C scripts new-project.sh install-template.sh
+
+      - name: Stage raw installer scripts for direct curl
+        run: |
+          cp scripts/new-project.sh dist-release/new-project.sh
+          cp scripts/install-template.sh dist-release/install-template.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist-release/multi-cli-install-${{ github.ref_name }}.tar.gz
+            dist-release/bash-installers-${{ github.ref_name }}.tar.gz
+            dist-release/new-project.sh
+            dist-release/install-template.sh
