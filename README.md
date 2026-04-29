@@ -2,7 +2,7 @@
 
 **A coordination framework that lets Claude Code, Kimi CLI, and Kiro CLI work on the same project in parallel — safely, with shared state and enforced write boundaries.**
 
-> Status: pre-1.0. Solid for solo / small-team projects. Not yet battle-tested in production. See [Confidence & limitations](#confidence--limitations) below for honest caveats.
+> Status: pre-1.0 (last refreshed 2026-04-27). Solid for solo / small-team projects. Bash install path is battle-tested; the new Node.js installer at `tools/multi-cli-install/` is pre-release with fixture-only validation. Not yet battle-tested in production. See [Confidence & limitations](#confidence--limitations) for honest caveats.
 
 ---
 
@@ -97,6 +97,20 @@ The installer:
 - Commits on a safety branch so you can roll back easily
 
 See [`scripts/README.md`](./scripts/README.md) for details on both scripts.
+
+### Option C — Node.js installer (pre-release)
+
+**Status: pre-release (v0.0.1).** A new Node.js installer is in development at `tools/multi-cli-install/` that consolidates Options A and B into a single `npx`-installable binary with project inspection, layout reorganization for existing projects, and AI-behavior adaptation. It has been validated against fixture projects only — see [`.ai/known-limitations.md`](./.ai/known-limitations.md) for the full risk assessment. Use Options A or B for now if you want a battle-tested install path.
+
+```bash
+# Build locally (not yet published to npm)
+cd tools/multi-cli-install
+npm install && npm run build
+
+# Use against a target
+node bin/multi-cli-install.ts /path/to/project --dry-run    # preview
+node bin/multi-cli-install.ts my-new-project --new          # greenfield
+```
 
 ### After install — wire Kimi's global hooks (one manual step)
 
@@ -254,6 +268,7 @@ See [.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md](./.ai/research
 ├── infra/                            YOUR infrastructure-as-code
 ├── migrations/                       YOUR DB migrations
 ├── tools/                            YOUR dev tooling
+│   └── multi-cli-install/            framework's own Node.js installer (v0.0.1, pre-release)
 ├── config/                           YOUR runtime config (non-secret)
 ├── assets/                           YOUR static assets
 │
@@ -278,7 +293,7 @@ See [.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md](./.ai/research
 
 ## Confidence & limitations
 
-**Current assessment (2026-04-20):** ~80% confidence for real-project work, ~55% for production-grade systems.
+**Current assessment (2026-04-27):** ~80% confidence for real-project work via the bash install path, ~50% via the new Node.js installer (fixture-only validated, see [`.ai/known-limitations.md`](./.ai/known-limitations.md)). ~55% for production-grade systems regardless of install path.
 
 **Honest weaknesses** (tracked in [`.ai/known-limitations.md`](./.ai/known-limitations.md)):
 
@@ -288,6 +303,7 @@ See [.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md](./.ai/research
 4. **No RBAC** — any user running any CLI has full framework power. Solo / small team only.
 5. **No observability / metrics** — activity log is the only audit mechanism; editable by convention, not enforcement.
 6. **Handoff protocol is heavyweight for quick fixes** — 30-line change requires a file, a move, a log entry. Fine for real work; ceremony-heavy for typos.
+7. **Node.js installer is pre-release.** `tools/multi-cli-install/` v0.0.1 is fixture-only validated — real-project validation deferred per [`.ai/known-limitations.md`](./.ai/known-limitations.md). Use bash scripts for canonical install until v1.0.0.
 
 For a full list and the mitigation plan, read [`.ai/known-limitations.md`](./.ai/known-limitations.md).
 

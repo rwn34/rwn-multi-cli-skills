@@ -3,6 +3,14 @@
 Operational scripts for this template. Per ADR-0001, `scripts/` is a
 permitted project directory.
 
+> **Note:** A new Node.js installer at `tools/multi-cli-install/` is under
+> development that will eventually consolidate `new-project.sh` and
+> `install-template.sh` into a single `npx`-installable command. The new
+> installer is currently pre-release (v0.0.1, fixture-only validated — see
+> [`.ai/known-limitations.md`](../.ai/known-limitations.md)). The bash scripts
+> in this directory remain the canonical install path until the Node.js
+> installer reaches v1.0.0 with real-project validation.
+
 ## Two modes, two scripts
 
 | Script | When to use |

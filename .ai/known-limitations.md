@@ -84,6 +84,46 @@ reading the file). No data loss risk.
 
 ---
 
+## multi-cli-install v0.0.1 — fixture-only validation (no real-project surface)
+
+**Status:** Characterized 2026-04-27 by claude-code (orchestrator).
+
+**What:** `tools/multi-cli-install/` v0.0.1 (the new Node.js installer at
+`npx @rwn34/multi-cli-install`) was validated against fixture projects only —
+minimal trees of empty files representing 8 stacks (Next.js App, Next.js Pages,
+Vite plain TS, Django, Rails, Rust workspace, Go monorepo, Python with
+pyproject). The original adoption plan called for mandatory validation against
+3 real-project paths before v1.0.0 publish; the user explicitly accepted
+fixture-only validation as a trade-off for ship speed.
+
+**Risk:** Real-world surfaces — large codebases, weird configs, monorepo edge
+cases, framework version drift, CI globs that fixtures don't have, custom
+tsconfig paths, Cargo workspace member layouts that differ from the fixture,
+etc. — won't surface until the first real adopter runs the installer. The
+Migration Engine (`src/migration/`) is the highest-risk module: a buggy rule
+set on real code corrupts the codebase.
+
+**Mitigation:**
+1. The installer requires a clean git working tree before any install (B4 fix
+   in `bin/multi-cli-install.ts`) so any failure is recoverable by
+   `git reset --hard`.
+2. Per-rule-set commits during execute (planned but verify in code) make
+   bisect-by-topic possible.
+3. The existing `scripts/install-template.sh` bash installer remains available
+   as a fallback that's been used in this repo's own bootstrapping.
+4. `--dry-run` flag previews all changes without writes — first-run users
+   should always use `--dry-run` before a live install.
+
+**Acceptance:** Do NOT publish to npm without at least one real-project
+validation. The package can stay at v0.0.1 in this repo as a usable-but-pre-release
+tool for adopters willing to accept the risk.
+
+**Tracking:** No upstream issue (this is owner-controlled). When the first real
+adopter surfaces a bug, file in this repo's issues and consider it the start of
+v0.x → v1.0.0 stabilization.
+
+---
+
 ## KiroGraph — `kirograph install` hangs on interactive prompts in non-TTY
 
 **Status:** Characterized 2026-04-26 by kiro-cli during Phase B Part A install.
