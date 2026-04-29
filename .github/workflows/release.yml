@@ -46,10 +46,10 @@ jobs:
         run: |
           mkdir -p dist-release
           tar -czf "dist-release/multi-cli-install-${GITHUB_REF_NAME}.tar.gz" \
-            -C tools multi-cli-install \
             --exclude='multi-cli-install/node_modules' \
             --exclude='multi-cli-install/test' \
-            --exclude='multi-cli-install/.turbo'
+            --exclude='multi-cli-install/.turbo' \
+            -C tools multi-cli-install
 
       - name: Package bash installers tarball
         run: |
