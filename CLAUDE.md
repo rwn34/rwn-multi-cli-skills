@@ -69,3 +69,13 @@ protocol if you're asked to perform an archive move.
 ## Code knowledge graphs
 
 Claude has access to **CodeGraph** for this project — a local SQLite knowledge graph queryable via MCP. Cross-CLI graph principles (Claude/Kimi/Kiro) live in `.ai/instructions/code-graphs/principles.md`; the Claude skill replica is at `.claude/skills/code-graphs/SKILL.md` and auto-activates on exploration tasks. See `.ai/known-limitations.md` for known-issue notes.
+
+## Self-grep-verify
+
+Before publishing any claim of completed work — completion handoffs, activity
+log entries claiming file changes, or chat messages like "I fixed X" — grep the
+tree for the construct you say you added/changed/removed and paste 1-3 matching
+lines as evidence. Tier 1 (handoffs) is strict, Tier 2 (activity log) is
+medium, Tier 3 (chat) is honor-based. Full rule:
+`.ai/instructions/self-grep-verify/principles.md` (Claude replica at
+`.claude/skills/self-grep-verify/SKILL.md`, auto-activates via skill description).

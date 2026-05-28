@@ -48,6 +48,17 @@ paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/NNN-slug.md` (
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude.
 
+## Self-grep-verify (claims must be grounded in the tree)
+
+When a CLI claims completed work — in a completion handoff to
+`.ai/handoffs/to-<other>/open/`, in an `.ai/activity/log.md` entry, or in a
+chat message — every concrete claim must be backed by a `rg`/`grep` snippet
+showing the actual line(s) in the working tree. Enforcement is asymmetric:
+strict for handoffs (where another CLI builds on the work), medium for activity
+log entries, soft for chat (where the user catches drift live).
+
+Full rule: `.ai/instructions/self-grep-verify/principles.md`.
+
 ## Archive folders (skip during routine reads)
 
 Folders matching `.ai/**/archive/` (`.ai/activity/archive/`,
