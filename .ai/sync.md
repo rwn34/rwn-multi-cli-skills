@@ -24,6 +24,9 @@ disagree, regenerate from here. Never edit the replicas directly.
 | `.ai/instructions/code-graphs/principles.md` | `.claude/skills/code-graphs/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
 | `.ai/instructions/code-graphs/principles.md` | `.kimi/steering/code-graphs.md` | Kimi steering |
 | `.ai/instructions/code-graphs/principles.md` | `.kiro/steering/code-graphs.md` | Kiro steering |
+| `.ai/instructions/self-grep-verify/principles.md` | `.claude/skills/self-grep-verify/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
+| `.ai/instructions/self-grep-verify/principles.md` | `.kimi/steering/self-grep-verify.md` | Kimi steering |
+| `.ai/instructions/self-grep-verify/principles.md` | `.kiro/steering/self-grep-verify.md` | Kiro steering |
 
 ## Copy commands
 
@@ -51,6 +54,11 @@ cp .ai/instructions/code-graphs/principles.md .kimi/steering/code-graphs.md
 cp .ai/instructions/code-graphs/principles.md .kiro/steering/code-graphs.md
 # Claude SKILL.md needs frontmatter — body-only replace.
 
+# self-grep-verify
+cp .ai/instructions/self-grep-verify/principles.md .kimi/steering/self-grep-verify.md
+cp .ai/instructions/self-grep-verify/principles.md .kiro/steering/self-grep-verify.md
+# Claude SKILL.md needs frontmatter — body-only replace.
+
 # Claude SKILL.md files need CLI-specific frontmatter + provenance comments —
 # do not blind-copy. Keep the existing frontmatter header, then replace the body
 # below the `<!-- SSOT: ... -->` line with the current contents of principles.md.
@@ -72,6 +80,9 @@ Copy-Item .ai/instructions/agent-catalog/principles.md .kiro/steering/agent-cata
 # code-graphs
 Copy-Item .ai/instructions/code-graphs/principles.md .kimi/steering/code-graphs.md
 Copy-Item .ai/instructions/code-graphs/principles.md .kiro/steering/code-graphs.md
+# self-grep-verify
+Copy-Item .ai/instructions/self-grep-verify/principles.md .kimi/steering/self-grep-verify.md
+Copy-Item .ai/instructions/self-grep-verify/principles.md .kiro/steering/self-grep-verify.md
 # (Kiro SKILL.md has a frontmatter header and is regenerated manually — see .ai/cli-map.md)
 ```
 
