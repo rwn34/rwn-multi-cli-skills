@@ -224,6 +224,62 @@ behavior before deciding on file-lock vs. lease-based coordination.
 
 ---
 
+## Annotated tag SHA comparisons — peel before diffing
+
+**Status:** Characterized 2026-05-28 by claude-code (orchestrator) after a false-alarm divergence triggered an unnecessary v0.0.2-pre.4 → pre.5 bump.
+
+**What:** This project's `release.yml` workflow produces **annotated** git tags
+(not lightweight). An annotated tag is a separate git object with its own SHA
+that contains the tagger + message + a pointer to the wrapped commit. So for
+any annotated tag, two SHAs exist:
+
+- The tag-object SHA (returned by `git rev-parse <tag>`, `git ls-remote --tags`,
+  and visible in GitHub's API as the tag ref)
+- The commit SHA (returned by `git rev-parse <tag>^{}`, visible in `git log`)
+
+These will always differ for annotated tags. They are NOT a divergence.
+
+**The trap:** when sanity-checking a tag across local vs remote, comparing
+`git log --oneline -1 master` (commit SHA) against `git ls-remote --tags origin
+<tag>` (tag-object SHA) will always show a "mismatch" even on a perfectly
+healthy tag. This false alarm cost one cycle (pre.4 was reported as divergent,
+pre.5 was cut to sidestep, then forensic investigation showed pre.4 was fine).
+
+**Repro:**
+1. `git ls-remote --tags origin v0.0.2-pre.4` → returns `2120ce3...`
+2. `git log --oneline -1 v0.0.2-pre.4` → returns `993dc49 chore(activity-log)...`
+3. Naive comparison: "DIVERGENCE"
+4. `git cat-file -t v0.0.2-pre.4` → `tag` (= annotated, two-SHA model applies)
+5. `git rev-parse v0.0.2-pre.4^{}` → `993dc49` (= peeled commit, matches log)
+6. No divergence existed.
+
+**Mitigation — what to do when comparing tag SHAs across local/remote:**
+
+1. First check tag type: `git cat-file -t <tag>`. If `commit` → lightweight,
+   SHAs compare directly. If `tag` → annotated, you must peel.
+2. For annotated tags, always peel before comparing:
+   - Local commit:  `git rev-parse <tag>^{}`
+   - Remote commit: `git ls-remote refs/tags/<tag>^{} origin` (or peel locally
+     after `git fetch origin tag <tag> --no-tags` which fetches the object
+     without overwriting the local tag ref)
+3. The script in `.ai/tools/check-ssot-drift.sh` is unrelated and unaffected —
+   it does not compare tags. This limitation is purely a release-engineer /
+   ad-hoc-git-inspection concern.
+
+**Acceptance:** UX papercut for git-inspection workflows. No correctness or
+safety risk — tags themselves are healthy. The cost is wasted release cycles
+when the false alarm triggers a precautionary version bump.
+
+**What NOT to do because of this:**
+- Do not infer "tag divergence" from a single SHA comparison without first
+  checking tag type. Annotated tags will always produce two SHAs.
+- Do not force-push or delete a tag based on this false-alarm pattern. The
+  destructive command may clobber a healthy ref.
+- Do not bump a version pre-emptively to "sidestep" the divergence without
+  first peeling and re-comparing — the divergence may not exist.
+
+---
+
 ## How to add an entry
 
 When you discover a new platform quirk:
