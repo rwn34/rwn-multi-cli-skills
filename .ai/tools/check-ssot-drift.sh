@@ -74,6 +74,14 @@ check_pair ".ai/instructions/orchestrator-pattern/principles.md" ".kiro/steering
 check_pair ".ai/instructions/agent-catalog/principles.md"       ".claude/skills/agent-catalog/SKILL.md"          yes
 check_pair ".ai/instructions/agent-catalog/principles.md"       ".kimi/steering/agent-catalog.md"                no
 check_pair ".ai/instructions/agent-catalog/principles.md"       ".kiro/steering/agent-catalog.md"                no
+# code-graphs / principles
+check_pair ".ai/instructions/code-graphs/principles.md"         ".claude/skills/code-graphs/SKILL.md"            yes
+check_pair ".ai/instructions/code-graphs/principles.md"         ".kimi/steering/code-graphs.md"                  no
+check_pair ".ai/instructions/code-graphs/principles.md"         ".kiro/steering/code-graphs.md"                  no
+# self-grep-verify / principles
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".claude/skills/self-grep-verify/SKILL.md"       yes
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kimi/steering/self-grep-verify.md"             no
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kiro/steering/self-grep-verify.md"             no
 
 echo "Checked: $checked replicas, Drift: $drift"
 [ "$drift" -eq 0 ] && exit 0 || exit 1
