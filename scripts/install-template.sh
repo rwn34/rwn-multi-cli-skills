@@ -14,6 +14,9 @@ set -euo pipefail
 MARKER="# ADDED BY install-template.sh"
 BRANCH="ai-template-install"
 ROLLBACK_FILE=".ai-install-rollback-point.txt"
+# Phase A: framework version stamped into .ai/.framework-version on install.
+# Must be bumped each release in lockstep with tools/multi-cli-install/package.json.
+FRAMEWORK_VERSION="0.0.3"
 
 # ---------- globals set later ----------
 TEMPLATE_DIR=""
@@ -672,16 +675,47 @@ run_tests() {
   return $failed
 }
 
+# Phase A (multi-cli-skills v0.0.3+): write framework version marker + manifest
+# so future --upgrade (Node installer) works for bash-installed projects too.
+# Manifest is intentionally empty for bash installs — the bash installer doesn't
+# enumerate framework-owned files reliably. Node --upgrade rebuilds it on first run.
+write_framework_marker() {
+  local now
+  now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  mkdir -p "$TARGET/.ai"
+  cat > "$TARGET/.ai/.framework-version" <<EOF
+{
+  "framework_version": "$FRAMEWORK_VERSION",
+  "installer_name": "scripts/install-template.sh",
+  "installer_version": "$FRAMEWORK_VERSION",
+  "installed_at": "$now",
+  "upgrade_history": []
+}
+EOF
+  cat > "$TARGET/.ai/.framework-manifest.json" <<EOF
+{
+  "version": "$FRAMEWORK_VERSION",
+  "files": {}
+}
+EOF
+  track ".ai/.framework-version"
+  track ".ai/.framework-manifest.json"
+  log "Wrote .ai/.framework-version + .ai/.framework-manifest.json (v$FRAMEWORK_VERSION)"
+}
+
 phase5() {
   log "=== Phase 5: verify + commit ==="
   if [ "$DRY_RUN" -eq 1 ]; then
     log "DRY-RUN: would run hook tests + ssot drift check + git commit."
+    log "DRY-RUN: would write .ai/.framework-version + .ai/.framework-manifest.json (v$FRAMEWORK_VERSION)"
     return 0
   fi
 
   if ! run_tests; then
     die "One or more verification tests failed. Branch '$BRANCH' left intact for inspection."
   fi
+
+  write_framework_marker
 
   cd "$TARGET"
 
@@ -727,6 +761,7 @@ print_summary() {
 ==============================================================================
 
 Template SHA:      $TEMPLATE_SHA
+Framework version: $FRAMEWORK_VERSION (stamped in .ai/.framework-version)
 Target:            $TARGET
 Language detected: ${DETECTED_LANG:-none}
 
