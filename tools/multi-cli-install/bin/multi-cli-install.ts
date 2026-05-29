@@ -4,6 +4,8 @@ import {
   planMigration, executePlan, applyPatches,
   scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy,
 } from '../src/index.js';
+import { writeFrameworkVersion } from '../src/upgrade/version.js';
+import { buildManifestFromInstalledTree, writeFrameworkManifest } from '../src/upgrade/manifest.js';
 import { execSync } from 'node:child_process';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
@@ -121,6 +123,23 @@ async function main() {
     const adapted = adaptPolicy(targetDir, profile.stack.language, profile.stack.packageManager, dryRun);
     for (const p of adapted) console.log(`  ${p}`);
     console.log('');
+
+    // Phase A: write framework version marker + manifest for future --upgrade support.
+    if (!dryRun) {
+      const now = new Date().toISOString();
+      writeFrameworkVersion(targetDir, {
+        framework_version: VERSION,
+        installer_name: '@rwn34/multi-cli-install',
+        installer_version: VERSION,
+        installed_at: now,
+        upgrade_history: [],
+      });
+      const manifest = buildManifestFromInstalledTree(targetDir, VERSION);
+      writeFrameworkManifest(targetDir, manifest);
+      console.log(`  ✓ Framework version marker written: .ai/.framework-version (v${VERSION})`);
+      console.log(`  ✓ Framework manifest written: .ai/.framework-manifest.json (${Object.keys(manifest.files).length} files tracked)`);
+      console.log('');
+    }
   }
 
   // Write decision log
