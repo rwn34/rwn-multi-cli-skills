@@ -271,6 +271,141 @@ Linux/macOS only — the file lost its executable bit. Either invoke via `bash`,
 chmod +x scripts/install-template.sh
 ```
 
+## Upgrading an existing framework install
+
+### Status
+
+A proper `--upgrade` flag is in design (see `.ai/research/framework-upgrade-mode-plan.md` once that lands). Until it ships, the recipe below is the documented manual cherry-pick procedure — not automated, not yet tested across multiple adopter projects.
+
+### When you need this
+
+The installers (`scripts/install-template.sh`, `npx @rwn34/multi-cli-install`) are first-install-only. Cherry-pick a newer release into an already-adopted project when:
+
+- A new release added an SSOT your installed framework predates (e.g., `self-grep-verify` landed in `v0.0.2-pre.5`).
+- You want the drift-checker oversight fix from pre.5 — it now validates **18 replicas vs 12** (the prior version silently skipped `code-graphs`).
+- You want the updated reference text in `AGENTS.md` / `CLAUDE.md` that points at the new framework rules.
+
+### The recipe (Linux / macOS / Git Bash)
+
+**Preconditions.** Clean git working tree on your project (`git status` empty), and pick a target release — `v0.0.2-pre.5` is the recommended floor since it includes the drift-checker fix.
+
+**1. Download and extract the release tarball.**
+
+```bash
+cd /tmp
+curl -L -o multi-cli-install.tar.gz \
+  https://github.com/rwn34/rwn-multi-cli-skills/releases/download/v0.0.2-pre.5/multi-cli-install-v0.0.2-pre.5.tar.gz
+tar -xzf multi-cli-install.tar.gz
+# Contents land at /tmp/package/ — npm tarball convention.
+# The framework template lives at /tmp/package/assets/.
+```
+
+**2. Copy new SSOT additions** (safe — these are new files, no merge conflict possible):
+
+```bash
+# self-grep-verify quartet (1 SSOT + 3 CLI replicas) added in pre.5
+cp -r /tmp/package/assets/.ai/instructions/self-grep-verify <PROJECT>/.ai/instructions/
+cp -r /tmp/package/assets/.claude/skills/self-grep-verify   <PROJECT>/.claude/skills/
+cp    /tmp/package/assets/.kimi/steering/self-grep-verify.md <PROJECT>/.kimi/steering/
+cp    /tmp/package/assets/.kiro/steering/self-grep-verify.md <PROJECT>/.kiro/steering/
+```
+
+For any other new SSOT in future releases, follow the same pattern: copy `assets/.ai/instructions/<name>/`, `assets/.claude/skills/<name>/`, `assets/.kimi/steering/<name>.md`, `assets/.kiro/steering/<name>.md`.
+
+**3. Merge the 4 reference files manually** — these may contain your customizations, so diff and port:
+
+```bash
+diff -u <PROJECT>/.ai/sync.md           /tmp/package/assets/.ai/sync.md
+diff -u <PROJECT>/AGENTS.md             /tmp/package/assets/AGENTS.md
+diff -u <PROJECT>/CLAUDE.md             /tmp/package/assets/CLAUDE.md
+diff -u <PROJECT>/.ai/tools/check-ssot-drift.sh /tmp/package/assets/.ai/tools/check-ssot-drift.sh
+```
+
+For each, eyeball the diff and port the additions into your project file. Specifically:
+
+- **`.ai/sync.md`** — port the new rows + the new `cp` blocks for `self-grep-verify`.
+- **`AGENTS.md`**, **`CLAUDE.md`** — port the new SSOT-pointer sections. If you've heavily customized these, just port the pointer paragraphs and leave your edits intact.
+- **`.ai/tools/check-ssot-drift.sh`** — add these 6 lines verbatim (3 for `code-graphs` if your installed version was missing it, plus 3 for the new `self-grep-verify`):
+
+```bash
+# code-graphs / principles
+check_pair ".ai/instructions/code-graphs/principles.md"         ".claude/skills/code-graphs/SKILL.md"            yes
+check_pair ".ai/instructions/code-graphs/principles.md"         ".kimi/steering/code-graphs.md"                  no
+check_pair ".ai/instructions/code-graphs/principles.md"         ".kiro/steering/code-graphs.md"                  no
+# self-grep-verify / principles
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".claude/skills/self-grep-verify/SKILL.md"       yes
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kimi/steering/self-grep-verify.md"             no
+check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kiro/steering/self-grep-verify.md"             no
+```
+
+**4. Verify the upgrade.**
+
+```bash
+cd <PROJECT>
+bash .ai/tools/check-ssot-drift.sh   # expect "Checked: 18 replicas, Drift: 0"
+bash .claude/hooks/test_hooks.sh     # expect 24/24 PASS
+bash .kimi/hooks/test_hooks.sh       # expect 29/29 PASS
+bash .kiro/hooks/test_hooks.sh       # expect 25/25 PASS
+```
+
+**5. Commit.**
+
+```bash
+git checkout -b framework-upgrade-pre5
+git add .
+git commit -m "chore(framework): upgrade to multi-cli-skills v0.0.2-pre.5"
+```
+
+### Windows PowerShell variant
+
+```powershell
+# 1. Download and extract
+Set-Location $env:TEMP
+Invoke-WebRequest `
+  -Uri "https://github.com/rwn34/rwn-multi-cli-skills/releases/download/v0.0.2-pre.5/multi-cli-install-v0.0.2-pre.5.tar.gz" `
+  -OutFile multi-cli-install.tar.gz
+# tar ships with Windows 10+; if missing, use Expand-Archive on a .zip release instead.
+tar -xzf multi-cli-install.tar.gz
+# Tarball extracts to $env:TEMP\package\ ; framework template at $env:TEMP\package\assets\
+
+# 2. Copy new SSOT additions
+Copy-Item "$env:TEMP\package\assets\.ai\instructions\self-grep-verify" `
+          "<PROJECT>\.ai\instructions\" -Recurse
+Copy-Item "$env:TEMP\package\assets\.claude\skills\self-grep-verify" `
+          "<PROJECT>\.claude\skills\" -Recurse
+Copy-Item "$env:TEMP\package\assets\.kimi\steering\self-grep-verify.md" `
+          "<PROJECT>\.kimi\steering\"
+Copy-Item "$env:TEMP\package\assets\.kiro\steering\self-grep-verify.md" `
+          "<PROJECT>\.kiro\steering\"
+
+# 3. Diff the 4 reference files (PowerShell's Compare-Object, or use git diff --no-index)
+git diff --no-index "<PROJECT>\AGENTS.md"             "$env:TEMP\package\assets\AGENTS.md"
+git diff --no-index "<PROJECT>\CLAUDE.md"             "$env:TEMP\package\assets\CLAUDE.md"
+git diff --no-index "<PROJECT>\.ai\sync.md"           "$env:TEMP\package\assets\.ai\sync.md"
+git diff --no-index "<PROJECT>\.ai\tools\check-ssot-drift.sh" `
+                    "$env:TEMP\package\assets\.ai\tools\check-ssot-drift.sh"
+# Port additions into your project files by hand. The 6 check_pair lines from
+# the bash recipe above paste verbatim into check-ssot-drift.sh.
+
+# 4. Verify (run via Git Bash since the test scripts are bash)
+& "C:\Program Files\Git\bin\bash.exe" "<PROJECT>\.ai\tools\check-ssot-drift.sh"
+& "C:\Program Files\Git\bin\bash.exe" "<PROJECT>\.claude\hooks\test_hooks.sh"
+& "C:\Program Files\Git\bin\bash.exe" "<PROJECT>\.kimi\hooks\test_hooks.sh"
+& "C:\Program Files\Git\bin\bash.exe" "<PROJECT>\.kiro\hooks\test_hooks.sh"
+
+# 5. Commit
+Set-Location "<PROJECT>"
+git checkout -b framework-upgrade-pre5
+git add .
+git commit -m "chore(framework): upgrade to multi-cli-skills v0.0.2-pre.5"
+```
+
+### Caveats
+
+- **Assumes minimal customization of framework files.** If you've forked the contents of `AGENTS.md`, `CLAUDE.md`, `.ai/sync.md`, or any SSOT, you'll need a three-way merge (your version vs. old upstream vs. new upstream) — `diff -u` only shows you-vs-new, which collapses your edits and the upstream additions into one combined diff.
+- **Runtime state is never touched.** `.ai/activity/log.md`, `.ai/handoffs/`, `.ai/reports/`, `.ai/research/` are yours — the recipe deliberately doesn't `cp` over them.
+- **No version marker yet.** After upgrade, your installed framework version is unrecorded. Phase A of the upgrade-mode plan will add `.ai/.framework-version` to fix this; until then, track your floor release in your project's README.
+
 ## How it works
 
 ### Architecture: read-only orchestrator + specialized subagents
