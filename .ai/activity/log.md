@@ -17,6 +17,43 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-06-08 23:15 — kimi-cli
+- Action: per handoff 202606082230 — made KimiGraph functional (install + index + MCP)
+- Files: `.kimigraph/config.json` (already committed, embeddings-on config), `~/.kimi/mcp.json` (migrated from local dev path to bare global `kimigraph` command), `.mcp.json` (added `kimigraph` entry for project-local parity)
+- Decisions: Global install `rwn-kimigraph@0.3.0` was already present from earlier session; no reinstall needed. Migrated `~/.kimi/mcp.json` from `node C:\Users\rwn34\Code\rwn-kimigraph\dist\bin\kimigraph.js` to bare `kimigraph` command for parity with CodeGraph (`codegraph`) and KiroGraph (`kirograph`) patterns. Note: `kimigraph` binary does not resolve in current session due to stale Windows PATH snapshot (same issue as CodeGraph/KiroGraph) — resolves after Kimi CLI restart; the `.cmd` shim exists in `AppData\Roaming\npm`. `.kimigraph/config.json` left as-is (already committed, functional) with `embedSymbols: true` matching the resolved embeddings-on decision. Index is live: 925 files, 25,228 symbols, 25,435 relationships.
+- Grep-verified evidence:
+  - MCP config fixed: `~/.kimi/mcp.json` → `"command": "kimigraph", "args": ["serve", "--mcp"]`
+  - Global binary: `npm list -g rwn-kimigraph` → `rwn-kimigraph@0.3.0`
+  - Index exists: `kimigraph status` → 925 files, 25,228 symbols, 67.29 MB DB
+  - MCP server live: `kimigraph_search` tool call returns results
+
+## 2026-06-08 22:49 — kiro-cli
+- Action: per handoff 202606082246 — re-indexed KiroGraph to include installer source
+- Files: .kirograph/config.json
+- Decisions: removed `tools/multi-cli-install/**` from exclude (it's the repo's primary TypeScript codebase). Kept `tools/kirograph/**` excluded (graph tool's own source).
+- Grep-verified evidence:
+  - Before: 15 files / 13 symbols / 0 edges
+  - After: 90 files / 701 symbols / 645 relationships
+  - `kirograph_search wireMcp` → `tools/multi-cli-install/src/installer/wire-mcp.ts:11`
+
+## 2026-06-08 22:41 — kiro-cli
+- Action: per handoff 202606082231 — fixed dangling KiroGraph MCP + made it functional
+- Files: .kiro/settings/mcp.json, .kirograph/config.json
+- Decisions: global install (`npm install -g kirograph@0.20.0`) for parity with CodeGraph's global approach. Removed dangling `tools/kirograph/dist/...` path from MCP config — command is now bare `kirograph` (resolves after session restart). Also cloned tools/kirograph/ source (from earlier in session) but the MCP config no longer depends on it. Added .codegraph, .kimigraph, .archive, tools/kirograph, tools/multi-cli-install to .kirograph/config.json exclude list.
+- Grep-verified evidence:
+  - MCP config fixed: `.kiro/settings/mcp.json` → `"command": "kirograph", "args": ["serve", "--mcp"]`
+  - Global binary: `kirograph.cmd --version` → `0.20.0`
+  - Index exists: `kirograph status` → 15 files, 13 symbols, 0.22 MB DB
+  - MCP server live: `kirograph_status` tool call returns results
+
+## 2026-06-08 22:35 — claude-code (orchestrator)
+- Action: "Fix everything" cleanup. (1) Pushed both repos to GitHub (via release-engineer earlier): rwn-multi-cli-skills `master` → origin (`2eb9db8..d5d0bc7`); rwn-4AI-panes `master` → origin (`4c52c40..0962522`). (2) Wrote two graph-parity handoffs to bring KimiGraph/KiroGraph to functional parity with the CodeGraph the user set up this session — resolving the long-pending "embeddings-on vs structural-only" decision toward functional: `.ai/handoffs/to-kimi/open/202606082230-make-kimigraph-functional.md` (install kimigraph + build `.kimigraph/` index + register & verify MCP — currently docs-only, no index/MCP) and `.ai/handoffs/to-kiro/open/202606082231-fix-kirograph-dangling-mcp.md` (KiroGraph's `.kiro/settings/mcp.json` points at a non-existent `tools/kirograph/dist/...` build — fix the dangling registration, install/build, index, verify). (3) Fixed the external rwn-4AI-panes repo via infra-engineer: `git remote set-url origin` efransiscus→rwn34 (repo moved; push had been redirecting), README clone URL updated (line 64), committed `3615ac5 docs: update repo URL...` + pushed `0962522..3615ac5`.
+- Grep-verified evidence:
+  - Handoffs exist: `ls .ai/handoffs/to-kimi/open/` → `202606082230-make-kimigraph-functional.md`; `ls .ai/handoffs/to-kiro/open/` → `202606082231-fix-kirograph-dangling-mcp.md`
+  - README fixed: rwn-4AI-panes/README.md:64 → `git clone https://github.com/rwn34/rwn-4AI-panes.git ...`
+- Files: `.ai/handoffs/to-kimi/open/202606082230-make-kimigraph-functional.md` (new), `.ai/handoffs/to-kiro/open/202606082231-fix-kirograph-dangling-mcp.md` (new). External (delegated): rwn-4AI-panes README.md + git remote.
+- Decisions: Handoffs frame the embeddings-on/functional decision as resolved by the user's CodeGraph setup this session; left global-vs-local-build install choice to each CLI (recommended global for consistency). Did NOT bake kimigraph/kirograph into the framework installer yet — deferred until their tools are actually functional (avoid shipping connection-error footguns). Remaining user action: restart Claude Code so the installed `codegraph@0.9.9` binary resolves on PATH.
+
 ## 2026-06-08 22:20 — claude-code (orchestrator)
 - Action: Installed the global `codegraph` binary and committed the session's CodeGraph installer work. Delegated to infra-engineer: (1) `npm install -g @colbymchenry/codegraph` → installed `codegraph@0.9.9` (shims in `C:\Users\rwn34\AppData\Roaming\npm`, which is already in persistent Windows User PATH). Binary works (`codegraph.cmd --version` → 0.9.9) but does NOT resolve in the current MCP session — the session inherited a stale in-memory PATH snapshot; a Claude Code / terminal restart fixes it (no PATH edit needed/made). (2) Committed framework changes locally on `master` (NOT pushed): `2003197 feat(install): bake CodeGraph setup into framework installer` (11 files +227/-7, incl. tools/multi-cli-install/* + scripts/install-template.sh + README + activity log) and `ef29535 test(install): fix stale VERSION assertion (0.0.2 -> 0.0.3)`. Gate green before commit: tsc clean, vitest 83/83. Left untouched (Kimi/Kiro territory, out of Claude scope): `.kiro/settings/mcp.json`, `.kirograph/config.json` (modified), `.kimi/steering/kimigraph.md`, `.kiro/steering/kirograph.md`, `tools/kirograph/` (untracked). `.mcp.json` gitignored, never staged.
 - Decisions: Used `npm i -g` (non-interactive) over the interactive `npx @colbymchenry/codegraph` installer to avoid a hang. Did not modify user PATH (prefix already persisted; only a session restart is needed). master is now 2 commits ahead of origin — push deferred to user/release-engineer.
