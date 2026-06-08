@@ -2,7 +2,7 @@
 import {
   VERSION, inspect, classifyDirs, computeDefaults, logDecisions,
   planMigration, executePlan, applyPatches,
-  scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy,
+  scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy, wireMcp,
 } from '../src/index.js';
 import { writeFrameworkVersion } from '../src/upgrade/version.js';
 import { buildManifestFromInstalledTree, writeFrameworkManifest } from '../src/upgrade/manifest.js';
@@ -122,6 +122,12 @@ async function main() {
     console.log('Adapting policy for detected stack...');
     const adapted = adaptPolicy(targetDir, profile.stack.language, profile.stack.packageManager, dryRun);
     for (const p of adapted) console.log(`  ${p}`);
+    console.log('');
+
+    console.log('Wiring CodeGraph MCP server...');
+    const wired = wireMcp(targetDir, dryRun);
+    for (const p of wired) console.log(`  ${p}`);
+    if (wired.length === 0) console.log('  .mcp.json already has codegraph — skipped');
     console.log('');
 
     // Phase A: write framework version marker + manifest for future --upgrade support.

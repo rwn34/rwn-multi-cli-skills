@@ -42,6 +42,17 @@ Design context: [`.ai/research/multi-cli-install-v2-plan.md`](../../.ai/research
 4. **Executes** — moves files, updates configs (or dry-run)
 5. **Patches** — generates `.ai/project-context.md` for AI agents
 
+### CodeGraph
+
+Every install ships `.codegraph/config.json` (the semantic code-graph index config)
+and create-or-merges a `.mcp.json` with a `codegraph` MCP server entry. The
+`.codegraph/config.json` is git-tracked; the local `.db`/cache are gitignored.
+
+The entry only connects if the `codegraph` binary is installed globally
+(`npx @colbymchenry/codegraph`). Without it, new projects will log MCP connection
+errors on session start — install the binary, or remove the `codegraph` entry from
+`.mcp.json`.
+
 ## Supported stacks
 
 - TypeScript/JavaScript (npm, pnpm, yarn)

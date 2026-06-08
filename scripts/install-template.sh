@@ -5,7 +5,8 @@
 # Usage: bash scripts/install-template.sh <target-dir> [--dry-run]
 # See scripts/README.md for details. Referenced from .ai/sync.md.
 #
-# Requirements: bash, git, sed, awk, find, diff. No jq, no python.
+# Requirements: bash, git, sed, awk, find, diff. python3 is optional — only used
+# to merge an existing .mcp.json (absent → plain-text write, no deps needed).
 # Git Bash (Windows) + Linux/macOS compatible. POSIX-ish bash, no mapfile/readarray.
 
 set -euo pipefail
@@ -70,10 +71,11 @@ What it does (6 phases):
   0. Pre-flight: verify target is a clean git repo, record rollback SHA,
      create branch 'ai-template-install'.
   1. Copy framework files (.ai/, .claude/, .kimi/, .kiro/, .archive/,
-     CLAUDE.md, AGENTS.md, ADR, CI workflow).
+     CLAUDE.md, AGENTS.md, ADR, CI workflow, .codegraph/config.json).
   2. Sanitize template state (reset activity log, clear handoffs/reports).
-  3. Reconcile conflicts (merge .gitignore, detect language, amend ADR +
-     uncomment matching patterns in root-guard hooks).
+  3. Reconcile conflicts (merge .gitignore, create/merge .mcp.json codegraph
+     server, detect language, amend ADR + uncomment matching patterns in
+     root-guard hooks).
   4. Interactive agent-config tailoring (skippable).
   5. Verify (hook tests + SSOT drift) and commit on the install branch.
 
@@ -235,6 +237,7 @@ phase1() {
   copy_file "AGENTS.md"
   copy_file "docs/architecture/0001-root-file-exceptions.md"
   copy_file ".github/workflows/framework-check.yml"
+  copy_file ".codegraph/config.json"
 
   # Note: we did NOT copy scripts/ (would copy this installer into target),
   # nor README.md/LICENSE/CHANGELOG (target keeps its own).
@@ -391,6 +394,86 @@ merge_gitignore() {
   fi
 }
 
+# Echo a WORKING python interpreter command (python3 or python), or "" if none.
+# On Windows, `command -v python3` finds the Microsoft Store alias stub that
+# prints a help message and exits non-zero — so we actually run `-c` to confirm
+# the interpreter works before trusting it.
+find_python() {
+  local py
+  for py in python3 python; do
+    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import json,sys" >/dev/null 2>&1; then
+      echo "$py"
+      return 0
+    fi
+  done
+  echo ""
+}
+
+# Create or merge .mcp.json with the codegraph server entry.
+# - Absent: write the one-server JSON (plain text — no tooling needed).
+# - Present: merge codegraph in only if absent, using a working python parser
+#   when available, else warn-and-skip to avoid corrupting the adopter's JSON.
+#   Mirrors src/installer/wire-mcp.ts. The bash baseline ships no jq/python
+#   dependency, so the merge path is best-effort (degraded — see README).
+wire_mcp() {
+  local dst="$TARGET/.mcp.json"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: create-or-merge .mcp.json with codegraph server"
+    return 0
+  fi
+
+  if [ ! -f "$dst" ]; then
+    cat > "$dst" <<'EOF'
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
+EOF
+    track ".mcp.json"
+    log "Created .mcp.json with codegraph server."
+    return 0
+  fi
+
+  # Already present — only add codegraph if absent, preserving other servers.
+  if grep -q '"codegraph"' "$dst" 2>/dev/null; then
+    log ".mcp.json already has a codegraph entry — skipping."
+    return 0
+  fi
+
+  local py
+  py="$(find_python)"
+  if [ -n "$py" ]; then
+    if "$py" - "$dst" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+servers = data.setdefault("mcpServers", {})
+if "codegraph" not in servers:
+    servers["codegraph"] = {"command": "codegraph", "args": ["serve", "--mcp"]}
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PYEOF
+    then
+      track ".mcp.json"
+      log "Merged codegraph server into existing .mcp.json."
+    else
+      warn "Failed to merge .mcp.json (python error). Add the codegraph server manually:"
+      warn '  "codegraph": { "command": "codegraph", "args": ["serve", "--mcp"] }'
+    fi
+  else
+    warn "No working python interpreter — cannot safely merge existing .mcp.json."
+    warn "Add the codegraph server manually under mcpServers:"
+    warn '  "codegraph": { "command": "codegraph", "args": ["serve", "--mcp"] }'
+  fi
+}
+
 detect_language() {
   # Echo one of: node-npm, node-yarn, node-pnpm, rust, python, go, ruby, none, multi
   local found=""
@@ -542,6 +625,7 @@ patch_hook_allow() {
 phase3() {
   log "=== Phase 3: reconcile + adapt ==="
   merge_gitignore
+  wire_mcp
 
   local lang
   lang="$(detect_language)"

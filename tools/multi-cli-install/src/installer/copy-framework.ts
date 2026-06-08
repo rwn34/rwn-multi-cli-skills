@@ -8,6 +8,7 @@ const FRAMEWORK_FILES = [
   'AGENTS.md',
   'docs/architecture/0001-root-file-exceptions.md',
   '.github/workflows/framework-check.yml',
+  '.codegraph/config.json',
 ];
 
 export function resolveTemplateDir(): string {

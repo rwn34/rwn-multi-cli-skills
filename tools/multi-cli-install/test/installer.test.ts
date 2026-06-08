@@ -3,6 +3,7 @@ import { scaffoldGreenfield } from '../src/installer/greenfield.js';
 import { copyFrameworkFiles, resolveTemplateDir } from '../src/installer/copy-framework.js';
 import { sanitizeState } from '../src/installer/sanitize.js';
 import { adaptPolicy } from '../src/installer/adapt-policy.js';
+import { wireMcp } from '../src/installer/wire-mcp.js';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, rmSync, readdirSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -201,6 +202,71 @@ describe('adaptPolicy', () => {
   });
 });
 
+
+describe('CodeGraph wiring', () => {
+  it('copies .codegraph/config.json verbatim to target', () => {
+    const target = makeTempDir('codegraph-config');
+    copyFrameworkFiles(templateDir, target, false);
+
+    const dst = join(target, '.codegraph', 'config.json');
+    expect(existsSync(dst)).toBe(true);
+
+    const tplDir = resolveTemplateDir();
+    const expected = readFileSync(join(tplDir, '.codegraph', 'config.json'), 'utf-8');
+    expect(readFileSync(dst, 'utf-8')).toBe(expected);
+
+    // Sanity: it is the CodeGraph config (has include/exclude), and the runtime
+    // DB / cache are NOT shipped.
+    const parsed = JSON.parse(readFileSync(dst, 'utf-8'));
+    expect(parsed.include).toBeDefined();
+    expect(parsed.exclude).toBeDefined();
+    expect(existsSync(join(target, '.codegraph', 'cache'))).toBe(false);
+  });
+
+  it('wireMcp creates .mcp.json with codegraph entry when absent', () => {
+    const target = makeTempDir('wire-mcp-create');
+    const touched = wireMcp(target, false);
+
+    expect(touched).toContain('.mcp.json');
+    const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
+    expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
+  });
+
+  it('wireMcp merges codegraph into an existing .mcp.json without clobbering other servers', () => {
+    const target = makeTempDir('wire-mcp-merge');
+    writeFileSync(
+      join(target, '.mcp.json'),
+      JSON.stringify({ mcpServers: { other: { command: 'other-server', args: [] } } }, null, 2) + '\n',
+    );
+
+    const touched = wireMcp(target, false);
+    expect(touched).toContain('.mcp.json');
+
+    const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
+    expect(mcp.mcpServers.other).toEqual({ command: 'other-server', args: [] });
+    expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
+  });
+
+  it('wireMcp leaves an existing codegraph entry untouched', () => {
+    const target = makeTempDir('wire-mcp-noop');
+    const existing = { mcpServers: { codegraph: { command: 'custom-codegraph', args: ['x'] } } };
+    writeFileSync(join(target, '.mcp.json'), JSON.stringify(existing, null, 2) + '\n');
+
+    const touched = wireMcp(target, false);
+    expect(touched).toHaveLength(0);
+
+    const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
+    expect(mcp.mcpServers.codegraph).toEqual({ command: 'custom-codegraph', args: ['x'] });
+  });
+
+  it('wireMcp dry-run reports path but writes nothing', () => {
+    const target = makeTempDir('wire-mcp-dry');
+    const touched = wireMcp(target, true);
+
+    expect(touched).toContain('.mcp.json');
+    expect(existsSync(join(target, '.mcp.json'))).toBe(false);
+  });
+});
 
 describe('bug fixes (B1-B4)', () => {
   // T1: greenfield uses local git config (not hardcoded)

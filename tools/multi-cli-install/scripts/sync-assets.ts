@@ -23,7 +23,7 @@ for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.archive']) {
 }
 
 // Copy framework files
-for (const f of ['CLAUDE.md', 'AGENTS.md', 'docs/architecture/0001-root-file-exceptions.md', '.github/workflows/framework-check.yml', '.gitignore']) {
+for (const f of ['CLAUDE.md', 'AGENTS.md', 'docs/architecture/0001-root-file-exceptions.md', '.github/workflows/framework-check.yml', '.codegraph/config.json', '.gitignore']) {
   const src = join(repoRoot, f);
   if (existsSync(src)) {
     const dst = join(assetsDir, f);
