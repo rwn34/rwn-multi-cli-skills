@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-06-08 23:00 — claude-code
+- Action: closed 3 DONE codegraph/kimigraph/kirograph parity handoffs (moved open/ → done/), committed + pushed master
+- Files: `.ai/handoffs/to-kimi/done/202606082230-make-kimigraph-functional.md`, `.ai/handoffs/to-kiro/done/202606082231-fix-kirograph-dangling-mcp.md`, `.ai/handoffs/to-kiro/done/202606082246-reindex-include-installer-source.md`
+- Decisions: Committed ONLY the 3 handoffs as `8e9961f` (activity log was already committed locally in `b50867b`). Deliberately left Kimi/Kiro working-tree files unstaged (`.kiro/settings/mcp.json`, `.kirograph/config.json`, `.kimi/steering/kimigraph.md`, `.kiro/steering/kirograph.md`, `tools/kirograph/`) — their owners' territory. Gate green before push: tsc lint clean, 83/83 vitest passing. Pushed `d5d0bc7..8e9961f master -> master`.
+
 ## 2026-06-08 23:15 — kimi-cli
 - Action: per handoff 202606082230 — made KimiGraph functional (install + index + MCP)
 - Files: `.kimigraph/config.json` (already committed, embeddings-on config), `~/.kimi/mcp.json` (migrated from local dev path to bare global `kimigraph` command), `.mcp.json` (added `kimigraph` entry for project-local parity)
