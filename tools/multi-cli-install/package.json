@@ -1,5 +1,5 @@
 {
-  "name": "@rwn34/multi-cli-install",
+  "name": "@efransiscus/multi-cli-install",
   "version": "0.0.4",
   "description": "Single-command installer for the multi-CLI AI coordination framework",
   "type": "module",
