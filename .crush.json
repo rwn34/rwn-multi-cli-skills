@@ -1,0 +1,19 @@
+{
+  "mcp": {
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    },
+    "kirograph": {
+      "type": "stdio",
+      "command": "kirograph",
+      "args": ["serve", "--mcp"]
+    },
+    "kimigraph": {
+      "type": "stdio",
+      "command": "kimigraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}

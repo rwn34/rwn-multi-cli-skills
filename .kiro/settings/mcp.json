@@ -19,7 +19,78 @@
         "kirograph_dead_code",
         "kirograph_circular_deps",
         "kirograph_path",
-        "kirograph_type_hierarchy"
+        "kirograph_type_hierarchy",
+        "kirograph_hotspots",
+        "kirograph_surprising",
+        "kirograph_diff",
+        "kirograph_architecture",
+        "kirograph_coupling",
+        "kirograph_package",
+        "kirograph_flows",
+        "kirograph_communities",
+        "kirograph_refactor",
+        "kirograph_exec",
+        "kirograph_read",
+        "kirograph_budget",
+        "kirograph_gain"
+      ]
+    },
+    "codegraph": {
+      "command": "codegraph",
+      "args": [
+        "serve",
+        "--mcp"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "codegraph_explore",
+        "codegraph_context",
+        "codegraph_search",
+        "codegraph_callers",
+        "codegraph_callees",
+        "codegraph_impact",
+        "codegraph_node",
+        "codegraph_path",
+        "codegraph_type_hierarchy",
+        "codegraph_dead_code",
+        "codegraph_circular_deps",
+        "codegraph_hotspots",
+        "codegraph_surprising",
+        "codegraph_diff",
+        "codegraph_architecture",
+        "codegraph_coupling",
+        "codegraph_package",
+        "codegraph_flows",
+        "codegraph_communities",
+        "codegraph_refactor",
+        "codegraph_status",
+        "codegraph_files",
+        "codegraph_exec",
+        "codegraph_read",
+        "codegraph_budget",
+        "codegraph_gain"
+      ]
+    },
+    "kimigraph": {
+      "command": "kimigraph",
+      "args": [
+        "serve",
+        "--mcp"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "kimigraph_explore",
+        "kimigraph_search",
+        "kimigraph_context",
+        "kimigraph_callers",
+        "kimigraph_callees",
+        "kimigraph_impact",
+        "kimigraph_node",
+        "kimigraph_path",
+        "kimigraph_dead_code",
+        "kimigraph_cycles",
+        "kimigraph_status",
+        "kimigraph_signature_search"
       ]
     }
   }

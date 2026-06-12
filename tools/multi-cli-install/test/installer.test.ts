@@ -223,13 +223,20 @@ describe('CodeGraph wiring', () => {
     expect(existsSync(join(target, '.codegraph', 'cache'))).toBe(false);
   });
 
-  it('wireMcp creates .mcp.json with codegraph entry when absent', () => {
+  it('wireMcp creates .mcp.json and .crush.json with all graph entries when absent', () => {
     const target = makeTempDir('wire-mcp-create');
     const touched = wireMcp(target, false);
 
     expect(touched).toContain('.mcp.json');
+    expect(touched).toContain('.crush.json');
     const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
+    expect(mcp.mcpServers.kirograph).toEqual({ command: 'kirograph', args: ['serve', '--mcp'] });
+    expect(mcp.mcpServers.kimigraph).toEqual({ command: 'kimigraph', args: ['serve', '--mcp'] });
+    const crush = JSON.parse(readFileSync(join(target, '.crush.json'), 'utf-8'));
+    expect(crush.mcp.codegraph).toBeDefined();
+    expect(crush.mcp.kirograph).toBeDefined();
+    expect(crush.mcp.kimigraph).toBeDefined();
   });
 
   it('wireMcp merges codegraph into an existing .mcp.json without clobbering other servers', () => {
@@ -245,12 +252,15 @@ describe('CodeGraph wiring', () => {
     const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
     expect(mcp.mcpServers.other).toEqual({ command: 'other-server', args: [] });
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
+    expect(mcp.mcpServers.kirograph).toEqual({ command: 'kirograph', args: ['serve', '--mcp'] });
+    expect(mcp.mcpServers.kimigraph).toEqual({ command: 'kimigraph', args: ['serve', '--mcp'] });
   });
 
   it('wireMcp leaves an existing codegraph entry untouched', () => {
     const target = makeTempDir('wire-mcp-noop');
-    const existing = { mcpServers: { codegraph: { command: 'custom-codegraph', args: ['x'] } } };
+    const existing = { mcpServers: { codegraph: { command: 'custom-codegraph', args: ['x'] }, kirograph: { command: 'kirograph', args: ['serve', '--mcp'] }, kimigraph: { command: 'kimigraph', args: ['serve', '--mcp'] } } };
     writeFileSync(join(target, '.mcp.json'), JSON.stringify(existing, null, 2) + '\n');
+    writeFileSync(join(target, '.crush.json'), JSON.stringify({ mcp: { codegraph: { type: 'stdio', command: 'codegraph', args: ['serve', '--mcp'] }, kirograph: { type: 'stdio', command: 'kirograph', args: ['serve', '--mcp'] }, kimigraph: { type: 'stdio', command: 'kimigraph', args: ['serve', '--mcp'] } } }, null, 2) + '\n');
 
     const touched = wireMcp(target, false);
     expect(touched).toHaveLength(0);

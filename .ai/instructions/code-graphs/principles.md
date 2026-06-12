@@ -1,10 +1,10 @@
 # Code knowledge graphs
 
-Local code-knowledge-graph rules for this project. All three CLIs (Claude Code,
-Kimi CLI, Kiro CLI) follow the same pattern: each CLI has its own graph tool,
-indexing the same source code into its own dot-directory, queried via its own
-MCP server. The architecture is identical across CLIs; the host CLI and tool
-prefix differ.
+Local code-knowledge-graph rules for this project. All four CLIs (Claude Code,
+Kimi CLI, Kiro CLI, Crush) run all three graph tools — CodeGraph, KimiGraph,
+and KiroGraph — with MCP wired in each CLI's native config format. Each graph
+indexes the same source code into its own dot-directory, queried via its own
+MCP server.
 
 A code graph parses the project with **tree-sitter**, stores symbols and edges
 (callers, callees, imports, type relationships) in a local **SQLite** database,
@@ -40,24 +40,25 @@ to grep/glob/file-reads when:
 | Claude Code | CodeGraph | `.codegraph/` | https://github.com/colbymchenry/codegraph |
 | Kimi CLI | KimiGraph | `.kimigraph/` | https://github.com/rwn34/kimigraph |
 | Kiro CLI | KiroGraph | `.kirograph/` | https://github.com/davide-desio-eleva/kirograph |
+| Crush | any (all 3 wired) | same dirs | same repos |
 
-Each tool ships its own MCP server, registered in `.mcp.json` (project-local —
-not global). Tool name prefixes match the dir name (`codegraph_*`,
-`kimigraph_*`, `kirograph_*`).
+All three graph MCP servers are wired in **every** CLI config:
+
+| CLI | Config file | Graphs registered |
+|---|---|---|
+| Claude Code | `.mcp.json` (project root) | codegraph, kirograph, kimigraph |
+| Kimi CLI | `~/.kimi/mcp.json` (global) | kimigraph, kirograph, codegraph |
+| Kiro | `.kiro/settings/mcp.json` (project) | kirograph, codegraph, kimigraph |
+| Crush | `.crush.json` (project root) | codegraph, kirograph, kimigraph |
+
+Tool name prefixes match the graph: `codegraph_*`, `kimigraph_*`, `kirograph_*`.
 
 ## Write boundaries
 
-Each CLI writes only to its own graph dir:
-
-| CLI | Can write to | Cannot write to |
-|---|---|---|
-| Claude Code | `.codegraph/**` | `.kimigraph/**`, `.kirograph/**` |
-| Kimi CLI | `.kimigraph/**` | `.codegraph/**`, `.kirograph/**` |
-| Kiro CLI | `.kirograph/**` | `.codegraph/**`, `.kimigraph/**` |
-
-Cross-graph writes are blocked at the tool layer by each CLI's
-`pretool-write-edit` hook. Never edit another CLI's `.X-graph/` directly — if
-you genuinely need a change there, send a handoff to that CLI.
+Each CLI writes only to its own graph dir. Cross-graph writes are blocked at the
+tool layer by each CLI's `pretool-write-edit` hook. Never edit another CLI's
+`.X-graph/` directly — if you genuinely need a change there, send a handoff
+to that CLI.
 
 The `config.json` inside each graph dir is committed (it captures shared
 indexing preferences); everything else under each graph dir is gitignored.
@@ -115,9 +116,13 @@ CodeGraph is **FTS5-only** — no semantic/vector search. For semantic
 similarity, use Kimi or Kiro (their tools support it as an opt-in). Run
 `codegraph --help` after install for the authoritative tool list.
 
-**Caveat:** CodeGraph's installer registers MCP globally in `~/.claude.json` by
-default. Migrate the entry to project-local `.mcp.json` for portability — that
-matches the framework convention for the other two CLIs.
+### Crush — all 3 graphs wired
+
+**Config:** `.crush.json` at project root, `mcp` key with `type: "stdio"`.
+
+Crush uses the same MCP server binaries as the other CLIs. All three graph
+tools are available with the same tool names and prefixes. No graph-specific
+install step — the MCP config is project-level and the binaries are global.
 
 ### Kimi — KimiGraph (FTS5 + sqlite-vec semantic)
 
@@ -184,8 +189,6 @@ are opt-in via `.kirograph/config.json`.
 
 **Claude / CodeGraph specific:**
 - No embeddings / no semantic search (FTS5 only).
-- Installer defaults to global `~/.claude.json` MCP config — migrate to
-  project-local `.mcp.json` after install.
 
 **Kimi / KimiGraph specific:**
 - On Windows, indexing many languages may need
