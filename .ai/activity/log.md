@@ -17,6 +17,18 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-07 10:42 — claude-code
+- Action: fixed doc/version drift in `tools/multi-cli-install` (delegated: coder + doc-writer). Aligned `VERSION` 0.0.3→0.0.4, canonicalized package name to `@rwn34/multi-cli-install`, added missing `multi-cli-install/` entry to `tools/README.md`.
+- Files: `tools/multi-cli-install/src/index.ts`, `tools/multi-cli-install/test/index.test.ts`, `tools/multi-cli-install/package.json`, `tools/README.md`
+- Decisions: `VERSION` lagged package.json/lock (both already 0.0.4) and is stamped into installed projects' `.ai/.framework-version` — bumped to match. `package.json` name `@efransiscus/` was the lone outlier vs ~20 doc refs + package-lock already at `@rwn34/`; user confirmed `@rwn34/` canonical, so fixed package.json only (no doc rewrites, no cross-CLI handoffs). Left append-only log + `done/` handoffs + research docs untouched (historical).
+- Grep-verified evidence:
+  - `src/index.ts` → `export const VERSION = '0.0.4';`
+  - `test/index.test.ts` → `expect(VERSION).toBe('0.0.4');`
+  - `package.json` → `"name": "@rwn34/multi-cli-install"`
+  - `grep -rn "@efransiscus/multi-cli-install" .` → no matches
+  - `tools/README.md` → `- \`multi-cli-install/\` — single-command installer ...`
+  - Gate: 83/83 vitest pass, `tsc --noEmit` clean
+
 ## 2026-06-08 23:00 — claude-code
 - Action: closed 3 DONE codegraph/kimigraph/kirograph parity handoffs (moved open/ → done/), committed + pushed master
 - Files: `.ai/handoffs/to-kimi/done/202606082230-make-kimigraph-functional.md`, `.ai/handoffs/to-kiro/done/202606082231-fix-kirograph-dangling-mcp.md`, `.ai/handoffs/to-kiro/done/202606082246-reindex-include-installer-source.md`
