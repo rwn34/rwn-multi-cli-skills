@@ -108,6 +108,25 @@ Each CLI enforces this via its native mechanism:
 - **Claude:** `tools:` frontmatter + `permissions.deny` in settings (mixed hard/soft)
 - **Kimi:** `allowed_tools` + system prompt + PostToolUse hook (soft — Kimi lacks native path restriction)
 
+## CLI role lanes (ADR-0002)
+
+Beyond the per-CLI agent rosters, each CLI occupies a distinct lane in the
+review/release pipeline — authoritative in
+`docs/architecture/0002-cli-role-topology.md`:
+
+- **Claude Code** = architect/orchestrator/final reviewer. **Kimi** =
+  high-throughput executor. **Kiro** = premium-reasoning executor. Kimi and
+  Kiro peer-review each other's work before Claude's final review; small
+  low-risk changes may go straight to Claude (stated in the handoff).
+- **Pipeline:** executing CLI branches/commits/pushes (via `infra-engineer`) →
+  peer review (other executor's `reviewer`, report to `.ai/reports/`) →
+  Claude pre-merge gate (branch state, CI, linked issue, review) → user
+  approves merge → deploy.
+- **Deploy:** Kimi/Kiro have no deploy lane. Interim: Claude's
+  `release-engineer` (dry-run, explicit user confirmation). Target: Crush as
+  narrow ops/release operator — Stage 1 prepares only (human executes);
+  Stage 2 (ADR amendment required) executes with per-deploy confirmation.
+
 ## Failure handling
 
 All three CLIs follow the same policy:

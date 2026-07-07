@@ -39,6 +39,13 @@ All three CLIs implement these agents in their native config format.
 `.ai/**`, `.kiro/**`, `.kimi/**`, `.claude/**` — only the orchestrator writes here.
 All subagents are denied write access to these paths.
 
+**Per-CLI nuance:** while this catalog lists all four framework dirs as the
+orchestrator's write scope, each CLI's implementation narrows this to **its own
+dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) are
+hard-blocked by each CLI's pre-write hook and always go through the handoff
+queue (`.ai/handoffs/`) — never direct. This matches the same nuance in
+`.ai/instructions/orchestrator-pattern/principles.md`.
+
 ## Reports directory
 
 `.ai/reports/` — diagnosers write structured reports here. Naming convention:
@@ -84,6 +91,23 @@ constraint requires the root location.
 | Tool whitelist | `tools` array (hard) | `tools:` frontmatter (hard) | `allowed_tools` / `exclude_tools` (hard) |
 | Path restriction | `toolsSettings.fs_write.allowedPaths` (hard) | `permissions.deny` or prompt (soft) | Prompt + PostToolUse hook (soft) |
 | Shell restriction | `toolsSettings.execute_bash.allowedCommands` (hard) | Prompt (soft) | Prompt + hook (soft) |
+
+## CLI role lanes (ADR-0002)
+
+The 13-agent roster is implemented per CLI, but each CLI occupies a distinct
+lane — see `docs/architecture/0002-cli-role-topology.md` (authoritative):
+
+- **Claude Code** — architect + orchestrator + final reviewer (specs, ADRs,
+  PR gating, merge recommendation).
+- **Kimi CLI** — high-throughput executor; peer-reviews Kiro's work.
+- **Kiro CLI** — premium-reasoning executor; peer-reviews Kimi's work.
+- **Crush** — narrow-scope ops/release operator (release review: dry-runs,
+  checklists, deploy reports — NOT code review). Staged deploy authority per
+  the ADR.
+- **Deploy separation:** Kimi and Kiro have NO deploy lane — deploy actions
+  are out of scope for their `release-engineer` agents. Interim deployer is
+  Claude's `release-engineer` (dry-run + explicit user confirmation) until
+  Crush Stage 1 lands. Author ≠ reviewer ≠ deployer.
 
 ## Agent behavior rules
 

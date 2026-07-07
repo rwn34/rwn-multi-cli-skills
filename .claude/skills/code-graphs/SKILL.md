@@ -1,3 +1,10 @@
+---
+name: code-graphs
+description: Local code-knowledge-graph rules — prefer graph MCP queries (codegraph_*/kimigraph_*/kirograph_*) over file reads for structural questions. Use when exploring the codebase, tracing callers/callees/impact, asking "how does X work?", or when a .codegraph/.kimigraph/.kirograph dir exists.
+---
+
+<!-- SSOT: .ai/instructions/code-graphs/principles.md — regenerate via .ai/sync.md -->
+
 # Code knowledge graphs
 
 Local code-knowledge-graph rules for this project. All four CLIs (Claude Code,

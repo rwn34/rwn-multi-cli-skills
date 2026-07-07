@@ -17,6 +17,17 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-07 11:35 — claude-code
+- Action: Phase 0+1 of framework-evolution roadmap — fixed SSOT drifts, landed ADR-0002 (CLI role topology), added role-lanes sections to SSOTs, regenerated Claude replicas, fixed code-graphs SKILL.md missing frontmatter, dispatched handoffs to Kimi+Kiro, captured 4AI-panes integration notes
+- Files: `.ai/instructions/agent-catalog/principles.md` (per-CLI write-scope caveat + role lanes), `.ai/instructions/orchestrator-pattern/principles.md` (role lanes), `docs/architecture/0002-cli-role-topology.md` (NEW, via doc-writer), `.claude/skills/{agent-catalog,orchestrator-pattern,code-graphs}/SKILL.md` (regen/frontmatter fix), `.claude/agents/orchestrator.md` + `.claude/hooks/pretool-write-edit.sh` + `CLAUDE.md` + `AGENTS.md` + `.ai/handoffs/README.md` (NNN→YYYYMMDDHHMM), `.ai/handoffs/to-{kimi,kiro}/open/20260707111{5,6}-ssot-regen-role-lanes-nnn-fix.md` (NEW), `.ai/research/4ai-panes-integration-notes.md` (NEW)
+- Decisions: ADR-0002 fixes roles: Claude=architect/final reviewer, Kimi=throughput executor, Kiro=reasoning executor (peer-review each other), Crush=narrow ops/release operator with STAGED deploy authority (Stage 1 prepare-only); Kimi/Kiro get NO deploy lane (scope-down in their handoffs). Left legacy-explainer NNN mentions untouched (README L482, template.md, done/ handoffs, archive). 4AI-panes finding: all 4 CLIs run permission-bypassed in daily use → hook layer is the only guardrail (raises Phase 3 priority; Crush most exposed).
+- Grep-verified evidence:
+  - ADR exists: `docs/architecture/0002-cli-role-topology.md` → `# 2. CLI Role Topology and Release Pipeline`
+  - Role lanes in SSOT: `agent-catalog/principles.md` → `## CLI role lanes (ADR-0002)`
+  - Caveat: `agent-catalog/principles.md` → `**Per-CLI nuance:** while this catalog lists all four framework dirs`
+  - Timestamp fix: `orchestrator.md` → `open/YYYYMMDDHHMM-slug.md`
+  - Gates: `test_hooks.sh` → `PASS: 24/24`; drift-check → Claude replicas 0 drift; 4 kimi/kiro pairs drift EXPECTED (open handoffs 202607071115/1116 cover them)
+
 ## 2026-07-07 10:42 — claude-code
 - Action: fixed doc/version drift in `tools/multi-cli-install` (delegated: coder + doc-writer). Aligned `VERSION` 0.0.3→0.0.4, canonicalized package name to `@rwn34/multi-cli-install`, added missing `multi-cli-install/` entry to `tools/README.md`.
 - Files: `tools/multi-cli-install/src/index.ts`, `tools/multi-cli-install/test/index.test.ts`, `tools/multi-cli-install/package.json`, `tools/README.md`

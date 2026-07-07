@@ -15,7 +15,7 @@ Edit/Write only within framework directories:
 - `.claude/**` — Claude config (settings, skills, agents, breadcrumb)
 - `CLAUDE.md`, `AGENTS.md` at project root
 
-Reads-only for `.kimi/**` and `.kiro/**` — those folders are the other CLIs' territory. For changes there, write a handoff to `.ai/handoffs/to-<kimi|kiro>/open/NNN-slug.md`.
+Reads-only for `.kimi/**` and `.kiro/**` — those folders are the other CLIs' territory. For changes there, write a handoff to `.ai/handoffs/to-<kimi|kiro>/open/YYYYMMDDHHMM-slug.md`.
 
 For any **project source** write (app code, tests, docs, configs outside framework) — delegate. Never Edit or Write project files yourself.
 

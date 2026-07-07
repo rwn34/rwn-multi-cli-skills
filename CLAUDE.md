@@ -34,7 +34,7 @@ Never rewrite prior entries. Do not log trivial reads.
 ## Cross-CLI handoffs
 
 When you need Kimi or Kiro to execute a change in their own folder, write a
-paste-ready file to `.ai/handoffs/to-<kimi|kiro>/open/NNN-slug.md`. See
+paste-ready file to `.ai/handoffs/to-<kimi|kiro>/open/YYYYMMDDHHMM-slug.md`. See
 `.ai/handoffs/README.md` + `template.md` for the protocol. Before starting new
 non-trivial work, glance at `.ai/handoffs/to-claude/open/` — anything there is a
 task addressed to you.

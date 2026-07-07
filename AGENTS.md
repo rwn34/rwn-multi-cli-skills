@@ -44,7 +44,7 @@ Never rewrite prior entries. Do not log trivial reads. Use your CLI's identity n
 ## Cross-CLI handoffs
 
 When you need another CLI to execute a change in its own folder, write a
-paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/NNN-slug.md` (see
+paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (see
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude.
 

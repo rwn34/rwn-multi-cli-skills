@@ -33,9 +33,9 @@ block() {
 # Rule 1 — framework dirs for other CLIs. Hard block, no exceptions.
 case "$rel" in
     .kimi|.kimi/*)
-        block ".kimi/ is Kimi CLI's territory. Claude never writes there. Use .ai/handoffs/to-kimi/open/NNN-slug.md to request the change." ;;
+        block ".kimi/ is Kimi CLI's territory. Claude never writes there. Use .ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md to request the change." ;;
     .kiro|.kiro/*)
-        block ".kiro/ is Kiro CLI's territory. Claude never writes there. Use .ai/handoffs/to-kiro/open/NNN-slug.md to request the change." ;;
+        block ".kiro/ is Kiro CLI's territory. Claude never writes there. Use .ai/handoffs/to-kiro/open/YYYYMMDDHHMM-slug.md to request the change." ;;
     .kimigraph|.kimigraph/*)
         block ".kimigraph/ is Kimi's code-graph territory (KimiGraph tool). Claude never writes there." ;;
     .kirograph|.kirograph/*)

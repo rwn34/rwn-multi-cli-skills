@@ -62,11 +62,11 @@ formats present.
 
 ## Protocol (lifecycle of a single handoff)
 
-1. **Create** — sender writes `to-<recipient>/open/NNN-<slug>.md`. Status line inside
-   the file reads `OPEN`.
+1. **Create** — sender writes `to-<recipient>/open/YYYYMMDDHHMM-<slug>.md`. Status line
+   inside the file reads `OPEN`.
 2. **Dispatch** — the user tells the recipient CLI: "read
-   `.ai/handoffs/to-<cli>/open/NNN-<slug>.md` and execute it." (Or asks the recipient
-   to scan `open/` for anything new.)
+   `.ai/handoffs/to-<cli>/open/YYYYMMDDHHMM-<slug>.md` and execute it." (Or asks the
+   recipient to scan `open/` for anything new.)
 3. **Review + execute** — recipient reads the handoff, asks clarifying questions if
    needed, performs the steps, prepends an entry to `.ai/activity/log.md`.
 4. **Report** — recipient reports back in chat with the "Report back with" section
