@@ -9,6 +9,15 @@ if [ -f .ai/activity/log.md ] && [ -z "$(find .ai/activity/log.md -mmin -60 2>/d
     echo "REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending."
 fi
 
+# --- Reminder 1b: auto-dispatchable handoffs waiting ---
+auto_pending=$(grep -liE '^Auto:[[:space:]]*yes' .ai/handoffs/to-*/open/*.md 2>/dev/null)
+if [ -n "$auto_pending" ]; then
+    echo ""
+    echo "REMINDER: open handoffs marked 'Auto: yes' are waiting for dispatch:"
+    echo "$auto_pending" | head -5
+    echo "Run: bash .ai/tools/dispatch-handoffs.sh --exec (or ask the user to)."
+fi
+
 # --- Reminder 2: uncommitted changes beyond the activity log ---
 # Filter out the activity log line from git status; if anything else is uncommitted, remind.
 unpushed=$(git status --short 2>/dev/null | grep -vE '\.ai/activity/log\.md$')

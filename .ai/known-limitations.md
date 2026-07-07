@@ -5,6 +5,32 @@ Any AI CLI hitting behavior that seems wrong should check here first.
 
 ---
 
+## Crush — no hook layer at all; runs permission-bypassed in daily use
+
+**Status:** Open by design. Documented 2026-07-07 at Crush onboarding (ADR-0002).
+
+**What:** Crush has no pre-tool hook mechanism, no steering channel, and no
+subagent roster. In the daily 4AI-panes setup it launches as `crush --yolo`
+(see `.ai/research/4ai-panes-integration-notes.md`), so interactive permission
+prompts are off too. **Nothing at the tool layer prevents Crush from writing
+anywhere.**
+
+**Mitigations:**
+1. Prompt-level SAFETY RULES in `CRUSH.md` (root context file, always loaded)
+   replicate the guard rules — write scope limited to `.ai/` log/reports/
+   handoffs; destructive/deploy/publish commands forbidden; dry-run only.
+2. Role containment: ADR-0002 Stage 1 gives Crush a prepare-only ops/release
+   lane — its briefs should never require source edits or mutating commands.
+3. Custodianship: Claude maintains `CRUSH.md` / `.crush.json`, so Crush's own
+   drift can't erode its rules.
+
+**Residual risk:** prompt-level enforcement is SOFT (same class as the Kiro
+subagent gap below, but broader). Do not hand Crush tasks whose failure mode
+is destructive. Stage 2 deploy execution requires demonstrated guardrail
+parity + an ADR-0002 amendment.
+
+---
+
 ## Kiro CLI — subagent hook inheritance broken
 
 **Status:** Open. Confirmed empirically 2026-04-19 21:22 by kiro-cli.

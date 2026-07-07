@@ -14,9 +14,10 @@ conventions.
 
 ## Who can edit what (reminder)
 
-- **Claude Code** edits: `.claude/`, `.ai/`, `CLAUDE.md`, `AGENTS.md`, any non-CLI path.
+- **Claude Code** edits: `.claude/`, `.ai/`, `CLAUDE.md`, `AGENTS.md`, any non-CLI path. Also custodian of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
 - **Kimi CLI** edits: `.kimi/` (project), `~/.kimi/` (global), any non-CLI path.
 - **Kiro CLI** edits: `.kiro/` (project), `~/.kiro/` (global), any non-CLI path.
+- **Crush** edits: `.ai/` only (activity log, reports, handoffs). Its own config is Claude-maintained — Crush requests changes via `to-claude/`.
 
 Any CLI can edit `.ai/` (shared SSOT + docs + handoffs queue + activity log). When a
 CLI needs a change in another CLI's folder, it writes a handoff to
@@ -34,7 +35,10 @@ Claude to update something in `.claude/` or in Claude's portion of the shared do
     ├── to-kimi/
     │   ├── open/
     │   └── done/
-    └── to-kiro/
+    ├── to-kiro/
+    │   ├── open/
+    │   └── done/
+    └── to-crush/
         ├── open/
         └── done/
 
@@ -63,10 +67,17 @@ formats present.
 ## Protocol (lifecycle of a single handoff)
 
 1. **Create** — sender writes `to-<recipient>/open/YYYYMMDDHHMM-<slug>.md`. Status line
-   inside the file reads `OPEN`.
-2. **Dispatch** — the user tells the recipient CLI: "read
+   inside the file reads `OPEN`. Optional `Auto: yes` line marks it eligible for
+   headless dispatch (see step 2b). Default is `Auto: no`.
+2. **Dispatch (manual, default)** — the user tells the recipient CLI: "read
    `.ai/handoffs/to-<cli>/open/YYYYMMDDHHMM-<slug>.md` and execute it." (Or asks the
    recipient to scan `open/` for anything new.)
+2b. **Dispatch (auto, opt-in)** — for handoffs marked `Auto: yes`, run
+   `bash .ai/tools/dispatch-handoffs.sh --exec` (dry-run without `--exec`): it
+   launches the recipient CLI headless (one-shot) to process the handoff. Use
+   only for changes needing no confirmation. Windows Terminal panes can't be
+   driven programmatically, so this spawns fresh instances — see
+   `.ai/research/4ai-panes-integration-notes.md`.
 3. **Review + execute** — recipient reads the handoff, asks clarifying questions if
    needed, performs the steps, prepends an entry to `.ai/activity/log.md`.
 4. **Report** — recipient reports back in chat with the "Report back with" section

@@ -3,9 +3,14 @@
 # Blocks writes that violate (1) framework-dir rule, (2) sensitive-file rule, (3) root-file policy.
 # Reads tool call JSON from stdin; exit 2 + stderr to block with a reason.
 
-# Extract file_path via python (jq not reliably installed on Windows/Git Bash)
-path=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+# Extract file_path + agent_type via python (jq not reliably installed on Windows/Git Bash)
+# agent_type is present in hook input for SUBAGENT tool calls; absent/empty on the main thread.
+input=$(cat)
+path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+      echo "")
+agent_type=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
+      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
       echo "")
 
 # No path? allow (nothing to evaluate)
@@ -58,6 +63,23 @@ case "$rel" in
         block "Secrets/credentials file pattern. Do not write secret material from an agent. Ask the user to edit manually." ;;
 esac
 
+# Rule 2.5 — main-thread delegation enforcement (orchestrator pattern / ADR-0002).
+# Subagent tool calls carry agent_type in hook input; main-thread (orchestrator)
+# calls do not. The orchestrator writes only framework paths — project-source
+# mutations must come from subagents. Delegation becomes mechanical, not aspirational.
+if [ -z "$agent_type" ]; then
+    case "$rel" in
+        .ai|.ai/*) : ;;                                  # shared framework state
+        .claude|.claude/*) : ;;                          # Claude config
+        CLAUDE.md|AGENTS.md) : ;;                        # Claude-owned root contracts
+        CRUSH.md|.crush.json) : ;;                       # Crush custodianship (ADR-0001)
+        .codegraph|.codegraph/*) : ;;                    # Claude's graph dir
+        .mcp.json|.mcp.json.example) : ;;                # Claude's MCP config
+        *)
+            block "Main-thread (orchestrator) write to project path '$rel'. Delegate this to a subagent (coder, doc-writer, tester, ...) — the orchestrator writes only framework paths. See .ai/instructions/orchestrator-pattern/principles.md." ;;
+    esac
+fi
+
 # Rule 3 — root-file policy.
 # Authoritative allowlist: docs/architecture/0001-root-file-exceptions.md.
 # Path is at root iff it contains no "/" and is not empty.
@@ -65,7 +87,7 @@ case "$rel" in
     */*) exit 0 ;;    # has slash → not at root → allow
     "") exit 0 ;;     # empty → skip
     # Category A — docs entry points
-    AGENTS.md|README.md|CLAUDE.md) exit 0 ;;
+    AGENTS.md|README.md|CLAUDE.md|CRUSH.md) exit 0 ;;
     LICENSE|LICENSE.*) exit 0 ;;
     CHANGELOG|CHANGELOG.*) exit 0 ;;
     CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md) exit 0 ;;
@@ -75,8 +97,8 @@ case "$rel" in
     .editorconfig) exit 0 ;;
     # Category D — platform / CI-vendor dotfiles at root
     .dockerignore|.gitlab-ci.yml) exit 0 ;;
-    # Category E — MCP convention
-    .mcp.json|.mcp.json.example) exit 0 ;;
+    # Category E — MCP convention + Crush config (Claude is Crush's custodian per ADR-0001/0002)
+    .mcp.json|.mcp.json.example|.crush.json) exit 0 ;;
     # Categories F/G/H — amend this allowlist alongside the ADR when a language or tool is chosen.
     # Examples to uncomment later: package.json, pyproject.toml, Cargo.toml, go.mod, .nvmrc, .python-version, .tool-versions
     *)

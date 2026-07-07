@@ -82,6 +82,10 @@ check_pair ".ai/instructions/code-graphs/principles.md"         ".kiro/steering/
 check_pair ".ai/instructions/self-grep-verify/principles.md"    ".claude/skills/self-grep-verify/SKILL.md"       yes
 check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kimi/steering/self-grep-verify.md"             no
 check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kiro/steering/self-grep-verify.md"             no
+# operating-prompt / principles
+check_pair ".ai/instructions/operating-prompt/principles.md"    ".claude/skills/operating-prompt/SKILL.md"       yes
+check_pair ".ai/instructions/operating-prompt/principles.md"    ".kimi/steering/operating-prompt.md"             no
+check_pair ".ai/instructions/operating-prompt/principles.md"    ".kiro/steering/operating-prompt.md"             no
 
 echo "Checked: $checked replicas, Drift: $drift"
 [ "$drift" -eq 0 ] && exit 0 || exit 1

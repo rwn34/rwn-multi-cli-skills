@@ -10,7 +10,7 @@
 
 A **template** — a starting point you drop into a project — that gives you:
 
-1. **Three AI CLIs coordinating on shared state.** Claude Code (architect/orchestrator), Kimi CLI (high-throughput workhorse), Kiro CLI (premium reasoning via Opus 4.6). They read the same activity log, queue work for each other via file-based handoffs, share a single source of truth for agent definitions.
+1. **Three AI CLIs coordinating on shared state.** Claude Code (architect/orchestrator), Kimi CLI (high-throughput workhorse), Kiro CLI (premium reasoning via Opus 4.6). They read the same activity log, queue work for each other via file-based handoffs, share a single source of truth for agent definitions. A fourth CLI, Crush, participates as a narrow-scope ops/release operator (see `docs/architecture/0002-cli-role-topology.md`).
 
 2. **Hard write boundaries.** Each CLI can edit only its own config dir + shared `.ai/` + your project code. A hook layer enforces this — if Claude tries to write to `.kiro/`, the write is blocked before it hits disk.
 
@@ -439,8 +439,9 @@ The catalog is the single source of truth: [`.ai/instructions/agent-catalog/prin
 | Claude Code | `.claude/**`, `.ai/**`, project source | `.kimi/**`, `.kiro/**` |
 | Kimi CLI | `.kimi/**`, `.ai/**`, project source | `.claude/**`, `.kiro/**` |
 | Kiro CLI | `.kiro/**`, `.ai/**`, project source | `.claude/**`, `.kimi/**` |
+| Crush | `.ai/**` (activity log, reports, handoffs) | Everything else — no project-source writes, no other CLI dirs (prompt-level enforcement only; see known-limitations) |
 
-Enforced by pre-write hooks on all three CLIs. Violations are blocked before filesystem writes happen.
+Enforced by pre-write hooks on all three CLIs. Violations are blocked before filesystem writes happen. Crush has no hook layer — its boundaries are prompt-enforced via `CRUSH.md` only (see `.ai/known-limitations.md`).
 
 ### Safety hooks (what they block)
 

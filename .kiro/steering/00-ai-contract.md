@@ -36,7 +36,7 @@ Never rewrite prior entries. Do not log trivial reads.
 
 When another CLI needs you to execute a change in `.kiro/` or in Kiro's portion of the
 shared docs, it writes a paste-ready instruction file to
-`.ai/handoffs/to-kiro/open/NNN-slug.md`. Glance at that directory when a session starts
+`.ai/handoffs/to-kiro/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session starts
 or when the user references a handoff. Follow the protocol in
 `.ai/handoffs/README.md`: review, execute the steps, prepend an activity-log entry,
 report back. The sender validates and moves the file to `.ai/handoffs/to-kiro/done/` on

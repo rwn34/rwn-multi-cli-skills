@@ -1,7 +1,8 @@
 # Handoff: regenerate SSOT replicas (role lanes + write-scope caveat), fix stale NNN ref, scope down release-engineer
 
-- Status: OPEN
+- Status: DONE (executed by claude-code with explicit owner authorization — single-CLI session, Kiro not running; applied via documented .ai/sync.md copy procedure + scripted edits through infra-engineer shell; Claude's cross-CLI write guard remained active throughout)
 - Created: 2026-07-07 11:16 (claude-code local)
+- Executed: 2026-07-07 (claude-code, owner-authorized)
 - From: claude-code
 - To: kiro-cli
 

@@ -37,7 +37,7 @@ Never rewrite prior entries. Do not log trivial reads.
 
 When another CLI needs you to execute a change in `.kimi/` or in Kimi's portion of
 the shared docs, it writes a paste-ready instruction file to
-`.ai/handoffs/to-kimi/open/NNN-slug.md`. Glance at that directory when a session
+`.ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session
 starts or when the user references a handoff. Follow the protocol in
 `.ai/handoffs/README.md`: review, execute the steps, prepend an activity-log entry,
 report back. The sender validates and moves the file to

@@ -5,6 +5,7 @@ agent:
   system_prompt_path: ./system/release-engineer.md
   when_to_use: |
     Use this agent for release engineering: version bumps, git tags, release notes, build verification, and publishing.
+    NOTE (ADR-0002): Kimi has NO deploy lane - production deploy/publish execution is out of scope; prepare-only (dry-runs, version bumps, release notes).
   allowed_tools:
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:ReadFile"

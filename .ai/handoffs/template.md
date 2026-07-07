@@ -1,8 +1,13 @@
 # <Task title — one short clear line>
 Status: OPEN
-Sender: <claude-code | kimi-cli | kiro-cli>
-Recipient: <claude-code | kimi-cli | kiro-cli>
+Sender: <claude-code | kimi-cli | kiro-cli | crush>
+Recipient: <claude-code | kimi-cli | kiro-cli | crush>
 Created: YYYY-MM-DD HH:MM
+Auto: no
+
+<!-- Auto: yes = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh
+     (recipient CLI is launched one-shot to process this handoff without the human
+     relaying). Default no — keep no for anything needing confirmation. -->
 
 <!--
 Filename: YYYYMMDDHHMM-<slug>.md (UTC, minute precision).

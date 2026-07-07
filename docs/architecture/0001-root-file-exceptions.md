@@ -21,6 +21,7 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 - `AGENTS.md` — multi-CLI project pointer
 - `README.md` — project README
 - `CLAUDE.md` — Claude Code's always-loaded memory
+- `CRUSH.md` — Crush CLI's always-loaded context/contract file (Crush reads root context files natively; added per ADR-0002 Crush onboarding)
 - `LICENSE` (or `LICENSE.*`) — GitHub / npm / PyPI / crates.io auto-detection
 - `CHANGELOG.md` (or `CHANGELOG`) — release-tooling convention (keepachangelog, release-please, semantic-release)
 - `CONTRIBUTING.md` — optional; canonical version lives at `docs/guides/contributing.md`. Root file allowed for GitHub auto-link UX.
@@ -53,6 +54,10 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 - `.codegraph/` — CodeGraph local knowledge graph (Claude Code tool)
 - `.kirograph/` — KiroGraph local knowledge graph (Kiro CLI tool)
 - `.kimigraph/` — KimiGraph local knowledge graph (Kimi CLI tool)
+- `.crush.json` — Crush CLI config (MCP wiring). NOTE: file predates this amendment (created by the code-graph wiring change without ADR amendment); this entry cures the violation.
+- `.crush/` — Crush CLI local data directory (sessions, logs; gitignored)
+
+Custodianship note: Crush cannot self-manage framework files (no hooks/steering layer). Claude Code acts as custodian of `CRUSH.md` and `.crush.json` until ADR-0002 Stage 2 revisits this.
 
 ### F. Language manifests (allowlist extended only when a language is chosen — amend this ADR at that time)
 

@@ -27,6 +27,18 @@ disagree, regenerate from here. Never edit the replicas directly.
 | `.ai/instructions/self-grep-verify/principles.md` | `.claude/skills/self-grep-verify/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
 | `.ai/instructions/self-grep-verify/principles.md` | `.kimi/steering/self-grep-verify.md` | Kimi steering |
 | `.ai/instructions/self-grep-verify/principles.md` | `.kiro/steering/self-grep-verify.md` | Kiro steering |
+| `.ai/instructions/operating-prompt/principles.md` | `.claude/skills/operating-prompt/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
+| `.ai/instructions/operating-prompt/principles.md` | `.kimi/steering/operating-prompt.md` | Kimi steering |
+| `.ai/instructions/operating-prompt/principles.md` | `.kiro/steering/operating-prompt.md` | Kiro steering |
+
+## Crush (no replicas)
+
+Crush has no generated replicas: it is a context-file-only CLI (no
+skill/steering channel), so its contract is self-contained in `CRUSH.md` at
+project root, maintained by Claude Code as custodian (ADR-0001 note,
+ADR-0002 role). When an SSOT rule materially changes Crush's obligations,
+update `CRUSH.md` by hand — it is intentionally a digest, not a byte-identical
+replica, and is excluded from `check-ssot-drift.sh`.
 
 ## Copy commands
 
@@ -57,6 +69,11 @@ cp .ai/instructions/code-graphs/principles.md .kiro/steering/code-graphs.md
 # self-grep-verify
 cp .ai/instructions/self-grep-verify/principles.md .kimi/steering/self-grep-verify.md
 cp .ai/instructions/self-grep-verify/principles.md .kiro/steering/self-grep-verify.md
+# Claude SKILL.md needs frontmatter — body-only replace.
+
+# operating-prompt
+cp .ai/instructions/operating-prompt/principles.md .kimi/steering/operating-prompt.md
+cp .ai/instructions/operating-prompt/principles.md .kiro/steering/operating-prompt.md
 # Claude SKILL.md needs frontmatter — body-only replace.
 
 # Claude SKILL.md files need CLI-specific frontmatter + provenance comments —

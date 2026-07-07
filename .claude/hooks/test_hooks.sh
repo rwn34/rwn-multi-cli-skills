@@ -22,8 +22,9 @@ run_test() {
 
 # --- write-edit: root-file policy ---
 run_test "t1 root non-allowlisted"       "$WE" '{"tool_input":{"file_path":"evil.txt"}}'                 2
-run_test "t2 root .gitignore allowed"    "$WE" '{"tool_input":{"file_path":".gitignore"}}'               0
-run_test "t3 non-root src path"          "$WE" '{"tool_input":{"file_path":"src/main.rs"}}'              0
+run_test "t2 subagent .gitignore allowed" "$WE" '{"agent_type":"coder","tool_input":{"file_path":".gitignore"}}' 0
+run_test "t2b main-thread .gitignore blocked (delegate it)" "$WE" '{"tool_input":{"file_path":".gitignore"}}' 2
+run_test "t3 subagent src path allowed"  "$WE" '{"agent_type":"coder","tool_input":{"file_path":"src/main.rs"}}' 0
 run_test "t4 .ai handoffs path"          "$WE" '{"tool_input":{"file_path":".ai/handoffs/test.md"}}'     0
 
 # --- write-edit: framework-dir rule ---
@@ -57,6 +58,17 @@ run_test "t21 rm -rf /usr allowed"       "$BH" '{"tool_input":{"command":"rm -rf
 run_test "t22 .codegraph allowed"        "$WE" '{"tool_input":{"file_path":".codegraph/codegraph.db"}}'  0
 run_test "t23 .kimigraph blocked"        "$WE" '{"tool_input":{"file_path":".kimigraph/kimigraph.db"}}'  2
 run_test "t24 .kirograph blocked"        "$WE" '{"tool_input":{"file_path":".kirograph/kirograph.db"}}'  2
+
+# --- write-edit: Crush custodianship (ADR-0001 amendment + ADR-0002 — Claude maintains Crush's files) ---
+run_test "t25 CRUSH.md allowed"          "$WE" '{"tool_input":{"file_path":"CRUSH.md"}}'                 0
+run_test "t26 .crush.json allowed"       "$WE" '{"tool_input":{"file_path":".crush.json"}}'              0
+
+# --- write-edit: main-thread delegation enforcement (Rule 2.5 — orchestrator pattern) ---
+run_test "t27 main-thread src blocked"   "$WE" '{"tool_input":{"file_path":"src/main.rs"}}'              2
+run_test "t28 main-thread docs blocked"  "$WE" '{"tool_input":{"file_path":"docs/specs/x.md"}}'          2
+run_test "t29 main-thread .ai allowed"   "$WE" '{"tool_input":{"file_path":".ai/research/x.md"}}'        0
+run_test "t30 subagent docs allowed"     "$WE" '{"agent_type":"doc-writer","tool_input":{"file_path":"docs/specs/x.md"}}' 0
+run_test "t31 subagent .kimi still blocked" "$WE" '{"agent_type":"coder","tool_input":{"file_path":".kimi/agents/x.yaml"}}' 2
 
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then

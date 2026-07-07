@@ -1,7 +1,9 @@
 # AI Contract
 
-Multiple AI CLIs work in this project (Claude Code = you, Kimi CLI, Kiro CLI). They
+Multiple AI CLIs work in this project (Claude Code = you, Kimi CLI, Kiro CLI, plus
+Crush as a narrow ops/release operator — see `CRUSH.md` + ADR-0002). They
 share state via `.ai/` so no CLI has to copy-paste another's output to stay coherent.
+You are custodian of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
 
 ## Your identity for the activity log: `claude-code`
 

@@ -1,6 +1,7 @@
 # AGENTS.md
 
-This project is worked on by multiple AI CLIs — Claude Code, Kimi CLI, Kiro CLI —
+This project is worked on by multiple AI CLIs — Claude Code, Kimi CLI, Kiro CLI,
+plus Crush as a narrow-scope ops/release operator (ADR-0002) —
 sharing state via a single source of truth plus a cross-CLI activity log.
 
 ## Shared framework
@@ -19,6 +20,7 @@ Each CLI reads its own contract from its native always-loaded path:
 | Claude Code | `/CLAUDE.md` (project root — Claude's native auto-load path) |
 | Kimi CLI | `.kimi/steering/00-ai-contract.md` |
 | Kiro CLI | `.kiro/steering/00-ai-contract.md` |
+| Crush | `/CRUSH.md` (project root — Crush's native context file; Claude-maintained per ADR-0001) |
 
 A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 `.claude/` can locate Claude's contract without knowing Claude's conventions.

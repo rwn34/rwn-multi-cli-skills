@@ -78,6 +78,39 @@ replicate the default agent's skill URIs or declare them manually.
   to coding tasks only. Kimi/Kiro default-load the principles because their always-loaded
   steering is cheaper per-turn than their trigger-matching skill activation.
 
+## Headless (one-shot) invocation per CLI
+
+Used by `.ai/tools/dispatch-handoffs.sh` for `Auto: yes` handoffs. Flags vary
+by CLI version — verify locally before relying on these:
+
+| CLI | Headless form |
+|---|---|
+| Claude Code | `claude -p "<prompt>" --permission-mode acceptEdits` |
+| Kimi CLI | `kimi --agent-file .kimi/agents/orchestrator.yaml -p "<prompt>"` (verify flag) |
+| Kiro CLI | `kiro-cli chat --no-interactive "<prompt>"` (verify flag) |
+| Crush | `crush run "<prompt>"` |
+
+## Crush (narrow-scope 4th CLI — ADR-0002)
+
+Crush is onboarded as a **narrow ops/release operator** (see
+`docs/architecture/0002-cli-role-topology.md`), not a full framework peer. Its
+mapping is deliberately minimal:
+
+| Abstract concept | Crush |
+|---|---|
+| **Session-root config** | `.crush.json` (project root — MCP wiring) |
+| **Always-loaded steering** | `CRUSH.md` (project root — Crush reads root context files natively) |
+| **On-demand instruction** | none (context files only — no skill/resource channel) |
+| **Agent isolation** | none (no subagent roster; single-agent CLI) |
+| **Lifecycle automation** | none (no hook layer — boundaries are prompt-enforced via `CRUSH.md` SAFETY RULES) |
+| **Activity-log identity** | `crush` |
+| **Handoff inbox** | `.ai/handoffs/to-crush/open/` |
+
+**Custodianship:** Crush cannot self-manage framework files. Claude Code
+maintains `CRUSH.md` and `.crush.json` (ADR-0001 custodianship note). Crush has
+no SSOT replicas — its contract is self-contained in `CRUSH.md` — so it does
+not participate in `.ai/tools/check-ssot-drift.sh`.
+
 ## Adding a new CLI to this project
 
 1. Identify the CLI's native: (a) always-loaded folder, (b) on-demand/skill channel, (c) lifecycle hooks.

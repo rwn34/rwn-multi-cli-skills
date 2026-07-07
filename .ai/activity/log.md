@@ -17,6 +17,44 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-07 12:40 — claude-code
+- Action: CAPSTONE — Phases 2-6 of framework-evolution roadmap complete in one session (owner-directed, Claude-only). P2: Crush onboarded (CRUSH.md contract w/ SAFETY RULES + Stage-1 role, ADR-0001 amended for CRUSH.md/.crush.json/.crush/, cli-map Crush section, sync.md custodianship note, to-crush/ queues, known-limitations entry, README + AGENTS.md + CLAUDE.md updated). P3: main-thread delegation enforcement — hook Rule 2.5 blocks orchestrator source writes via agent_type discriminator, verified LIVE by two probes (subagent src write passes; subagent .kimi write still blocked; suite 32/32). P4: dispatch-handoffs.sh + Auto: field + headless table in cli-map + stop-reminder nudge. P5: ADR-0003 + code-graphs SSOT rationalized (CodeGraph active; Kimi/KiroGraph optional-off; .mcp.json created codegraph-only; .crush.json + .kiro/settings/mcp.json emptied). P6: operating-prompt SSOT + 3 replicas + drift pairs (now 21). Kimi/Kiro files applied via owner-authorized infra-engineer batch (see 03:36 entry); Claude's cross-CLI write guard stayed active throughout (permission classifier correctly denied a guard-lift attempt; used documented sync.md procedure instead).
+- Files: see 03:36/12:10/11:55 entries + `CRUSH.md`, `.mcp.json`, `.crush.json`, `.ai/instructions/operating-prompt/principles.md`, `.claude/skills/operating-prompt/SKILL.md`, `.ai/tools/{dispatch-handoffs.sh,check-ssot-drift.sh}`, `.ai/handoffs/{template.md,README.md}`, `.ai/cli-map.md`, `.ai/sync.md`, `.ai/known-limitations.md`, `.claude/hooks/{pretool-write-edit.sh,test_hooks.sh,stop-reminder.sh}`
+- Decisions: Crush custodianship (Claude maintains CRUSH.md/.crush.json — Crush can't self-manage); Kimi/Kiro runtime delegation-enforcement deferred (their CLIs absent here — untestable, flagged in notes); Kiro release-engineer prompt body retains legacy publish wording after ADR-0002 prefix (follow-up candidate); `~/.kimi/mcp.json` graph cleanup is on the user (user-global).
+- Grep-verified evidence:
+  - `CRUSH.md` → `## SAFETY RULES (you have no hook layer — these rules ARE your guardrails)`
+  - `pretool-write-edit.sh` → `# Rule 2.5 — main-thread delegation enforcement`
+  - `check-ssot-drift.sh` → `operating-prompt` pairs; gate run: `Checked: 21 replicas, Drift: 0`; hooks `PASS: 32/32`
+
+## 2026-07-07 03:36 — claude-code
+- Action: infra-engineer (owner-authorized, single-CLI session) — executed the DONE-marked Kimi/Kiro handoffs 202607071115/1116: regenerated 8 Kimi/Kiro steering replicas per `.ai/sync.md` (agent-catalog, orchestrator-pattern, code-graphs, operating-prompt x2 CLIs), fixed NNN→YYYYMMDDHHMM in both 00-ai-contract.md, scoped down both release-engineers per ADR-0002 (no deploy lane, prepare-only), emptied `.kiro/settings/mcp.json` mcpServers per ADR-0003, moved both handoffs open/→done/. No commit (per instruction).
+- Files: `.kimi/steering/{agent-catalog,orchestrator-pattern,code-graphs,operating-prompt,00-ai-contract}.md`, `.kiro/steering/{agent-catalog,orchestrator-pattern,code-graphs,operating-prompt,00-ai-contract}.md`, `.kimi/agents/release-engineer.yaml`, `.kiro/agents/release-engineer.json`, `.kiro/settings/mcp.json`, `.ai/handoffs/to-{kimi,kiro}/done/20260707111{5,6}-ssot-regen-role-lanes-nnn-fix.md` (moved)
+- Decisions: none — applied exactly-specified edits from the handoffs/orchestrator brief; local wall-clock (03:36) trails prior entries' timestamps, prepend order is authoritative per log header
+- Grep-verified evidence:
+  - `.kimi/steering/00-ai-contract.md:40` → `to-kimi/open/YYYYMMDDHHMM-slug.md`; `.kiro/steering/00-ai-contract.md:39` → `to-kiro/open/YYYYMMDDHHMM-slug.md`
+  - `.kimi/agents/release-engineer.yaml:8` → `NOTE (ADR-0002): Kimi has NO deploy lane`; `.kiro/agents/release-engineer.json:4` prompt starts `ADR-0002: Kiro has NO deploy lane`
+  - Role lanes heading at L88 (agent-catalog) / L104 (orchestrator-pattern) in both `.kimi/` and `.kiro/` replicas
+  - Gates: drift-check `Checked: 21 replicas, Drift: 0`; hooks `PASS: 32/32`; dispatcher dry-run `No open handoffs marked 'Auto: yes'.`; both `.kiro` JSONs parse (`JSON OK`)
+
+## 2026-07-07 12:10 — claude-code
+- Action: doc-writer — wrote ADR-0003 "Code-Graph Rationalization" (Accepted): keep CodeGraph for Claude, demote KimiGraph/KiroGraph to optional-off, end cross-wiring (each CLI registers at most its own graph), no graph wiring for Crush, kill criterion (2 MCP failures/month or 1 month unused → disable, not repair). Notes `~/.kimi/mcp.json` cleanup is on the user and flags `tools/multi-cli-install` wire-mcp step as out-of-line follow-up.
+- Files: `docs/architecture/0003-code-graph-rationalization.md` (NEW)
+- Decisions: — (codified user-approved decisions as briefed)
+- Grep-verified evidence:
+  - ADR L1: `# 3. Code-Graph Rationalization`
+  - ADR L16: `**Demote KimiGraph and KiroGraph to optional-off.**`
+  - ADR L19: `**Kill criterion going forward.**`
+
+## 2026-07-07 11:55 — claude-code
+- Action: doc-writer — amended ADR-0001 for Crush root files (CRUSH.md in Category A; .crush.json + .crush/ in Category E, incl. retroactive cure note for .crush.json; custodianship note: Claude Code custodies CRUSH.md/.crush.json until ADR-0002 Stage 2) and updated README governance text (intro item 1 mentions Crush as narrow-scope ops/release operator; write-boundaries table gains Crush row; hook-enforcement sentence notes Crush is prompt-enforced only via CRUSH.md). Deliberately NOT a global "three CLIs"→"four" rewrite — core framework remains three-CLI.
+- Files: `docs/architecture/0001-root-file-exceptions.md`, `README.md`
+- Decisions: —
+- Grep-verified evidence:
+  - ADR L24: `- \`CRUSH.md\` — Crush CLI's always-loaded context/contract file`
+  - ADR L57: `- \`.crush.json\` — Crush CLI config (MCP wiring). NOTE: file predates this amendment`
+  - README L442: `| Crush | \`.ai/**\` (activity log, reports, handoffs) | Everything else`
+  - README L444: `Crush has no hook layer — its boundaries are prompt-enforced via \`CRUSH.md\` only`
+
 ## 2026-07-07 11:35 — claude-code
 - Action: Phase 0+1 of framework-evolution roadmap — fixed SSOT drifts, landed ADR-0002 (CLI role topology), added role-lanes sections to SSOTs, regenerated Claude replicas, fixed code-graphs SKILL.md missing frontmatter, dispatched handoffs to Kimi+Kiro, captured 4AI-panes integration notes
 - Files: `.ai/instructions/agent-catalog/principles.md` (per-CLI write-scope caveat + role lanes), `.ai/instructions/orchestrator-pattern/principles.md` (role lanes), `docs/architecture/0002-cli-role-topology.md` (NEW, via doc-writer), `.claude/skills/{agent-catalog,orchestrator-pattern,code-graphs}/SKILL.md` (regen/frontmatter fix), `.claude/agents/orchestrator.md` + `.claude/hooks/pretool-write-edit.sh` + `CLAUDE.md` + `AGENTS.md` + `.ai/handoffs/README.md` (NNN→YYYYMMDDHHMM), `.ai/handoffs/to-{kimi,kiro}/open/20260707111{5,6}-ssot-regen-role-lanes-nnn-fix.md` (NEW), `.ai/research/4ai-panes-integration-notes.md` (NEW)
