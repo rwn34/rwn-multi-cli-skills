@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-08 23:16 — claude-code
+- Action: P4 verification + commit batch (infra-engineer, per handoff 202607082251). Tests: stop-reminder per-queue counts OK (to-claude 4 / to-kimi 1 / to-kiro 1), hook suite PASS 39/39, dispatcher `bash -n` exit 0, forced-failure dispatch via stub binaries (crush/claude/kimi/kiro-cli all stubbed exit 7) → 6 DISPATCH attempts, ALERT + `.ai/reports/dispatch-failure-*.md` per attempt, reports verified then deleted (synthetic). P3+P4 handoffs git-mv'd to done/. Committed + pushed.
+- Files: `.claude/hooks/stop-reminder.sh`, `.ai/tools/dispatch-handoffs.sh`, `.ai/handoffs/README.md`, `.ai/handoffs/to-claude/done/{202607082250-p3-worktree-fleet-guards.md,202607082251-p4-automation-polling.md}` (moved)
+- Decisions: observed same-second claude failures collapse into one report file (`dispatch-failure-20260708161558-claude.md` reused across 3 handoffs) — timestamp+cli filename has no per-handoff uniqueness; flagged, not fixed (verify-only mandate).
+
 ## 2026-07-08 23:03 — claude-code
 - Action: Merged `claude/project-overview-pn5l4e` → `master` (no-ff, owner-approved) and pushed; merge commit `b3724f7`, remote verified via ls-remote. Gates before merge: drift 0/24, hooks 32/32, counter-divergence 0. Branch kept; no tag, no publish. Rollback: `git revert -m 1 b3724f7`.
 - Files: — (merge only; no content edits)

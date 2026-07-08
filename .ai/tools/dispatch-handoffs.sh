@@ -75,8 +75,33 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
         cmd=$(headless_cmd "$cli" "$rel")
         if [ "$MODE" = "exec" ]; then
             echo "DISPATCH [$cli] $rel"
-            ( cd "$root" && eval "$cmd" )
-            echo "---- [$cli] finished (exit $?) ----"
+            out_tmp=$(mktemp)
+            ( cd "$root" && eval "$cmd" ) 2>&1 | tee "$out_tmp"
+            rc=${PIPESTATUS[0]}
+            echo "---- [$cli] finished (exit $rc) ----"
+            # Failure alerting (Tier B — act, then notify): non-zero exit writes a
+            # report so a failed headless dispatch is never silent.
+            if [ "$rc" -ne 0 ]; then
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli.md"
+                {
+                    echo "# Dispatch failure — $cli (exit $rc)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- Command: $cmd"
+                    echo "- UTC: $ts"
+                    echo ""
+                    echo "## Output tail (last 40 lines)"
+                    echo '```'
+                    tail -40 "$out_tmp"
+                    echo '```'
+                    echo ""
+                    echo "Triage: re-run manually, or relay the handoff by hand. The handoff"
+                    echo "stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+            fi
+            rm -f "$out_tmp"
         else
             echo "WOULD DISPATCH [$cli] $rel"
             echo "    $cmd"
