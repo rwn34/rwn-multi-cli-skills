@@ -39,13 +39,20 @@ export function readFrameworkVersion(projectDir: string): FrameworkVersion | nul
   return obj as unknown as FrameworkVersion;
 }
 
+// upgrade_history is append-only, bounded to the most recent entries (plan §3).
+const UPGRADE_HISTORY_CAP = 20;
+
 export function writeFrameworkVersion(projectDir: string, version: FrameworkVersion): void {
   for (const field of REQUIRED_FIELDS) {
     if (!(field in version)) {
       throw new Error(`Missing required field '${field}' in FrameworkVersion`);
     }
   }
+  const capped: FrameworkVersion = {
+    ...version,
+    upgrade_history: version.upgrade_history.slice(-UPGRADE_HISTORY_CAP),
+  };
   const path = versionPath(projectDir);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(version, null, 2) + '\n');
+  writeFileSync(path, JSON.stringify(capped, null, 2) + '\n');
 }

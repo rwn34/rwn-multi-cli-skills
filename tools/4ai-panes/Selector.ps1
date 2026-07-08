@@ -19,7 +19,7 @@ $projectsDir = "C:\Users\rwn34\Code"
 $historyFile = Join-Path $scriptDir ".4pane-history"
 $layoutFile = Join-Path $scriptDir ".4pane-layout"
 $wtExe = "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe"
-$frameworkRepo = "C:/Users/rwn34/Code/rwn-multi-cli-skills"
+$frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else { "C:/Users/rwn34/Code/rwn-multi-cli-skills" }
 
 # ── CLI Definitions ──
 # Each CLI: name, detection command, launch command
@@ -343,15 +343,25 @@ function Install-Framework($targetDir) {
             Write-InstallLog "Fallback reset activity log"
         }
 
-        # Stamp a minimal framework version marker.
+        # Stamp a minimal framework version marker. Resolve the version from the
+        # framework repo's installer package.json at runtime; fall back to the
+        # last-known literal only if it is unreadable.
         try {
+            $fwVersion = '0.0.3'
+            try {
+                $pkgPath = Join-Path $frameworkRepo 'tools/multi-cli-install/package.json'
+                $pkgVersion = (Get-Content $pkgPath -Raw -ErrorAction Stop | ConvertFrom-Json).version
+                if ($pkgVersion) { $fwVersion = $pkgVersion }
+            } catch {
+                Write-InstallLog "Fallback could not read installer package.json; using literal $fwVersion"
+            }
             $markerDir = Join-Path $targetDir '.ai'
             if (-not (Test-Path $markerDir)) { New-Item -ItemType Directory -Path $markerDir -Force | Out-Null }
             $markerPath = Join-Path $markerDir '.framework-version'
             $markerJson = @{
-                framework_version = '0.0.3'
+                framework_version = $fwVersion
                 installer_name = 'Selector.ps1 fallback'
-                installer_version = '0.0.3'
+                installer_version = $fwVersion
                 installed_at = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
                 upgrade_history = @()
             } | ConvertTo-Json -Depth 3

@@ -16,7 +16,8 @@ MARKER="# ADDED BY install-template.sh"
 BRANCH="ai-template-install"
 ROLLBACK_FILE=".ai-install-rollback-point.txt"
 # Phase A: framework version stamped into .ai/.framework-version on install.
-# Must be bumped each release in lockstep with tools/multi-cli-install/package.json.
+# Resolved at runtime from tools/multi-cli-install/package.json (SSOT) once the
+# template dir is known; this literal is only the fallback if that file is unreadable.
 FRAMEWORK_VERSION="0.0.3"
 
 # ---------- globals set later ----------
@@ -121,7 +122,20 @@ TEMPLATE_DIR="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null ||
 [ -z "$TEMPLATE_DIR" ] && die "Could not locate template git root from $SCRIPT_DIR"
 TEMPLATE_SHA="$(cd "$TEMPLATE_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
 
+# ---------- resolve framework version (SSOT: tools/multi-cli-install/package.json) ----------
+PKG_JSON="$TEMPLATE_DIR/tools/multi-cli-install/package.json"
+PKG_VERSION=""
+if [ -f "$PKG_JSON" ]; then
+  PKG_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PKG_JSON" | head -n 1 || true)"
+fi
+if [ -n "$PKG_VERSION" ]; then
+  FRAMEWORK_VERSION="$PKG_VERSION"
+else
+  warn "Could not read version from $PKG_JSON — falling back to $FRAMEWORK_VERSION"
+fi
+
 log "Template dir: $TEMPLATE_DIR (sha: $TEMPLATE_SHA)"
+log "Framework version: $FRAMEWORK_VERSION"
 log "Target dir:   $TARGET"
 [ "$DRY_RUN" -eq 1 ] && log "Mode: DRY-RUN (no writes)"
 

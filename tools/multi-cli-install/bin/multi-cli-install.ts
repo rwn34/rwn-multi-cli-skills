@@ -124,10 +124,10 @@ async function main() {
     for (const p of adapted) console.log(`  ${p}`);
     console.log('');
 
-    console.log('Wiring code-graph MCP servers...');
+    console.log('Wiring CodeGraph MCP server (ADR-0003: own graph only)...');
     const wired = wireMcp(targetDir, dryRun);
     for (const p of wired) console.log(`  ${p}`);
-    if (wired.length === 0) console.log('  all graph servers already wired — skipped');
+    if (wired.length === 0) console.log('  skipped (no CodeGraph config, or already wired)');
     console.log('');
 
     // Phase A: write framework version marker + manifest for future --upgrade support.

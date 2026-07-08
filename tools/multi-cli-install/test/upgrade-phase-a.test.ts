@@ -17,6 +17,9 @@ import {
   buildManifestFromInstalledTree,
 } from '../src/upgrade/manifest.js';
 import type { FrameworkVersion, FrameworkManifest } from '../src/upgrade/types.js';
+import { copyFrameworkFiles, resolveTemplateDir } from '../src/installer/copy-framework.js';
+import { sanitizeState } from '../src/installer/sanitize.js';
+import { VERSION } from '../src/index.js';
 
 const tempDirs: string[] = [];
 
@@ -100,6 +103,20 @@ describe('version: readFrameworkVersion / writeFrameworkVersion', () => {
     const raw = readFileSync(join(tmp, '.ai', '.framework-version'), 'utf-8');
     expect(raw).toMatch(/\n  "framework_version"/);
     expect(raw.endsWith('\n')).toBe(true);
+  });
+
+  it('caps upgrade_history at the most recent 20 entries', () => {
+    const tmp = makeTempDir('ver-cap');
+    const history = Array.from({ length: 25 }, (_, i) => ({
+      from: `0.0.${i}`,
+      to: `0.0.${i + 1}`,
+      at: '2026-05-29T10:00:00Z',
+    }));
+    writeFrameworkVersion(tmp, { ...sampleVersion, upgrade_history: history });
+    const read = readFrameworkVersion(tmp);
+    expect(read?.upgrade_history).toHaveLength(20);
+    expect(read?.upgrade_history[0]).toEqual(history[5]); // oldest 5 dropped
+    expect(read?.upgrade_history[19]).toEqual(history[24]);
   });
 });
 
@@ -258,5 +275,45 @@ describe('manifest: buildManifestFromInstalledTree', () => {
     const manifest = buildManifestFromInstalledTree(tmp, '0.1.0');
     expect(manifest.version).toBe('0.1.0');
     expect(Object.keys(manifest.files)).toEqual([]);
+  });
+});
+
+describe('Phase A integration: fixture install produces marker + manifest', () => {
+  it('install flow writes .framework-version and .framework-manifest.json with sane content', () => {
+    const target = makeTempDir('phase-a-install');
+    const templateDir = resolveTemplateDir();
+
+    // Mirror the bin install flow: copy → sanitize → marker + manifest.
+    copyFrameworkFiles(templateDir, target, false);
+    sanitizeState(target, VERSION, false);
+    writeFrameworkVersion(target, {
+      framework_version: VERSION,
+      installer_name: '@rwn34/multi-cli-install',
+      installer_version: VERSION,
+      installed_at: new Date().toISOString(),
+      upgrade_history: [],
+    });
+    const manifest = buildManifestFromInstalledTree(target, VERSION);
+    writeFrameworkManifest(target, manifest);
+
+    expect(existsSync(join(target, '.ai', '.framework-version'))).toBe(true);
+    expect(existsSync(join(target, '.ai', '.framework-manifest.json'))).toBe(true);
+
+    const version = readFrameworkVersion(target);
+    expect(version?.framework_version).toBe(VERSION);
+    expect(version?.installer_name).toBe('@rwn34/multi-cli-install');
+    expect(version?.upgrade_history).toEqual([]);
+
+    const read = readFrameworkManifest(target);
+    expect(read?.version).toBe(VERSION);
+    const keys = Object.keys(read!.files);
+    expect(keys.length).toBeGreaterThan(50);
+    expect(keys).toContain('CLAUDE.md');
+    expect(keys).toContain('CRUSH.md');
+    expect(keys).toContain('.crush.json');
+    for (const entry of Object.values(read!.files)) {
+      expect(entry.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(entry.version_first_seen).toBe(VERSION);
+    }
   });
 });

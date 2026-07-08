@@ -1,5 +1,25 @@
 # 4AI-panes integration notes
 
+> **UPDATE 2026-07-08 (late evening; some same-batch artifacts carry 07-09
+> UTC-style stamps) — launcher now lives IN this repo.** Per owner decision
+> (2026-07-08, "personalised framework, no need for different repo"), the
+> launcher was imported to `tools/4ai-panes/` from the local checkout at
+> `C:\Users\rwn34\.rwn-auto\rwn-4AI-panes`, master @ `06c5d84` (verified
+> byte-identical to the reviewed `0df6908` — nothing discarded). Two Selector
+> badges were added and execution-verified: framework-version
+> (`[v OK] / [! OLD] / [- none]` from `.ai/.framework-version`) and open
+> handoff count (`[H:<n>]`). Consequences:
+> - §5 "cross-repo coupling" below is OBSOLETE: launcher AND role policy now
+>   live here; `tools/4ai-panes/` is the canonical launcher source.
+> - The external repo + `~\.rwn-auto` checkout are pending an owner archive
+>   decision; until then treat them as read-only mirrors.
+> - Launch commands still to re-verify against amended ADR-0002 (P5 handoff
+>   target 4) at the owner's next live launch.
+> - Known fragilities (from import review): `wt.exe split-pane` flag semantics
+>   drift across WT versions (pin tested version in a comment); hardcoded
+>   `$projectsDir = "C:\Users\rwn34\Code"` will clash with any future move of
+>   project roots.
+
 Context captured 2026-07-07 from the user: this framework is tightly coupled to
 **rwn-4AI-panes** (https://github.com/rwn34/rwn-4AI-panes) for daily usage.
 These notes are design inputs for the framework-evolution roadmap (role

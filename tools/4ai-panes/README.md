@@ -4,6 +4,25 @@
 
 ---
 
+## Provenance & Canonical Source
+
+Imported **2026-07-08** from the standalone [rwn-4AI-panes](https://github.com/rwn34/rwn-4AI-panes) repo (local checkout `master` @ `06c5d84`) into this framework repo. **`tools/4ai-panes/` is now the canonical source** — the external repo is a read-only mirror pending archive.
+
+Two per-project **Selector badges** were added at import (`Get-ProjectBadges` in `Selector.ps1`), shown on each project row in the menu:
+
+| Badge | Meaning |
+|-------|---------|
+| `[v OK]` | `.ai/.framework-version` marker present — current framework install. |
+| `[! OLD]` | `.ai/` exists but no version marker — pre-marker install. |
+| `[- none]` | No `.ai/` folder — framework not installed in that project. |
+| `[H:<n>]` | *n* open cross-CLI handoffs (count of `*.md` files under `.ai/handoffs/to-*/open/`). Hidden when *n* = 0. |
+
+Exactly one of the three framework-version badges appears per project; `[H:<n>]` is appended only when open handoffs exist. Badge checks are deliberately cheap (two `Test-Path` calls + one shallow glob per project) — any error in a broken project dir yields an empty/partial badge, never a crash.
+
+Role policy for the four panes (who does what across Claude/Kiro/Kimi/Crush) is owned by [`docs/architecture/0002-cli-role-topology.md`](../../docs/architecture/0002-cli-role-topology.md) in this repo (amended 2026-07-08).
+
+---
+
 ## 1. What This Does
 
 Creates a **Start Menu shortcut** called **"rwn 4AI Panes"** that opens a Windows Terminal window in two phases:
@@ -38,7 +57,8 @@ All CLI panes open with the selected project as working directory. If a CLI is n
 | File | Purpose |
 |------|---------|
 | `Launch4Panes.ps1` | Entry point. Launches wt.exe with the selector as a single full-screen pane. Auto-closes after launch. |
-| `Selector.ps1` | Interactive box-drawing menu. Handles project selection, layout customization, and dynamic pane splitting. After splitting, this pane becomes the first CLI in the layout. |
+| `Selector.ps1` | Interactive box-drawing menu. Handles project selection, layout customization, and dynamic pane splitting. Also auto-installs the AI framework into the selected project (`Install-Framework`, see §6). After splitting, this pane becomes the first CLI in the layout. |
+| `install-framework.log` | Generated at runtime next to the scripts by `Install-Framework` — an append-only trace of each framework install attempt (source, git state, installer exit codes, fallback copies). Not committed. |
 | `Launch4Panes.vbs` | VBS wrapper. Opens the PS1 from Start Menu without leaving a lingering window. |
 | `icon.ico` | Custom icon for the Start Menu shortcut (dark theme, 4 colored bars). |
 | `.gitignore` | Ignores `.4pane-history`, `.4pane-layout`, and `*.tmp`. |
@@ -59,10 +79,11 @@ All CLI panes open with the selected project as working directory. If a CLI is n
 
 ### 3.2 Install
 
-1. Clone this repo:
+1. Copy the tool from `tools/4ai-panes/` in this repo (the canonical source — see [Provenance & Canonical Source](#provenance--canonical-source)):
+```powershell
+Copy-Item -Recurse <path-to>\rwn-multi-cli-skills\tools\4ai-panes C:\Users\<you>\.rwn-auto\rwn-4AI-panes
 ```
-git clone https://github.com/rwn34/rwn-4AI-panes.git C:\Users\<you>\.rwn-auto\rwn-4AI-panes
-```
+   The old standalone [rwn-4AI-panes](https://github.com/rwn34/rwn-4AI-panes) GitHub repo is a read-only mirror pending archive — do not clone or install from it.
 
 2. **Configure your projects folder** — edit `$projectsDir` in `Selector.ps1`:
 ```powershell
@@ -97,6 +118,7 @@ Write-Host "Shortcut created at: $shortcutPath"
    - **Enter** — select
    - **Number keys (1-9)** — quick jump
    - **n** — create new project
+   - **b** — browse for a folder
    - **w** — open without directory
    - **o** — open pane order picker (rearrange CLIs)
    - **q** — quit
@@ -136,6 +158,7 @@ The layout is saved to `.4pane-layout` and persists between launches.
 | Item | Behavior |
 |------|----------|
 | **Project names** | Opens all CLIs in that project folder. Shows git branch + last modified time. |
+| **`[>] Browse folder...`** | Opens an in-console folder browser rooted at `$projectsDir` (also reachable via the **b** key). Pick any subfolder as the working directory; the choice is saved to history. |
 | **`[+] New project...`** | Prompts for a name, creates the folder, then launches. |
 | **`[*] Open without directory`** | Launches CLIs with no working directory. |
 
@@ -212,6 +235,7 @@ Missing CLIs are skipped — their pane simply doesn't appear. The status bar sh
 | **Time-ago format** | History shows relative time: "now", "5m", "2h", "1d", "3d". |
 | **Pagination** | Projects paginated if list exceeds console height. Page indicator shown. |
 | **Box-drawing UI** | `+----+` borders, `>` cursor, color-coded items (yellow=selected, white=project, dark cyan=action). |
+| **Framework auto-install** | After selection (before pane split), `Install-Framework` injects the AI framework into the chosen project via `scripts/install-template.sh` (Git Bash), copying core template files directly as a fallback and stamping `.ai/.framework-version`. Template source is `$frameworkRepo` (this repo), falling back to the launcher's own directory if that path is missing or incomplete. Skipped when the marker already exists or the project's git tree is dirty; every attempt is traced to `install-framework.log`, and failures never block the launch. |
 
 ---
 
@@ -303,4 +327,4 @@ Edit the `$cliDefs` ordered dictionary in `Selector.ps1`. Each entry needs a `de
 
 ---
 
-*End of spec. Clone, configure paths, create shortcut, done.*
+*End of spec. Copy from `tools/4ai-panes/` in this repo, configure paths, create shortcut, done.*
