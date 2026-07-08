@@ -42,6 +42,14 @@ badge) lives in the P5 handoff.
    the owner BEFORE Phases B-F, which stay out of scope here.
 
 ## Steps
+0. infra-engineer (small, do first): fix `.github/workflows/framework-check.yml`
+   — its `paths-ignore: '**/*.md'` (both triggers) exempts markdown-only
+   changes from CI, but the SSOT drift checker's entire domain IS .md
+   replicas, so replica drift ships unchecked (found 2026-07-08 while
+   verifying the merge pipeline). Remove the paths-ignore blocks (the suite
+   is seconds-cheap; no filter needed). Separately: recommend the owner
+   enable GitHub branch protection on master requiring `framework-check` —
+   settings-page action, owner-only.
 1. doc-writer: runbook (content above + research plan references).
 2. coder: wire-mcp.ts ADR-0003 fix; re-run `scripts/sync-assets.ts`.
 3. tester: full installer suite + a fixture install asserting the new assets
