@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-08 23:03 — claude-code
+- Action: Merged `claude/project-overview-pn5l4e` → `master` (no-ff, owner-approved) and pushed; merge commit `b3724f7`, remote verified via ls-remote. Gates before merge: drift 0/24, hooks 32/32, counter-divergence 0. Branch kept; no tag, no publish. Rollback: `git revert -m 1 b3724f7`.
+- Files: — (merge only; no content edits)
+- Decisions: Untracked `tools/kirograph/` left in place per owner intent. Concurrent uncommitted edit to `.ai/handoffs/to-claude/open/202607082252-p5-4ai-panes-import.md` (owner UPDATE note) observed post-merge — left untouched, not mine to commit.
+
 ## 2026-07-08 23:20 — claude-code
 - Action: CORRECTION (delivery-integrity §4) — the 23:05 entry's NOTE claiming handoff `202607071330-fleet-upgrade-continuation.md` "never existed in the tree" was WRONG: it existed on `origin/claude/project-overview-pn5l4e` (commit `84c75be`, written by the 2026-07-07 cloud session at 13:30) and this checkout had not pulled. The push of commit `5fa28e8` was rejected, infra-engineer merged (`82d3e70`, activity-log conflict resolved keeping both sides per prepend-order protocol) and the handoff resurfaced. Lesson: session-start should check `git fetch && git status -sb` for behind-upstream state before declaring artifacts missing. Reconciliation: P5 handoff amended (import from 4AI-panes `0dcbe73`, add framework-version badge), NEW P6 handoff (upgrade runbook + installer ADR-0003/rebuild alignment + --upgrade), old handoff superseded → done/.
 - Files: `.ai/activity/log.md` (this entry), `.ai/handoffs/to-claude/open/202607082252-p5-4ai-panes-import.md` (amended), `.ai/handoffs/to-claude/open/202607082330-p6-runbook-installer-alignment.md` (NEW), `.ai/handoffs/to-claude/done/202607071330-fleet-upgrade-continuation.md` (moved)
