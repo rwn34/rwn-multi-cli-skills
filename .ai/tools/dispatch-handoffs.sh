@@ -83,7 +83,11 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             # report so a failed headless dispatch is never silent.
             if [ "$rc" -ne 0 ]; then
                 ts=$(date -u +%Y%m%d%H%M%S)
-                report="$root/.ai/reports/dispatch-failure-$ts-$cli.md"
+                # Filename includes the handoff slug: same-second failures for one
+                # CLI must not overwrite each other (bug found by stub-binary test
+                # 2026-07-09 — three same-second claude failures collided).
+                slug=$(basename "$f" .md)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
                 {
                     echo "# Dispatch failure — $cli (exit $rc)"
                     echo ""

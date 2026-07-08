@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-08 23:21 — claude-code
+- Action: P5 import batch (infra-engineer, per handoff 202607082252). Source repo inspection: branch `framework-upgrade-adr0002` deleted locally (survives as origin ref), 0df6908 UNMERGED by ancestry but `git diff 0df6908 master` is EMPTY — master 06c5d84 is content-identical (rebased re-commit), imported from master working tree. Launcher-only import to `tools/4ai-panes/` (Launch4Panes.ps1/.vbs, Selector.ps1, icon.ico, README.md, test-selector-e2e.ps1; framework dirs/ADRs excluded). Added `Get-ProjectBadges` to imported Selector: `[v OK]/[! OLD]/[- none]` framework-version badge + `[H:<n>]` open-handoff count. Verified: PARSE-OK both .ps1; headless AST-extracted function run → this repo `[! OLD] [H:4]` (ground truth 4), nonexistent dir `[- none]` no crash. Included pre-staged dispatch-failure filename collision fix. Committed + pushed.
+- Files: `tools/4ai-panes/*` (new), `.ai/tools/dispatch-handoffs.sh`
+- Decisions: badges ASCII (script is ASCII throughout); `test-selector-e2e.ps1` included as launcher tooling, not framework; `.4pane-history` runtime state excluded.
+
 ## 2026-07-08 23:16 — claude-code
 - Action: P4 verification + commit batch (infra-engineer, per handoff 202607082251). Tests: stop-reminder per-queue counts OK (to-claude 4 / to-kimi 1 / to-kiro 1), hook suite PASS 39/39, dispatcher `bash -n` exit 0, forced-failure dispatch via stub binaries (crush/claude/kimi/kiro-cli all stubbed exit 7) → 6 DISPATCH attempts, ALERT + `.ai/reports/dispatch-failure-*.md` per attempt, reports verified then deleted (synthetic). P3+P4 handoffs git-mv'd to done/. Committed + pushed.
 - Files: `.claude/hooks/stop-reminder.sh`, `.ai/tools/dispatch-handoffs.sh`, `.ai/handoffs/README.md`, `.ai/handoffs/to-claude/done/{202607082250-p3-worktree-fleet-guards.md,202607082251-p4-automation-polling.md}` (moved)
