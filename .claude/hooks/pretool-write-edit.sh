@@ -63,6 +63,59 @@ case "$rel" in
         block "Secrets/credentials file pattern. Do not write secret material from an agent. Ask the user to edit manually." ;;
 esac
 
+# Rule 2.6 — worktree confinement (ADR-0004).
+# Executor worktree sessions live at <parent>/.wt/<project>/<executor>/ (see
+# docs/architecture/0004-worktree-multi-project-topology.md). Inside one, the
+# only legal write targets are paths inside the worktree itself (including the
+# junctioned .ai/, which resolves as a relative path). Absolute paths that did
+# not normalize to relative are escapes; so are ../ climbs.
+case "$project_root" in
+    */.wt/*/*)
+        case "$rel" in
+            /*|[A-Za-z]:/*)
+                block "Worktree confinement (ADR-0004): this session runs in executor worktree '$project_root' and may write only inside it (+ the junctioned .ai/). Escaping to '$rel' is blocked — cross-tree changes go through .ai/handoffs/." ;;
+            ..|../*|*/..|*/../*)
+                block "Worktree confinement (ADR-0004): relative path escapes the worktree ('$rel'). Write only inside this worktree; cross-tree changes go through .ai/handoffs/." ;;
+        esac ;;
+esac
+
+# Rule 2.7 — fleet whitelist (ADR-0004).
+# Cross-orchestrator handoffs live at <root>/.fleet/handoffs/to-<project>/.
+# A write there is legal only if THIS project's talks_to list in the fleet
+# registry (<root>/.fleet/registry.json) includes the target project.
+# Non-handoff .fleet paths (activity log, README) are allowed.
+# NOTE: fail-CLOSED — missing registry or missing python blocks the write
+# (fleet writes are rare and cross-project; conservatism is correct here).
+fleet_norm="$rel"
+case "$fleet_norm" in
+    .fleet/*) fleet_norm="./$fleet_norm" ;;
+esac
+case "$fleet_norm" in
+    */.fleet/handoffs/to-*)
+        fleet_target=$(printf '%s' "$fleet_norm" | sed -n 's|.*/\.fleet/handoffs/to-\([^/]*\).*|\1|p')
+        fleet_root=$(printf '%s' "$fleet_norm" | sed -n 's|\(.*/\.fleet\)/.*|\1|p')
+        registry="$fleet_root/registry.json"
+        project_name=$(basename "$project_root")
+        [ -f "$registry" ] || block "Fleet whitelist (ADR-0004): no registry at '$registry' — cannot verify talks_to for '$fleet_target'. Scaffold the fleet tier first (scripts/fleet-init.sh)."
+        fleet_check() { "$1" -c "
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+talks = d.get('projects', {}).get(sys.argv[2], {}).get('talks_to', [])
+sys.exit(0 if sys.argv[3] in talks else 1)
+" "$registry" "$project_name" "$fleet_target"; }
+        if fleet_check python3 2>/dev/null || fleet_check python 2>/dev/null; then
+            exit 0   # whitelisted cross-orchestrator handoff write
+        else
+            block "Fleet whitelist (ADR-0004): '$project_name' is not whitelisted to talk to '$fleet_target' (registry: $registry). Add it to talks_to (owner decision) or route via an allowed project."
+        fi
+        ;;
+    */.fleet/*)
+        exit 0 ;;   # fleet activity log / README / registry — not handoff-guarded here
+esac
+
 # Rule 2.5 — main-thread delegation enforcement (orchestrator pattern / ADR-0002).
 # Subagent tool calls carry agent_type in hook input; main-thread (orchestrator)
 # calls do not. The orchestrator writes only framework paths — project-source
