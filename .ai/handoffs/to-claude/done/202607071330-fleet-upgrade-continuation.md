@@ -1,5 +1,23 @@
 # Fleet-upgrade continuation — context + next steps (session moved to owner's PC)
-Status: OPEN
+Status: SUPERSEDED (2026-07-08 — see note)
+
+<!-- SUPERSEDED 2026-07-08 by the fleet-rebuild session (see activity log
+     23:05/23:20 entries). Item disposition:
+     - ADR renumber warning (owner-manual §2) → DONE: worktree ADR committed
+       as 0004 (was untracked in the PC working tree, not only in stash).
+     - Task 1 (merge branch → master) → OPEN, Tier C, surfaced to owner.
+     - Task 2 (4AI-panes merge + version marker + Selector badge) → folded
+       into open/202607082252-p5-4ai-panes-import.md (import from 0dcbe73;
+       badge = version + handoff-queue counts).
+     - Tasks 3-4 (runbook + installer alignment + --upgrade) → folded into
+       open/202607082330-p6-runbook-installer-alignment.md.
+     - Owner-manual: ~/.kimi graph MCP cleanup + stash review → still with
+       the owner (re-surfaced in-session 2026-07-08).
+     - Small follow-ups (Kiro release-engineer wording; adoption-plan
+       "superseded by ADR-0003" banner; Kimi/Kiro Rule-2.5 equivalents) →
+       listed in P6/P3 handoffs respectively.
+     Nothing from this file was dropped. -->
+
 Sender: claude-code (remote cloud session, 2026-07-07)
 Recipient: claude-code (owner's PC)
 Created: 2026-07-07 13:30
