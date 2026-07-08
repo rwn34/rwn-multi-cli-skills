@@ -17,6 +17,13 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-07 13:30 — claude-code
+- Action: wrote fleet-upgrade continuation handoff (session moving from remote cloud to owner's PC). Captures: full session state (branch unmerged to master; 4AI-panes upgraded locally at 0dcbe73 awaiting merge), the stale-framework-config problem analysis (per-pane behavior on old projects; Crush --yolo w/o CRUSH.md is worst case), the 3-layer coverage plan (Selector version badge / upgrade runbook incl. lessons learned / installer alignment + --upgrade), ordered task queue, owner-manual items (kimi global mcp cleanup, template stash review + ADR renumber risk), and small follow-ups.
+- Files: `.ai/handoffs/to-claude/open/202607071330-fleet-upgrade-continuation.md` (NEW)
+- Decisions: continuation context shipped as an OPEN to-claude handoff (not a research doc) so the PC session's session-start hook surfaces it automatically.
+- Grep-verified evidence:
+  - handoff exists: `.ai/handoffs/to-claude/open/202607071330-fleet-upgrade-continuation.md` → `# Fleet-upgrade continuation — context + next steps`
+
 ## 2026-07-07 12:40 — claude-code
 - Action: CAPSTONE — Phases 2-6 of framework-evolution roadmap complete in one session (owner-directed, Claude-only). P2: Crush onboarded (CRUSH.md contract w/ SAFETY RULES + Stage-1 role, ADR-0001 amended for CRUSH.md/.crush.json/.crush/, cli-map Crush section, sync.md custodianship note, to-crush/ queues, known-limitations entry, README + AGENTS.md + CLAUDE.md updated). P3: main-thread delegation enforcement — hook Rule 2.5 blocks orchestrator source writes via agent_type discriminator, verified LIVE by two probes (subagent src write passes; subagent .kimi write still blocked; suite 32/32). P4: dispatch-handoffs.sh + Auto: field + headless table in cli-map + stop-reminder nudge. P5: ADR-0003 + code-graphs SSOT rationalized (CodeGraph active; Kimi/KiroGraph optional-off; .mcp.json created codegraph-only; .crush.json + .kiro/settings/mcp.json emptied). P6: operating-prompt SSOT + 3 replicas + drift pairs (now 21). Kimi/Kiro files applied via owner-authorized infra-engineer batch (see 03:36 entry); Claude's cross-CLI write guard stayed active throughout (permission classifier correctly denied a guard-lift attempt; used documented sync.md procedure instead).
 - Files: see 03:36/12:10/11:55 entries + `CRUSH.md`, `.mcp.json`, `.crush.json`, `.ai/instructions/operating-prompt/principles.md`, `.claude/skills/operating-prompt/SKILL.md`, `.ai/tools/{dispatch-handoffs.sh,check-ssot-drift.sh}`, `.ai/handoffs/{template.md,README.md}`, `.ai/cli-map.md`, `.ai/sync.md`, `.ai/known-limitations.md`, `.claude/hooks/{pretool-write-edit.sh,test_hooks.sh,stop-reminder.sh}`
