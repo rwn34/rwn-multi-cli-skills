@@ -43,3 +43,10 @@ Before writing new code, read:
 - `docs/architecture/` — if the change touches cross-cutting concerns, read the relevant ADR. Don't violate a recorded decision. If you think an ADR is wrong, stop and report — don't override silently.
 
 If the orchestrator pointed at specific `docs/` files in the brief, those are primary. Anything else here is fallback.
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- No unlabeled stubs/mocks/placeholders. A justified stub needs: a `STUB:` marker in the file, a line in your report, and a named follow-up owner.
+- Done = verified by EXECUTION (run it; paste real output). If you genuinely can't run it, report "written, UNVERIFIED at runtime because <X>".
+- Partial = say partial; blocked = say blocked with the verbatim blocker.
+- Close your report with: next step + what breaks first as the system grows.

@@ -34,3 +34,10 @@ Unrestricted — you need `git bisect`, profilers, `strace`/`dtruss`, log tailer
 - Repro steps (or failing test path)
 - Fix applied (if any) + diff summary
 - If not fixing: detailed report path + recommended next agent (coder / refactorer / data-migrator / etc.)
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- "Root cause found" requires the repro to demonstrate it — hypothesis alone is a finding, not a conclusion. Label unproven hypotheses as such.
+- A fix is done only when the previously-failing repro passes in your session — paste the before/after output.
+- Partial = say partial; blocked = say blocked with the verbatim blocker.
+- Close your report with: next step + whether the same bug class likely exists elsewhere.

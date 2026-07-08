@@ -1,10 +1,19 @@
+---
+name: code-graphs
+description: Local code-knowledge-graph rules — prefer graph MCP queries (codegraph_*/kimigraph_*/kirograph_*) over file reads for structural questions. Use when exploring the codebase, tracing callers/callees/impact, asking "how does X work?", or when a .codegraph/.kimigraph/.kirograph dir exists.
+---
+
+<!-- SSOT: .ai/instructions/code-graphs/principles.md — regenerate via .ai/sync.md -->
+
 # Code knowledge graphs
 
-Local code-knowledge-graph rules for this project. All four CLIs (Claude Code,
-Kimi CLI, Kiro CLI, Crush) run all three graph tools — CodeGraph, KimiGraph,
-and KiroGraph — with MCP wired in each CLI's native config format. Each graph
-indexes the same source code into its own dot-directory, queried via its own
-MCP server.
+Local code-knowledge-graph rules for this project, rationalized per
+`docs/architecture/0003-code-graph-rationalization.md`: **CodeGraph (Claude)
+is the only active graph**; KimiGraph and KiroGraph are demoted to
+optional-off (documented and installable, but no MCP wiring by default), and
+cross-wiring is ended — each CLI registers at most its own graph. A graph
+indexes source code into its own dot-directory, queried via its own MCP
+server.
 
 A code graph parses the project with **tree-sitter**, stores symbols and edges
 (callers, callees, imports, type relationships) in a local **SQLite** database,
@@ -35,23 +44,26 @@ to grep/glob/file-reads when:
 
 ## Per-CLI graph mapping
 
-| CLI | Graph tool | Local dir | Repo |
-|---|---|---|---|
-| Claude Code | CodeGraph | `.codegraph/` | https://github.com/colbymchenry/codegraph |
-| Kimi CLI | KimiGraph | `.kimigraph/` | https://github.com/rwn34/kimigraph |
-| Kiro CLI | KiroGraph | `.kirograph/` | https://github.com/davide-desio-eleva/kirograph |
-| Crush | any (all 3 wired) | same dirs | same repos |
+| CLI | Graph tool | Local dir | Status (ADR-0003) | Repo |
+|---|---|---|---|---|
+| Claude Code | CodeGraph | `.codegraph/` | **active** | https://github.com/colbymchenry/codegraph |
+| Kimi CLI | KimiGraph | `.kimigraph/` | optional-off | https://github.com/rwn34/kimigraph |
+| Kiro CLI | KiroGraph | `.kirograph/` | optional-off | https://github.com/davide-desio-eleva/kirograph |
+| Crush | none | — | no graph lane (ops/release role, ADR-0002) | — |
 
-All three graph MCP servers are wired in **every** CLI config:
+MCP wiring — each CLI registers at most its **own** graph (no cross-wiring):
 
 | CLI | Config file | Graphs registered |
 |---|---|---|
-| Claude Code | `.mcp.json` (project root) | codegraph, kirograph, kimigraph |
-| Kimi CLI | `~/.kimi/mcp.json` (global) | kimigraph, kirograph, codegraph |
-| Kiro | `.kiro/settings/mcp.json` (project) | kirograph, codegraph, kimigraph |
-| Crush | `.crush.json` (project root) | codegraph, kirograph, kimigraph |
+| Claude Code | `.mcp.json` (project root) | codegraph |
+| Kimi CLI | `~/.kimi/mcp.json` (global) | none by default (user removes graph entries; re-add `kimigraph` only on demonstrated need) |
+| Kiro | `.kiro/settings/mcp.json` (project) | none by default (re-add `kirograph` only on demonstrated need) |
+| Crush | `.crush.json` (project root) | none |
 
 Tool name prefixes match the graph: `codegraph_*`, `kimigraph_*`, `kirograph_*`.
+
+**Kill criterion:** any enabled graph that fails MCP twice in a month, or goes
+unused for a month, is disabled rather than repaired (ADR-0003).
 
 ## Write boundaries
 
@@ -116,13 +128,12 @@ CodeGraph is **FTS5-only** — no semantic/vector search. For semantic
 similarity, use Kimi or Kiro (their tools support it as an opt-in). Run
 `codegraph --help` after install for the authoritative tool list.
 
-### Crush — all 3 graphs wired
+### Crush — no graph wiring (ADR-0003)
 
-**Config:** `.crush.json` at project root, `mcp` key with `type: "stdio"`.
-
-Crush uses the same MCP server binaries as the other CLIs. All three graph
-tools are available with the same tool names and prefixes. No graph-specific
-install step — the MCP config is project-level and the binaries are global.
+Crush's ops/release lane (ADR-0002) doesn't need structural code queries;
+`.crush.json` carries no graph MCP entries. If a need is demonstrated, wire
+`codegraph` there via the `mcp` key (`type: "stdio"`) — Claude is custodian
+of `.crush.json`.
 
 ### Kimi — KimiGraph (FTS5 + sqlite-vec semantic)
 
@@ -202,14 +213,19 @@ are opt-in via `.kirograph/config.json`.
 
 ## Adoption status
 
-At adoption, all three graphs run **structural-only** — no embeddings, no
-heavy model downloads. This delivers the benchmarked 90%+ tool-call reduction
-from structural indexing alone, with the option to enable semantic similarity
-later via each tool's `config.json`.
+Rationalized 2026-07-07 per ADR-0003: CodeGraph (Claude) active, KimiGraph +
+KiroGraph optional-off, no cross-wiring, Crush none. Rationale: exploration
+payoff concentrates in the architect/orchestrator lane (ADR-0002); executors
+receive precise briefs and rarely need whole-repo structural queries; the
+demoted graphs generated recurring MCP/PATH/staleness maintenance.
 
-For the full design rationale (why all three CLIs adopt in parallel rather
-than phased, MCP placement decisions, hook coexistence, gitignore strategy),
-see `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`.
+The active graph runs **structural-only** — no embeddings, no heavy model
+downloads. Semantic similarity can be enabled later via the tool's
+`config.json`.
+
+Historical design rationale (the original all-three-in-parallel adoption,
+superseded in part by ADR-0003):
+`.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`.
 
 ---
 

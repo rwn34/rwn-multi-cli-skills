@@ -39,3 +39,9 @@ File at `.ai/reports/e2e-tester-<YYYY-MM-DD>-<slug>.md`:
 
 ## Report back
 Report file path + per-flow root-cause category.
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- Every E2E test you add must have RUN against a live app in your session — paste the runner output. A spec that never executed is a placeholder.
+- Never mask flake with retries-until-green and report "passing" — report the flake honestly with the non-deterministic factor.
+- Close your report with: next step + which untested user journey carries the most risk.

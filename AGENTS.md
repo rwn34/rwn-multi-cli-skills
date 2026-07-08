@@ -1,7 +1,12 @@
 # AGENTS.md
 
-This project is worked on by multiple AI CLIs — Claude Code, Kimi CLI, Kiro CLI —
-sharing state via a single source of truth plus a cross-CLI activity log.
+This project is worked on by multiple AI CLIs — Claude Code (architect +
+orchestrator + final reviewer), Kimi CLI (executor + tester), Kiro CLI
+(executor + tester), plus Crush as general helper + DevOps deployment
+operator (ADR-0002, amended 2026-07-08) — sharing state via a single source
+of truth plus a cross-CLI activity log. Each CLI stays in its lane; role
+definitions and limitations live in the operating-prompt SSOT
+(`.ai/instructions/operating-prompt/principles.md` §4).
 
 ## Shared framework
 
@@ -19,6 +24,7 @@ Each CLI reads its own contract from its native always-loaded path:
 | Claude Code | `/CLAUDE.md` (project root — Claude's native auto-load path) |
 | Kimi CLI | `.kimi/steering/00-ai-contract.md` |
 | Kiro CLI | `.kiro/steering/00-ai-contract.md` |
+| Crush | `/CRUSH.md` (project root — Crush's native context file; Claude-maintained per ADR-0001) |
 
 A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 `.claude/` can locate Claude's contract without knowing Claude's conventions.
@@ -44,9 +50,22 @@ Never rewrite prior entries. Do not log trivial reads. Use your CLI's identity n
 ## Cross-CLI handoffs
 
 When you need another CLI to execute a change in its own folder, write a
-paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/NNN-slug.md` (see
+paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (see
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude.
+
+**Protocol v2 (2026-07-08):** every handoff carries `Auto:` (default `yes`) and
+`Risk:` (`A`/`B`/`C` per the autonomy tiers in the operating-prompt SSOT §8).
+`Auto: yes` + Risk A/B dispatch headless via
+`bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
+Check your own inbox between tasks — poll, don't wait to be told.
+
+## Delivery integrity (what counts as "done")
+
+No placeholder/stub/mock presented as finished work; verify by execution, not
+inspection; report partial as partial and blocked as blocked; end sessions
+with a continuation artifact for anything unfinished. Full rule:
+`.ai/instructions/delivery-integrity/principles.md`.
 
 ## Self-grep-verify (claims must be grounded in the tree)
 

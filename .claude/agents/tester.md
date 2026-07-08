@@ -31,3 +31,10 @@ Test runners + coverage only — `pytest`, `jest`, `vitest`, `go test`, `cargo t
 - Pass/fail/skip counts, failing test names
 - Coverage delta if requested
 - Any implementation bugs surfaced (for coder routing)
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- Every test you add must RUN in your session — paste the runner output. A test file that was never executed is a placeholder, not a deliverable.
+- Never pad coverage with assertion-free or tautological tests to make numbers look better — that's a placeholder in disguise.
+- Partial = say partial; blocked = say blocked with the verbatim blocker.
+- Close your report with: next step + which untested area is riskiest as the system grows.

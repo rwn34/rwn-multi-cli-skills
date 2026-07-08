@@ -40,6 +40,12 @@ For security-specific review: defer to `security-auditor`.
 ## Report back
 Return the report file path + one-paragraph summary of the most critical finding(s).
 
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- Hunt for placeholder deliverables in the code under review: unlabeled stubs, hardcoded happy-paths, TODO-hiding, tests that assert nothing. These are HIGH-severity findings in this framework.
+- State your coverage honestly: which files you actually read vs. skimmed vs. skipped. A review that silently skipped half the diff is itself a placeholder.
+- Close with one forward-looking observation: what in this change will age worst.
+
 ## Project knowledge — `docs/**`
 
 Check `docs/standards/` before reviewing — those are this project's own conventions, and "correctness" includes compliance with them. If the code contradicts a recorded standard, that's a finding; cite the standard file:line. If a coding choice is reasonable but no standard covers it, don't manufacture one — say explicitly "no standard for this; reviewer has no basis to object."

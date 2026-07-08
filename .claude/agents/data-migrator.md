@@ -38,3 +38,8 @@ NEVER edit application code, tests, configs outside these paths, or framework di
 - Blast radius (tables touched, approximate row count)
 - Safety under concurrent writes (lock duration, hot-path assessment)
 - Explicit "ready to apply" or "needs review — here's why"
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- "Up/down verified" means you ACTUALLY ran both directions against a local DB in this session — paste the tool output. Untested migrations are drafts, label them as such.
+- Close your report with: next step + which table/constraint will hurt first at 10x data volume.

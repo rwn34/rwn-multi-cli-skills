@@ -39,6 +39,13 @@ All three CLIs implement these agents in their native config format.
 `.ai/**`, `.kiro/**`, `.kimi/**`, `.claude/**` — only the orchestrator writes here.
 All subagents are denied write access to these paths.
 
+**Per-CLI nuance:** while this catalog lists all four framework dirs as the
+orchestrator's write scope, each CLI's implementation narrows this to **its own
+dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) are
+hard-blocked by each CLI's pre-write hook and always go through the handoff
+queue (`.ai/handoffs/`) — never direct. This matches the same nuance in
+`.ai/instructions/orchestrator-pattern/principles.md`.
+
 ## Reports directory
 
 `.ai/reports/` — diagnosers write structured reports here. Naming convention:
@@ -85,6 +92,26 @@ constraint requires the root location.
 | Path restriction | `toolsSettings.fs_write.allowedPaths` (hard) | `permissions.deny` or prompt (soft) | Prompt + PostToolUse hook (soft) |
 | Shell restriction | `toolsSettings.execute_bash.allowedCommands` (hard) | Prompt (soft) | Prompt + hook (soft) |
 
+## CLI role lanes (ADR-0002)
+
+The 13-agent roster is implemented per CLI, but each CLI occupies a distinct
+lane — see `docs/architecture/0002-cli-role-topology.md` (authoritative):
+
+- **Claude Code** — architect + orchestrator + final reviewer (specs, ADRs,
+  PR gating, merge recommendation).
+- **Kimi CLI** — high-throughput executor + tester; peer-reviews Kiro's work.
+- **Kiro CLI** — premium-reasoning executor + tester; peer-reviews Kimi's
+  work.
+- **Crush** — general helper + DevOps deployment operator (Stage 2 granted
+  2026-07-08: dry-run first, per-deploy human confirmation, refuse on dirty
+  tree/failing tests). Ops chores and release checklists — NOT code review,
+  never source edits. No hook layer: `CRUSH.md` SAFETY RULES are its only
+  guardrail.
+- **Deploy separation:** Kimi and Kiro have NO deploy lane — deploy actions
+  are out of scope for their `release-engineer` agents. Crush deploys;
+  Claude's `release-engineer` is the fallback lane (same conditions).
+  Author ≠ reviewer ≠ deployer.
+
 ## Agent behavior rules
 
 1. **Orchestrator** never writes project source. Delegates all mutations.
@@ -96,3 +123,5 @@ constraint requires the root location.
 7. **Data-migrator** must produce reversible migrations (up + down).
 8. **Infra-engineer** handles git operations (add, commit, push, branch, merge) on behalf of the orchestrator. The orchestrator delegates git mutations here — it has no shell access itself.
 9. All subagents report back: files touched, commands run, test results, deviations from brief.
+10. All agents hold the **delivery-integrity** bar (`.ai/instructions/delivery-integrity/principles.md`): no unlabeled stubs/placeholders presented as done; done = verified by execution with pasted output; partial/blocked reported honestly; every report ends with the next step + what breaks first.
+11. All agents classify actions by **autonomy tier** (operating-prompt §8): Tier A proceeds, Tier B acts-then-notifies, Tier C asks first. Commits/pushes on feature branches are Tier A; merge to main, deploy, publish, destructive ops are Tier C.
