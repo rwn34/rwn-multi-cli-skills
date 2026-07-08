@@ -1,5 +1,25 @@
 # P6 — Upgrade runbook + installer alignment (stale-fleet layers 2-3)
-Status: OPEN
+Status: DONE (2026-07-09 — see closure note)
+
+<!-- CLOSURE 2026-07-09: all steps executed (activity log 00:15 entry has the
+     full evidence). Follow-ups spun out for the Phase-B session:
+     1. Extract a SHARED framework-file-list module — sync-assets.ts,
+        copy-framework.ts, manifest.ts each carry a parallel FRAMEWORK_FILES
+        list; CRUSH.md was missing from ALL THREE until today (silent drift).
+     2. CI tripwire: grep for hardcoded framework versions (0\.0\.[0-9]
+        outside package.json/CHANGELOG) — two were found+fixed today
+        (Selector.ps1, install-template.sh); the next one should be caught
+        mechanically.
+     3. End-to-end upgrade-over-existing-install coverage (tester's riskiest
+        untested area — where silent adopter data loss would first appear).
+        This IS Phase B's entry test.
+     4. Run the suite once where cmd children have git/npm on PATH — the
+        pack.test.ts tarball regression suite provides zero protection in
+        this environment (4th environmental casualty, same PATH root cause).
+     5. Owner answers plan §12 questions before Phases B-F start.
+     6. .crush.json manifest classification (framework-owned vs
+        adopter-may-extend) to be decided when Phase B diffing lands. -->
+
 Sender: claude-code
 Recipient: claude-code
 Created: 2026-07-08 23:30
