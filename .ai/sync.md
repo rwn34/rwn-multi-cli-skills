@@ -30,6 +30,9 @@ disagree, regenerate from here. Never edit the replicas directly.
 | `.ai/instructions/operating-prompt/principles.md` | `.claude/skills/operating-prompt/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
 | `.ai/instructions/operating-prompt/principles.md` | `.kimi/steering/operating-prompt.md` | Kimi steering |
 | `.ai/instructions/operating-prompt/principles.md` | `.kiro/steering/operating-prompt.md` | Kiro steering |
+| `.ai/instructions/delivery-integrity/principles.md` | `.claude/skills/delivery-integrity/SKILL.md` (body only; Claude frontmatter + provenance comment stay) | Claude skill |
+| `.ai/instructions/delivery-integrity/principles.md` | `.kimi/steering/delivery-integrity.md` | Kimi steering |
+| `.ai/instructions/delivery-integrity/principles.md` | `.kiro/steering/delivery-integrity.md` | Kiro steering |
 
 ## Crush (no replicas)
 
@@ -74,6 +77,11 @@ cp .ai/instructions/self-grep-verify/principles.md .kiro/steering/self-grep-veri
 # operating-prompt
 cp .ai/instructions/operating-prompt/principles.md .kimi/steering/operating-prompt.md
 cp .ai/instructions/operating-prompt/principles.md .kiro/steering/operating-prompt.md
+# Claude SKILL.md needs frontmatter — body-only replace.
+
+# delivery-integrity
+cp .ai/instructions/delivery-integrity/principles.md .kimi/steering/delivery-integrity.md
+cp .ai/instructions/delivery-integrity/principles.md .kiro/steering/delivery-integrity.md
 # Claude SKILL.md needs frontmatter — body-only replace.
 
 # Claude SKILL.md files need CLI-specific frontmatter + provenance comments —

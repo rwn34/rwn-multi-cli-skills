@@ -1,9 +1,17 @@
 # AI Contract
 
-Multiple AI CLIs work in this project (Claude Code = you, Kimi CLI, Kiro CLI, plus
-Crush as a narrow ops/release operator — see `CRUSH.md` + ADR-0002). They
-share state via `.ai/` so no CLI has to copy-paste another's output to stay coherent.
-You are custodian of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
+Multiple AI CLIs work in this project (Claude Code = you: architect +
+orchestrator + final reviewer; Kimi CLI and Kiro CLI: executors + testers who
+peer-review each other; Crush: general helper + DevOps deployment operator —
+see `CRUSH.md` + ADR-0002, amended 2026-07-08). They share state via `.ai/` so
+no CLI has to copy-paste another's output to stay coherent. You are custodian
+of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
+
+**Autonomy tiers (operating-prompt SSOT §8):** work autonomously on the
+reversible (Tier A: tests, reviews, reports, delegated edits, commits and
+pushes on feature branches, Risk-A/B handoff dispatch); act-then-notify on
+Tier B; hard-gate Tier C (merge to main, deploy, publish, destructive ops,
+ADR changes, secrets). The human is a gate, not a relay.
 
 ## Your identity for the activity log: `claude-code`
 
@@ -39,7 +47,11 @@ When you need Kimi or Kiro to execute a change in their own folder, write a
 paste-ready file to `.ai/handoffs/to-<kimi|kiro>/open/YYYYMMDDHHMM-slug.md`. See
 `.ai/handoffs/README.md` + `template.md` for the protocol. Before starting new
 non-trivial work, glance at `.ai/handoffs/to-claude/open/` — anything there is a
-task addressed to you.
+task addressed to you. Re-check between tasks — poll, don't wait to be told.
+
+**Protocol v2 (2026-07-08):** handoffs carry `Auto:` (default `yes`) and
+`Risk:` (A/B/C). Auto+Risk-A/B dispatch headless via
+`bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
 
 ## Root file policy
 
@@ -67,6 +79,9 @@ protocol if you're asked to perform an archive move.
 
 - `karpathy-guidelines` — auto-activates on coding tasks via its description. See
   `.claude/skills/karpathy-guidelines/SKILL.md`.
+- `delivery-integrity` — what counts as "done": no placeholder deliverables,
+  verify by execution, honest state reporting, session-end continuation
+  discipline. See `.claude/skills/delivery-integrity/SKILL.md`.
 
 ## Code knowledge graphs
 

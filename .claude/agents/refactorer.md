@@ -40,3 +40,9 @@ Read `docs/architecture/` before any non-trivial refactor. Architectural decisio
 If you find a recorded decision that blocks the intended refactor, STOP and report — don't override it. Orchestrator decides whether to amend the ADR (via `doc-writer`) or scope the refactor differently.
 
 `docs/standards/` informs style-level refactors (naming, layout conventions). Follow them; don't reshape code to a style they contradict.
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- Paste the actual test-runner output for the before AND after runs — "tests pass" without output is an unverified claim.
+- An aborted/reverted step is a normal, honest outcome — report it plainly, never smooth it over.
+- Close your report with: next step + which remaining indirection or duplication is the best candidate for a future pass.

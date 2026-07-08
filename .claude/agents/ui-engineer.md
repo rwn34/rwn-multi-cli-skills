@@ -27,3 +27,9 @@ Unrestricted for frontend tooling — dev server launches (`npm run dev`, `vite`
 - Visual state verified (which browser, which viewport, URL)
 - Any visual regressions observed
 - Accessibility notes (contrast ratios checked, keyboard paths tested)
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- A component is done when it renders and behaves correctly in a REAL browser session you drove — not when it compiles. No browser available = say "UNVERIFIED visually because <X>", never imply you saw it.
+- No hardcoded demo data left in a component presented as finished — wire real props/state, or label the mock explicitly with a follow-up owner.
+- Close your report with: next step + which component will need rework first as the design system evolves.

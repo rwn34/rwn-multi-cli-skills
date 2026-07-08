@@ -1,8 +1,12 @@
 # AGENTS.md
 
-This project is worked on by multiple AI CLIs — Claude Code, Kimi CLI, Kiro CLI,
-plus Crush as a narrow-scope ops/release operator (ADR-0002) —
-sharing state via a single source of truth plus a cross-CLI activity log.
+This project is worked on by multiple AI CLIs — Claude Code (architect +
+orchestrator + final reviewer), Kimi CLI (executor + tester), Kiro CLI
+(executor + tester), plus Crush as general helper + DevOps deployment
+operator (ADR-0002, amended 2026-07-08) — sharing state via a single source
+of truth plus a cross-CLI activity log. Each CLI stays in its lane; role
+definitions and limitations live in the operating-prompt SSOT
+(`.ai/instructions/operating-prompt/principles.md` §4).
 
 ## Shared framework
 
@@ -49,6 +53,19 @@ When you need another CLI to execute a change in its own folder, write a
 paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (see
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude.
+
+**Protocol v2 (2026-07-08):** every handoff carries `Auto:` (default `yes`) and
+`Risk:` (`A`/`B`/`C` per the autonomy tiers in the operating-prompt SSOT §8).
+`Auto: yes` + Risk A/B dispatch headless via
+`bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
+Check your own inbox between tasks — poll, don't wait to be told.
+
+## Delivery integrity (what counts as "done")
+
+No placeholder/stub/mock presented as finished work; verify by execution, not
+inspection; report partial as partial and blocked as blocked; end sessions
+with a continuation artifact for anything unfinished. Full rule:
+`.ai/instructions/delivery-integrity/principles.md`.
 
 ## Self-grep-verify (claims must be grounded in the tree)
 

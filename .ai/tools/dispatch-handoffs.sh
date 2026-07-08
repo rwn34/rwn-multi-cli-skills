@@ -1,10 +1,11 @@
 #!/bin/bash
 # dispatch-handoffs.sh — trigger recipient CLIs for auto-dispatchable handoffs.
 #
-# Scans .ai/handoffs/to-<cli>/open/*.md for a line `Auto: yes` in the status
-# block. For each match, launches the recipient CLI HEADLESS (one-shot) with a
-# prompt to process that handoff. Handoffs without `Auto: yes` (the default)
-# keep today's human-relayed flow.
+# Protocol v2 (2026-07-08): scans .ai/handoffs/to-<cli>/open/*.md for
+# `Auto: yes` AND `Risk: A|B` in the status block. For each match, launches the
+# recipient CLI HEADLESS (one-shot) with a prompt to process that handoff.
+# Risk C (or a missing Risk line — treated as C) is NEVER auto-dispatched,
+# regardless of Auto: — those stay human-relayed. `Auto: no` also stays manual.
 #
 # Usage (from repo root):
 #   bash .ai/tools/dispatch-handoffs.sh           # list what would dispatch (dry-run default)
@@ -14,8 +15,9 @@
 # - Windows Terminal cannot inject input into live panes, so we launch one-shot
 #   headless instances instead of driving the interactive 4AI-panes session.
 # - A CLI not found on PATH is skipped with a notice (matches 4AI-panes behavior).
-# - Human-in-loop is preserved: Auto is opt-in per handoff; anything needing
-#   confirmation stays manual.
+# - Safe to run repeatedly (idle CLIs, polling loops, or the user): dispatched
+#   handoffs get Status updated by the recipient, so re-runs skip them once
+#   they leave OPEN state. The human gate applies only to Risk C.
 
 set -u
 
@@ -58,6 +60,11 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
         # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
         head -20 "$f" | grep -qiE '^Auto:[[:space:]]*yes' || continue
         head -20 "$f" | grep -qiE '^Status:[[:space:]]*OPEN' || continue
+        # Risk gate (protocol v2): only Risk A/B auto-dispatch. Missing Risk = C.
+        if ! head -20 "$f" | grep -qiE '^Risk:[[:space:]]*[AB][[:space:]]*$'; then
+            echo "HOLD  [$cli] ${f#$root/} — Risk C or no Risk field (human relays)"
+            continue
+        fi
         found=$((found+1))
         rel="${f#$root/}"
         bin=$(bin_for "$cli")

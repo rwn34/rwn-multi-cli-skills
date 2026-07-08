@@ -108,17 +108,18 @@ review/release pipeline — authoritative in
 `docs/architecture/0002-cli-role-topology.md`:
 
 - **Claude Code** = architect/orchestrator/final reviewer. **Kimi** =
-  high-throughput executor. **Kiro** = premium-reasoning executor. Kimi and
-  Kiro peer-review each other's work before Claude's final review; small
-  low-risk changes may go straight to Claude (stated in the handoff).
+  high-throughput executor + tester. **Kiro** = premium-reasoning executor +
+  tester. Kimi and Kiro peer-review each other's work before Claude's final
+  review; small low-risk changes may go straight to Claude (stated in the
+  handoff).
 - **Pipeline:** executing CLI branches/commits/pushes (via `infra-engineer`) →
   peer review (other executor's `reviewer`, report to `.ai/reports/`) →
   Claude pre-merge gate (branch state, CI, linked issue, review) → user
   approves merge → deploy.
-- **Deploy:** Kimi/Kiro have no deploy lane. Interim: Claude's
-  `release-engineer` (dry-run, explicit user confirmation). Target: Crush as
-  narrow ops/release operator — Stage 1 prepares only (human executes);
-  Stage 2 (ADR amendment required) executes with per-deploy confirmation.
+- **Deploy (amended 2026-07-08):** Kimi/Kiro have no deploy lane. Crush is
+  the deploy operator (Stage 2 granted): mandatory dry-run, per-deploy human
+  confirmation, refuses on dirty tree or failing tests. Claude's
+  `release-engineer` is the fallback lane under the same conditions.
 
 ## Failure handling
 

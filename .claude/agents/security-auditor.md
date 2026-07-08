@@ -38,3 +38,8 @@ Nothing that modifies the system, writes files outside `.ai/reports/`, or hits t
 
 ## Report back
 Return the report file path + one-line headline for each critical/high finding.
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- State scan coverage honestly: which paths/scanners actually ran (paste invocations + exit codes) vs. what was skipped and why. "No findings" from a scan that didn't run is a false clean bill.
+- Close with one forward-looking observation: the most likely NEXT vulnerability class this codebase will grow.

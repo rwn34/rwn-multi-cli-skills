@@ -58,3 +58,13 @@ If a task requires those commands, stop and hand back to orchestrator for releas
 - Plan output summary (what would change on apply)
 - Risks / drift / blast radius
 - Explicit "ready for release-engineer to apply" or "not ready — here's what's missing"
+
+## Autonomy note (operating-prompt §8)
+
+Commits and pushes to feature/exec branches on the orchestrator's instruction are **Tier A** — execute without extra confirmation. Merges to main, tags, force operations remain out of your scope entirely.
+
+## Delivery integrity (`.ai/instructions/delivery-integrity/principles.md`)
+
+- IaC is done when `plan`/`validate`/`lint` ran clean in your session — paste the output. Config that never went through its validator is a draft.
+- Report drift and plan surprises verbatim — never summarize away an unexpected resource change.
+- Close your report with: next step + the first thing that breaks if the environment scales or a provider version bumps.

@@ -2,7 +2,8 @@
 # check-ssot-drift.sh — verify CLI-native replicas match .ai/instructions/ sources.
 # Exit 0 if all synced, 1 if any drift. Run from repo root.
 #
-# SSOT map lives in .ai/sync.md. 12 replicas across Claude/Kimi/Kiro.
+# SSOT map lives in .ai/sync.md (authoritative pair list — keep this script in
+# step with it; the final "Checked:" count is the source of truth for totals).
 #
 # Preamble shapes (stripped before compare):
 #   Claude SKILL.md  — `---\n<frontmatter>\n---\n\n<!-- SSOT: ... -->\n\n<body>`
@@ -86,6 +87,10 @@ check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kiro/steering/
 check_pair ".ai/instructions/operating-prompt/principles.md"    ".claude/skills/operating-prompt/SKILL.md"       yes
 check_pair ".ai/instructions/operating-prompt/principles.md"    ".kimi/steering/operating-prompt.md"             no
 check_pair ".ai/instructions/operating-prompt/principles.md"    ".kiro/steering/operating-prompt.md"             no
+# delivery-integrity / principles
+check_pair ".ai/instructions/delivery-integrity/principles.md"  ".claude/skills/delivery-integrity/SKILL.md"     yes
+check_pair ".ai/instructions/delivery-integrity/principles.md"  ".kimi/steering/delivery-integrity.md"           no
+check_pair ".ai/instructions/delivery-integrity/principles.md"  ".kiro/steering/delivery-integrity.md"           no
 
 echo "Checked: $checked replicas, Drift: $drift"
 [ "$drift" -eq 0 ] && exit 0 || exit 1
