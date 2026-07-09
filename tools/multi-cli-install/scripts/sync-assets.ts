@@ -16,10 +16,14 @@ const assetsDir = join(__dirname, '..', 'assets');
 if (existsSync(assetsDir)) rmSync(assetsDir, { recursive: true });
 mkdirSync(assetsDir, { recursive: true });
 
-// Copy framework dirs
-for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.archive']) {
+// Copy framework dirs (dotfolders + the versioned git-hooks backstop, ADR-0005)
+for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.archive', 'scripts/git-hooks']) {
   const src = join(repoRoot, d);
-  if (existsSync(src)) cpSync(src, join(assetsDir, d), { recursive: true });
+  if (existsSync(src)) {
+    const dst = join(assetsDir, d);
+    mkdirSync(dirname(dst), { recursive: true });
+    cpSync(src, dst, { recursive: true });
+  }
 }
 
 // Copy framework files
