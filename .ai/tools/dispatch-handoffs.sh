@@ -37,7 +37,11 @@ headless_cmd() {
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
         kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
-        kiro)   printf '%s' "kiro-cli chat --no-interactive \"$prompt\"" ;;
+        # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
+        # "Tool approval required but --no-interactive was specified. Use
+        # --trust-all-tools" (dispatch failure 2026-07-09, see
+        # .ai/reports/dispatch-failure-20260709015110-kiro-*.md).
+        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools \"$prompt\"" ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
