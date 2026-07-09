@@ -25,7 +25,7 @@ $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else {
 # Each CLI: name, detection command, launch command
 $cliDefs = [ordered]@{}
 $cliDefs["Claude"] = @{ detect = "claude"; cmd = "claude --dangerously-skip-permissions" }
-$cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools" }
+$cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools --agent orchestrator" }  # --agent pins the hook-bearing orchestrator; bare `chat` runs the hookless built-in default agent (validation T-K2, 2026-07-09)
 $cliDefs["Kimi"]   = @{ detect = "kimi"; cmd = "kimi --yolo" }
 $cliDefs["OpenCode"] = @{ detect = "opencode"; cmd = "opencode --agent opencode" }  # --agent pins the contract-carrying agent (TUI accepts --agent, verified 2026-07-09); no --yolo equivalent — permissions + framework-guard plugin govern (ADR-0002 amendment 2026-07-09)
 
