@@ -32,11 +32,25 @@ fail-open** bug (same class fixed in Claude/Kiro). BOTH now fixed: all 5
 stdin tests block `.kiro/`/`.env`/root/destructive; fail-closed on malformed
 JSON). **Caveat that persists:** Kimi only (re)loads hook config at session
 START — a long-lived pane runs whatever config existed when it launched, so a
-config fix requires a fresh Kimi session to take effect. **Live block
-confirmation pending a fresh Kimi pane re-test.** Regardless, the git
-pre-commit backstop (ADR-0005) is the guaranteed net — LIVE-PROVEN to reject a
-`kimi-cli`→`.kiro/` commit ("committer 'kimi-cli' may not commit this path",
-exit 1): a bad Kimi write can hit local disk but CANNOT reach the shared repo.
+config fix requires a fresh Kimi session to take effect. **FRESH-SESSION
+RE-TEST (2026-07-09, owner) STILL FAILED:** `.kiro/probe.txt` wrote through;
+only `.env` blocked (Kimi's native secret check). So the fail-closed rewrite +
+fresh session did NOT restore the block — Kimi's custom config `[[hooks]]`
+PreToolUse guards **do not fire for file-write tools** in this setup, period.
+**`--yolo` hypothesis REFUTED (owner no-yolo re-test 2026-07-09):** launched
+`kimi` WITHOUT `--yolo` (approval prompts active — "Approved for session:
+Writing .kiro/probe.txt" fired), and the `.kiro/` write STILL went through. So
+it is NOT the yolo flag. Definitive conclusion: **Kimi's config `[[hooks]]`
+PreToolUse guards do not fire for the `Write`/`Edit` file tools at all in this
+Kimi version — likely Kimi only fires PreToolUse for shell/`Bash`, not file
+writes.** This is a Kimi RUNTIME limitation, unfixable from our config; our
+entire `.kimi/hooks/*` layer (matcher/python/fail-closed fixes) perfects a
+script Kimi never invokes for Write. `.env` is caught only by Kimi's NATIVE
+secret check. We STOP here (ADR-0007 non-goal) — per-CLI hooks are unreliable
+and, for Kimi file-writes, non-functional. **The git pre-commit backstop (ADR-0005) is the guaranteed net** —
+LIVE-PROVEN to reject a `kimi-cli`→`.kiro/` commit ("committer 'kimi-cli' may
+not commit this path", exit 1): a bad Kimi write can hit local disk but CANNOT
+reach the shared repo. Kimi's native secret guard independently protects `.env`.
 
 **Root causes:**
 - **Claude (now FIXED):** hooks parsed JSON via `python3`, which on Windows
