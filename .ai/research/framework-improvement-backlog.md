@@ -78,11 +78,47 @@ figured out, continue it." No lightweight live-context handoff.
 - Keep it SEPARATE from handoffs (which stay task-oriented) to avoid overloading
   the handoff queue.
 
+## 5. [HIGH VALUE] Auto-continuation + auto-handoff-execution (kill the manual relay)
+
+**Pain (the biggest daily friction):** the owner constantly has to type
+"continue" (especially Kimi, which pauses at its ~100 multi-step limit) or
+"check and execute handoff" to push work to the next CLI in the same project.
+This makes the human the RELAY between steps and between CLIs — the exact
+opposite of the framework's stated principle ("the human is a gate, not a
+relay"). It's the #1 time-waster.
+
+**Two sub-needs (both solved by an enhanced P1 pane-watcher):**
+- **(a) Auto-continue on step/tool-limit:** a pane-runner wrapper detects when a
+  CLI paused due to a step/tool cap (exit signal / known output pattern) and
+  auto-sends "continue" until the CLI signals REAL completion (handoff moved to
+  done / explicit "task complete") — bounded by a max-continues safety cap to
+  avoid runaway loops/credit burn. Kimi is the priority case.
+- **(b) Auto-execute handoffs (cross-CLI flow):** the P1 per-pane watcher polls
+  its `to-<cli>/open/` queue and RUNS new `Auto:yes`/Risk-A|B handoffs in-pane
+  automatically (Risk-C still waits for the human gate) — so a handoff Claude
+  writes to Kimi is picked up and executed by Kimi's pane with no typing, and
+  when Kimi writes a follow-up handoff to Kiro, Kiro's watcher chains it. Work
+  flows Claude→Kimi→Kiro→OpenCode automatically and VISIBLY.
+
+**Why this is the keystone:** it's the same P1 pane-watcher build, extended from
+"visible dispatch" to "self-driving fleet." It resolves the owner's original
+visible-pane ask (#P1) AND #5(a) auto-continue AND #5(b) auto-handoff — one
+build, three pains gone. **This is what makes the framework feel finished.**
+
+**Guardrails (must-haves):** max-continues cap + real done-signal (no infinite
+loops); honor the Risk gate (Risk-C never auto-runs); the per-project claim-lock
+from #1 (no double-processing); a visible "auto-continuing (n/max)" banner so the
+owner can see + interrupt. Credit-burn awareness — cap is load-bearing.
+
+**Elevates P1 from "nice UX" to "the point of the framework."** Build #1's
+claim-lock + #5 together AS the P1 pane-watcher.
+
 ---
 
 ## Suggested sequencing (relative to ADR-0007 roadmap)
 - #2 (scratch dir) — trivial, do anytime; immediate daily-quality win.
-- #1 (handoff states + claim-lock) — build WITH the P1 pane-watcher (shared
-  claim-lock); ADR the protocol change.
-- #3 (session restore + multi-select) — launcher enhancement, P1-adjacent.
+- **#5 + #1 (auto-continue/auto-handoff + claim-lock) = the P1 pane-watcher
+  build — TOP PRIORITY. This is the keystone that makes the fleet self-driving
+  and stops the owner being the relay. Everything else is secondary to this.**
+- #3 (session restore + multi-select) — launcher enhancement, bundle with P1.
 - #4 (context-share) — P3; design once P1 pane visibility exists to surface it.
