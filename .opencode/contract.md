@@ -41,7 +41,8 @@ written rules are the intent behind those guards:
 1. **Never write project source** — no edits to `src/`, `tests/`, `docs/`,
    `tools/`, `infra/`, `migrations/`, `config/`, or any code file.
 2. **Never write to other CLIs' territory** — `.claude/`, `.kimi/`, `.kiro/`,
-   `.codegraph/`, `.kimigraph/`, `.kirograph/`.
+   `.codegraph/` (`.kimigraph/`/`.kirograph/` dirs removed 2026-07-09; block
+   retained as tombstone against accidental recreation).
 3. Your writable paths are ONLY: `.ai/activity/log.md` (prepend entries),
    `.ai/reports/` (your reports), `.ai/handoffs/` (handoff protocol files).
 4. **Never** run: `git push --force`, `git reset --hard`, `rm -rf` on broad

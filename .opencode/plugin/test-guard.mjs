@@ -24,6 +24,7 @@ function check(name, verdict, expectAllow) {
 
 const write = (filePath, root = ROOT, readRegistry) =>
   decide({ tool: "write", args: { filePath }, root, ...(readRegistry ? { readRegistry } : {}) });
+const read = (filePath, root = ROOT) => decide({ tool: "read", args: { filePath }, root });
 const bash = (command, root = ROOT) => decide({ tool: "bash", args: { command }, root });
 
 // --- whitelist ---
@@ -88,6 +89,13 @@ check("block tee out-of-lane", bash("echo hi | tee src/evil.txt"), false);
 check("allow tee in-lane", bash("echo hi | tee .ai/reports/note.md"), true);
 check("block unresolvable redirect target", bash('echo hi > "$SOMEWHERE/file"'), false);
 check("allow stderr redirect to /dev/null", bash("git fetch 2> /dev/null"), true);
+
+// --- reads allowed everywhere (read-fix 2026-07-09) ---
+check("allow read outside lane (src/)", read("src/main.rs"), true);
+check("allow read of .opencode/contract.md (regression)", read(".opencode/contract.md"), true);
+check("allow read outside project root", read("C:\\elsewhere\\notes.md"), true);
+check("allow read escaping worktree", read("C:\\parent\\other.md", WT_ROOT), true);
+check("allow edit-tool alias 'patch' still lane-restricted", decide({ tool: "patch", args: { filePath: "src/evil.txt" }, root: ROOT }), false);
 
 // --- non-write tools pass through ---
 check("allow read-ish tool (no filePath)", decide({ tool: "grep", args: { pattern: "x" }, root: ROOT }), true);

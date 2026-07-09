@@ -29,7 +29,7 @@
       }
     },
     "_codegraph_example": {
-      "_comment": "CodeGraph — code knowledge graph for Claude Code; the ONLY graph wired for Claude per ADR-0003 (each CLI registers at most its own graph; KimiGraph/KiroGraph are optional-off and belong in their CLIs' own configs). Install: npx @colbymchenry/codegraph",
+      "_comment": "CodeGraph — code knowledge graph for Claude Code; the ONLY graph in the framework per ADR-0003 (KimiGraph/KiroGraph removed 2026-07-09, owner directive). Install: npx @colbymchenry/codegraph",
       "command": "codegraph",
       "args": ["serve", "--mcp"]
     }

@@ -1,6 +1,6 @@
 // framework-guard — OpenCode enforcement plugin (Crush-replacement lane, ADR-0002).
 // Mechanical enforcement of the .opencode/contract.md contract:
-//   1. File writes (any tool with args.filePath: edit/write/patch) allowed ONLY to
+//   1. File writes (write-class tools only: write/edit/patch) allowed ONLY to
 //      .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** — mirrors
 //      .claude/hooks/pretool-write-edit.sh normalization (absolute paths,
 //      ..-traversal, backslashes).
@@ -9,6 +9,8 @@
 //      includes the target. Fail-CLOSED on missing/unreadable registry.
 //   3. Worktree confinement (ADR-0004): sessions running in .wt/<project>/<executor>/
 //      may write only inside the worktree.
+//   Reads are ALLOWED everywhere (read-fix 2026-07-09): only write-class ops are
+//   lane-restricted. Read-class tools (read/grep/glob/list/...) pass through.
 //   4. Bash screen: forbidden commands (contract rule 4 list) + redirect/tee targets
 //      run through the same path rules. Unresolvable redirect targets ($var,
 //      command substitution) are blocked — fail-closed; bash is permission "ask"
@@ -138,13 +140,19 @@ function decideBash(command, root, readRegistry) {
   return { allow: true };
 }
 
+// Only these tools mutate files via args.filePath. Everything else with a
+// filePath (read, grep, glob, list, ...) is read-class and passes through —
+// bash write-targets are screened separately in decideBash.
+const WRITE_TOOLS = new Set(["write", "edit", "patch"]);
+
 /**
  * Pure decision function. input: { tool, args, root, readRegistry? }
  * Returns { allow: true } or { allow: false, reason }.
  */
 export function decide({ tool, args, root, readRegistry = defaultReadRegistry }) {
   if (!args) return { allow: true };
-  if (typeof args.filePath === "string") return decidePath(args.filePath, root, readRegistry, tool || "write");
+  if (WRITE_TOOLS.has(tool) && typeof args.filePath === "string")
+    return decidePath(args.filePath, root, readRegistry, tool);
   if (tool === "bash" && typeof args.command === "string") return decideBash(args.command, root, readRegistry);
   return { allow: true };
 }
