@@ -17,6 +17,17 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+---
+
+## 2026-07-09 14:27 — kiro-cli
+- Action: Processed handoff `202607091430-migrate-to-v3.md` (Auto:yes/Risk:B). Migrated Kiro config to v3 ADDITIVELY (v2 `.json` agents + `.sh` guards untouched). Read the v3 docs fresh — surfaced TWO findings that change ADR-0006's merge decision: (A) `permissions.yaml` is NOT repo-injectable — v3 loads it only from `~/.kiro/settings/` or `~/.kiro/workspace-roots/<hash>/` (per-user, outside repo), and the hardcoded Kiro scope always-denies agent writes there; so the repo-committable enforcement path is the agent-md `permissions` block (delivered), NOT a repo `permissions.yaml`. (B) v3 has NO headless mode — "classic non-TUI mode does not support the v3 engine, use the TUI" — so `kiro-cli --v3 chat --no-interactive` (Step 4 + the dispatcher/Selector `--v3` pin) cannot run at all. Step 4 live validation NOT RUN (no shell as orchestrator + v3 non-TUI unsupported); owner-run TUI probes documented in the report §4. Left handoff OPEN as PARTIAL for claude-code to validate + move; commits left to claude-code (no Kiro git lane).
+- Files: `.kiro/agents/orchestrator.md` (new v3 md agent w/ permissions block), `.kiro/hooks/guards.json` (new v3 standalone hooks reusing pure-bash fail-CLOSED `.sh` guards), `.ai/config-snippets/kiro-v3-permissions.yaml` (owner-install template), `.ai/reports/kiro-cli-2026-07-09-v3-migration.md`, `.ai/handoffs/to-kiro/open/202607091430-migrate-to-v3.md` (status block)
+- Decisions: Deviated from literal Step 1 (repo permissions.yaml = dead text) and Step 4 (unrunnable) per delivery-integrity — substituted the correct v3 mechanisms and reported the gap plainly. Recommend claude-code keep Kiro headless dispatch on v2 + ADR-0005 git backstop until v3 ships a headless surface, and revert the `--v3` headless pin (commit 52b31fa) or gate it interactive-only. Fold into ADR-0006 before merge.
+- Grep-verified evidence:
+  - v3 permissions doc: "Workspace permissions are stored per-user outside the repository ... A cloned repo cannot inject permission rules."
+  - v3 known-gaps doc: "Classic mode not supported — The legacy non-TUI mode (`kiro-cli chat` without the TUI) does not support the v3 engine. Use the TUI."
+  - `.kiro/agents/orchestrator.md` frontmatter carries `permissions:` block; `.kiro/agents/orchestrator.json` still present (additive)
+
 ## 2026-07-09 14:35 — claude-code
 - Action: Authored ADR-0006 (Kiro v3 migration + headless-by-default operating principle) responding to the 2026-07-09 validation rollup's Kiro headless-enforcement gap. Two linked decisions: (1) adopt Kiro v3 — capability-based `permissions.yaml` replaces `--trust-all-tools`, versioned `.kiro/hooks/*.json` replace `.sh` hooks, Markdown agent config replaces `toolsSettings`; ADDITIVE (v2 kept as fallback until v3 live-validated headless). (2) headless-by-default: fleet execution is headless unless owner explicitly asks interactive, making mechanical headless enforcement first-class. Flagged (not edited) operating-prompt SSOT to absorb headless-by-default in a later sync. Grep-verified `permissions.yaml`/`headless` present.
 - Files: `docs/architecture/0006-kiro-v3-and-headless-default.md`, `.ai/activity/log.md`
