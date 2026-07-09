@@ -33,7 +33,7 @@ Creates a **Start Menu shortcut** called **"rwn 4AI Panes"** that opens a Window
 **Phase 2 — After selecting a project, the pane splits into four:**
 - Claude (`claude --dangerously-skip-permissions`)
 - Kiro (`kiro-cli chat --trust-all-tools`)
-- Kimi (`kimi --agent-file .kimi/agents/orchestrator.yaml --yolo`)
+- Kimi (`kimi --yolo`)
 - OpenCode (`opencode` — no --yolo equivalent; permissions + framework-guard plugin govern)
 
 **Default layout:**
