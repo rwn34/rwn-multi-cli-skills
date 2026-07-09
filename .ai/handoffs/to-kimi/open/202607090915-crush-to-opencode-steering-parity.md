@@ -1,6 +1,6 @@
 # Regenerate Kimi steering replicas — OpenCode replaces Crush (ADR-0002 amendment 2026-07-09)
-Status: BLOCKED
-Closure note (2026-07-09 08:47 — opencode): This handoff is addressed to `kimi-cli` and requires edits to `.kimi/steering/*.md` and possibly `.kimi/hooks/*`, which are outside OpenCode's writable lane. OpenCode cannot execute these steps. Left OPEN and unmodified; Kimi CLI should process it, or the owner may re-dispatch. See `.ai/reports/opencode-2026-07-09-misrouted-kimi-handoff.md`.
+Status: OPEN (reset 2026-07-09 by claude-code after the AGENTS.md router fix, commit 6c2e39d — re-dispatch cleared)
+History note (2026-07-09 08:47 — opencode): first dispatch misfired — the kimi session adopted the OpenCode identity from the then-rewritten AGENTS.md and correctly refused this handoff as out-of-lane (BLOCKED). Root cause fixed: AGENTS.md restored to neutral router; kimi identity re-probed OK. See `.ai/reports/opencode-2026-07-09-misrouted-kimi-handoff.md`.
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-09 09:15

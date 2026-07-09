@@ -45,7 +45,10 @@ headless_cmd() {
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
-        opencode) printf '%s' "opencode run --auto \"$prompt\"" ;;
+        # --agent opencode pins the contract-carrying agent (.opencode/contract.md);
+        # without it the default build agent runs and never loads the contract
+        # (ADR-0001 NOTE 2026-07-09: no dead text — pin the load path).
+        opencode) printf '%s' "opencode run --auto --agent opencode \"$prompt\"" ;;
         *)      return 1 ;;
     esac
 }

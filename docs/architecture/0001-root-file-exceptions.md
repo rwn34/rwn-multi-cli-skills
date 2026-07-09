@@ -18,9 +18,12 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 
 ### A. Docs entry points (convention-discoverable by external readers)
 
-- `AGENTS.md` — multi-CLI project pointer. Also OpenCode's always-loaded contract file (OpenCode reads `AGENTS.md`
-natively; per ADR-0002 amendment 2026-07-09, OpenCode replaces Crush as
-fourth CLI). Claude Code is custodian of the OpenCode-facing content.
+- `AGENTS.md` — multi-CLI project pointer. A NEUTRAL ROUTER auto-loaded by
+  multiple CLIs (at minimum OpenCode and Kimi); it must never carry a single
+  CLI's first-person identity — corrected 2026-07-09 after the Kimi
+  identity-collision incident (see
+  `.ai/reports/opencode-2026-07-09-misrouted-kimi-handoff.md`). It may carry
+  terse third-person per-CLI lane summaries. Claude Code custodian.
 - `README.md` — project README
 - `CLAUDE.md` — Claude Code's always-loaded memory
 - `CRUSH.md` — DEPRECATED (2026-07-09, ADR-0002 amendment: OpenCode
@@ -64,6 +67,15 @@ fourth CLI). Claude Code is custodian of the OpenCode-facing content.
   user-scope global config outside the repo, per owner directive
   2026-07-09). OpenCode resolves this file at project root. Added per
   ADR-0002 amendment 2026-07-09 (OpenCode replaces Crush as fourth CLI).
+
+  NOTE (2026-07-09, owner directive): OpenCode-governing text must live only
+  where OpenCode verifiably loads it — `AGENTS.md` (auto-loaded, all agents),
+  the `opencode` agent prompt file `.opencode/contract.md` (loaded only when
+  that agent is active; dispatch and launcher therefore pin
+  `--agent opencode`), and mechanically in `opencode.json` permissions +
+  `.opencode/plugin/framework-guard.js` (bind regardless of what the model
+  read). Rules written anywhere else for OpenCode's benefit are dead text.
+
 - `.opencode/` — OpenCode project directory (JS guard plugins, agents,
   local data). As a dotfolder it is exempt from the loose-file-at-root
   question by nature (see note below Category H); listed here for
@@ -74,8 +86,10 @@ fourth CLI). Claude Code is custodian of the OpenCode-facing content.
   Crush uninstall.
 
 Custodianship note *[amended 2026-07-09]*: Claude Code is custodian of
-OpenCode's framework files — `AGENTS.md` (the OpenCode-facing contract
-content), `opencode.json`, and `.opencode/` (guard plugins, agents).
+OpenCode's framework files — `.opencode/contract.md` (the OpenCode contract,
+wired through the `opencode` agent prompt in `opencode.json`), `AGENTS.md`
+(neutral router — OpenCode-relevant rows only), `opencode.json`, and
+`.opencode/` (guard plugins, agents).
 OpenCode requests changes to its own files via
 `.ai/handoffs/to-claude/open/` — the same change-request path Crush used.
 During the deprecation window, the same custodianship still covers
