@@ -71,6 +71,60 @@ run_test "t26-dest-allows-rmrf-dotbuild" ".kimi/hooks/destructive-guard.sh" '{"t
 # --- stdin-drain regression (F-4) ---
 run_test "t16-empty-stdin"         ".kimi/hooks/root-guard.sh"      ""                                                     0
 
+# --- real tool-name payload regression (Write/Edit use 'path', not 'file_path') ---
+run_test "t39-root-blocks-evil-path"     ".kimi/hooks/root-guard.sh"      '{"tool_input":{"path":"evil.txt"}}'                2
+run_test "t40-root-allows-src-path"      ".kimi/hooks/root-guard.sh"      '{"tool_input":{"path":"src/main.rs"}}'             0
+run_test "t41-fw-blocks-claude-path"     ".kimi/hooks/framework-guard.sh" '{"tool_input":{"path":".claude/agents/test.md"}}'  2
+run_test "t42-fw-blocks-kiro-path"       ".kimi/hooks/framework-guard.sh" '{"tool_input":{"path":".kiro/agents/test.json"}}'  2
+run_test "t43-sens-blocks-env-path"      ".kimi/hooks/sensitive-guard.sh" '{"tool_input":{"path":".env"}}'                    2
+
+# --- matcher regression: canonical snippet must use real tool names ---
+if grep -qE 'matcher[[:space:]]*=[[:space:]]*"WriteFile\|StrReplaceFile"' .ai/config-snippets/kimi-hooks.toml; then
+    fail=$((fail+1))
+    fails+=("t44-snippet-uses-real-tool-names (expected Write|Edit matcher, found WriteFile|StrReplaceFile)")
+else
+    pass=$((pass+1))
+fi
+
+# --- matcher regression: active global config must use real tool names (if present) ---
+for cfg in ~/.kimi-code/config.toml ~/.kimi/config.toml; do
+    if [ -f "$cfg" ]; then
+        if grep -qE 'matcher[[:space:]]*=[[:space:]]*"WriteFile\|StrReplaceFile"' "$cfg"; then
+            fail=$((fail+1))
+            fails+=("t45-active-config-uses-real-tool-names (file $cfg expected Write|Edit matcher, found WriteFile|StrReplaceFile)")
+        else
+            pass=$((pass+1))
+        fi
+    fi
+done
+
+# --- matcher regression: shell tool name must be "Bash", not "Shell" ---
+if grep -qE 'matcher[[:space:]]*=[[:space:]]*"Shell"' .ai/config-snippets/kimi-hooks.toml; then
+    fail=$((fail+1))
+    fails+=("t46-snippet-uses-bash-tool-name (expected Bash matcher, found Shell)")
+else
+    pass=$((pass+1))
+fi
+
+for cfg in ~/.kimi-code/config.toml ~/.kimi/config.toml; do
+    if [ -f "$cfg" ]; then
+        if grep -qE 'matcher[[:space:]]*=[[:space:]]*"Shell"' "$cfg"; then
+            fail=$((fail+1))
+            fails+=("t47-active-config-uses-bash-tool-name (file $cfg expected Bash matcher, found Shell)")
+        else
+            pass=$((pass+1))
+        fi
+    fi
+done
+
+# --- config path regression: snippet must point to ~/.kimi-code/config.toml ---
+if grep -qE '~/.kimi/config.toml(?!-code)' .ai/config-snippets/kimi-hooks.toml; then
+    fail=$((fail+1))
+    fails+=("t48-snippet-points-to-active-config (expected ~/.kimi-code/config.toml, found ~/.kimi/config.toml)")
+else
+    pass=$((pass+1))
+fi
+
 # --- worktree-fleet-guard: ADR-0004 worktree confinement + fleet whitelist ---
 T=$(mktemp -d)
 PROJ_NAME=$(basename "$PWD")

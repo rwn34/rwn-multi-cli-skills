@@ -4,8 +4,8 @@
 # and limits .fleet/handoffs/to-<project>/ writes to the fleet registry whitelist.
 
 input=$(cat)
-path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null || \
+      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null || \
       echo "")
 
 # Fail open if we cannot parse a path

@@ -17,7 +17,28 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
-## 2026-07-09 12:30 — opencode
+## 2026-07-09 13:16 — kimi-cli
+- Action: Continued/closed handoff `202607091250-fix-hook-matcher-names.md` (Auto:yes/Risk:B). Discovered the live-fire gap was deeper than matcher names: the active `~/.kimi-code/config.toml` already used `Write|Edit`, but (a) the destructive/safety hooks matched `Shell` while the runtime shell tool is `Bash`, (b) the canonical snippet pointed to the legacy `~/.kimi/config.toml` path, and (c) `kimi -p` headless mode does not execute hooks at all (verified with PreToolUse and SessionStart probes). Cleaned and deduplicated both global configs; fixed snippet path/tool-name/comments; added t46-t48 regressions. Hook suite `PASS: 48/48`. Wrote report documenting the `kimi -p` limitation and manual verification evidence.
+- Files: `~/.kimi-code/config.toml`, `~/.kimi/config.toml`, `.ai/config-snippets/kimi-hooks.toml`, `.kimi/hooks/test_hooks.sh`, `.ai/reports/kimi-cli-2026-07-09-hookfix.md`, `.ai/handoffs/to-kimi/done/202607091250-fix-hook-matcher-names.md`, `.ai/activity/log.md`; removed `.kiro/probe*.txt`, `.claude/probe*.txt`, `.kimi/hooks/debug.log`, `/tmp/kimi-hooks-fired.log`, `/tmp/kimi-sessionstart.log`
+- Decisions: Removed the temporary SessionStart probe after confirming `kimi -p` ignores hooks. Mirrored cleanup into legacy `~/.kimi/config.toml` so an old/aliased load path cannot re-introduce `Shell` matchers. Did not attempt to force interactive live verification because every headless automation path (`kimi -p`, piped TUI, winpty) failed; documented the gap instead.
+- Grep-verified evidence:
+  - `bash .kimi/hooks/test_hooks.sh` → `PASS: 48/48`
+  - `~/.kimi-code/config.toml:76` → `matcher = "Bash"` (destructive-guard)
+  - `.ai/config-snippets/kimi-hooks.toml:6` → `~/.kimi-code/config.toml`
+  - `.ai/config-snippets/kimi-hooks.toml:68` → `matcher = "Bash"`
+  - `wire.jsonl` tool name evidence: `"name":"Write"`, `"name":"Bash"` in active tool list
+  - `kimi -p` probe: `/tmp/kimi-hooks-fired.log` absent, `/tmp/kimi-sessionstart.log` absent → hooks not executed in headless mode
+
+## 2026-07-09 13:20 — kiro-cli
+- Action: Processed handoff `202607091251-fix-guard-default-agent-and-abspath.md` (Auto:yes/Risk:B) — the T-K2 remediation. Verified/completed the two-defect fix (prior interrupted Kiro session had staged most of it uncommitted): (B) all three guards normalize backslashes + segment-match framework dirs so absolute `file_path` is caught; (A) dispatcher pins `--agent orchestrator` (bare `kiro-cli chat` uses the hook-less built-in default, `chat.defaultAgent` unset). Ran suite → 39/39. Live-verified a headless `--agent orchestrator` session BLOCKS an absolute-path write to `.claude/probe.txt` (PROBE_ABSENT). Cleaned 5 probe debris files. Wrote report, set handoff DONE, moved to `to-kiro/done/`.
+- Files: `.ai/reports/kiro-cli-2026-07-09-guardfix.md`, `.ai/handoffs/to-kiro/done/202607091251-fix-guard-default-agent-and-abspath.md`, `.ai/activity/log.md`; verified (uncommitted, staged by prior session): `.kiro/hooks/framework-dir-guard.sh`, `.kiro/hooks/root-file-guard.sh`, `.kiro/hooks/sensitive-file-guard.sh`, `.kiro/hooks/test_hooks.sh`, `.kiro/agents/orchestrator.json`, `.ai/tools/dispatch-handoffs.sh`; removed `.kiro/probe{2,_debug,_invalid,_runtime,_sessionstart}.txt`
+- Decisions: Declined to globally set `chat.defaultAgent orchestrator` — it is user-global and would break `kiro-cli chat` in projects lacking that agent (Tier-B/C env change). Residual manual-launch gap (4AI-panes bare `kiro-cli chat`) flagged for claude-code: document the setting as setup, or pin `--agent orchestrator` in the cross-repo 4AI-panes launch. Also flagged (not patched — out of scope) that the Kiro guards still use the fail-open python-extraction pattern claude-code already fixed for `.claude/hooks/*`. Left all commits + `.kimi/*` parallel work to their owners.
+- Grep-verified evidence:
+  - `bash .kiro/hooks/test_hooks.sh` → `PASS: 39/39`
+  - `framework-dir-guard.sh:19` → `.claude|.claude/*|*/.claude|*/.claude/*) … exit 2` (segment glob)
+  - `test_hooks.sh:45` → `t5d block ABSOLUTE .claude (fwd)` `C:/proj/.claude/agents/test.md` → 2
+  - `dispatch-handoffs.sh` → `kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt"`
+  - live: `kiro-cli settings chat.defaultAgent` → `error: No value associated`; headless orchestrator write to `.claude\probe.txt` → `SAFETY REFUSAL`, `Test-Path` → `PROBE_ABSENT`
 - Action: Processed self-validation handoff `202607091212-selfvalidation-campaign.md` (Auto:yes/Risk:B). Executed full OpenCode validation subset: T-O4 (identity+lane) ✓, T-O2 (negative write probes to `src/` and `.claude/` both blocked) ✓, T-O3 (read-fix regression: read succeeded, write blocked) ✓, guard unit suite 45/45 PASS ✓. All evidence pasted to report. Updated handoff to DONE and moved to `to-opencode/done/`.
 - Files: `.ai/reports/opencode-2026-07-09-selfvalidation.md`, `.ai/handoffs/to-opencode/done/202607091212-selfvalidation-campaign.md`, `.ai/activity/log.md`
 - Decisions: Framework guard enforcement working correctly — all out-of-lane writes blocked with clear error messages. Read permissions confirmed open outside lane (2026-07-09 read-fix verified). Guard suite raised to 45 tests (from 40+) as expected; zero failures. Headless dispatch via `opencode run --agent opencode` succeeded, proving T-O1 (contract loads headless). Validation campaign GO for OpenCode.

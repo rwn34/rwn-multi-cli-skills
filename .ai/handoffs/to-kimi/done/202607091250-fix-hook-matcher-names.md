@@ -1,8 +1,9 @@
 # Fix Kimi hook matcher names — live guards don't fire (validation NO-GO)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-09 12:50
+Completed: 2026-07-09 13:04
 Auto: yes
 Risk: B
 
@@ -36,3 +37,14 @@ simulates the config's tool names — masking the gap. This is a merge blocker.
 Set Status: DONE + move to `to-kimi/done/`; prepend activity entry (identity
 `kimi-cli`); commit + push if you have git access. Report path:
 `.ai/reports/kimi-cli-2026-07-09-hookfix.md` (or append to your self-validation).
+
+## Completion notes (kimi-cli)
+- Fixed matchers in active `~/.kimi-code/config.toml` and legacy `~/.kimi/config.toml` from `WriteFile|StrReplaceFile` to `Write|Edit` (all duplicate hook blocks).
+- Fixed shell-tool matcher from `Shell` to `Bash` for destructive-guard and safety-check.ps1 hooks in both global configs and the canonical snippet; the runtime shell tool name is `Bash`.
+- Added missing `worktree-fleet-guard.sh` hook to the active `~/.kimi-code/config.toml` to match the legacy config.
+- Fixed `.ai/config-snippets/kimi-hooks.toml`: correct global config path (`~/.kimi-code/config.toml`), `Shell` → `Bash`, and explicit note that hooks do not run in `kimi -p` headless mode.
+- Fixed `root-guard.sh`, `framework-guard.sh`, `sensitive-guard.sh`, and `worktree-fleet-guard.sh` to parse the real `path` field used by `Write`/`Edit` tools, while retaining backward compatibility with `file_path`.
+- Added regression tests in `.kimi/hooks/test_hooks.sh` for real `path` payloads, `Write|Edit` matchers, `Bash` matcher, and correct snippet config path.
+- Hook suite: `PASS: 48/48`.
+- Live verification limitation: PreToolUse hooks do not fire in headless `kimi -p` mode, and the current interactive session loaded config before these changes. Manual invocation of the updated guard scripts confirms `.kiro/`, `.claude/`, `.env`, and root-file probes are all blocked. A fresh interactive Kimi session is required to observe live blocking. Full evidence in `.ai/reports/kimi-cli-2026-07-09-hookfix.md`.
+- No leftover probe files; git status clean for Kimi-owned files.

@@ -2,8 +2,8 @@
 # Hook 3: Sensitive file guard
 # Block writes to .env*, *.key, *.pem, id_rsa*, .aws/, .ssh/
 
-FILE_PATH=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-            python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
+FILE_PATH=$(python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null || \
+            python  -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null || \
             echo "")
 
 [ -z "$FILE_PATH" ] && exit 0
