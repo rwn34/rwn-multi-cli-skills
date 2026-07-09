@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 18:52 — claude-code
+- Action: Captured owner 3-month lived-experience feedback as a durable improvement backlog + tracked tasks (recall-later request). Four items: (1) handoff state model too coarse (open/done) — proposed claim-marker + Status enum vs owner's open/ongoing/review/done dirs, shares the P1 pane-watcher claim-lock; (2) no sanctioned home for one-off scripts → gitignored `.scratch/` (root-guard exempt, ADR-0001 note) — trivial, do first; (3) crash recovery painful for ~7 projects → launcher multi-select + `.4pane-session` "restore last session"; (4) heavyweight cross-CLI live context-share → separate `.ai/context/` note channel surfaced by the pane-watcher. Sequenced into ADR-0007 roadmap (P2/P3).
+- Files: `.ai/research/framework-improvement-backlog.md` (NEW), `.ai/activity/log.md`
+- Decisions: recorded not built (owner mid-deploy; "remember for later"). Tasks #32-35. #2 flagged as the cheapest immediate QoL win.
+
 ## 2026-07-09 18:40 — claude-code
 - Action: OpenCode frictionless-by-default (owner directive). Changed `opencode.json` permission `edit`/`bash` from `ask` → `allow` so OpenCode stops prompting per-tool during deploy/automation work. SAFE because OpenCode's enforcement is the `.opencode/plugin/framework-guard.js` plugin, which fires on `tool.execute.before` INDEPENDENT of the permission prompt (proven 2026-07-09 task 7/10) — so `allow` removes friction without removing the mechanical guard; the git backstop (ADR-0005) sits behind it. Tradeoff (accepted by owner): loses the human-prompt last-resort backstop for OpenCode only. Folded a live "guard-still-works under allow" negative probe into the pending deploy brief (202607091745) so the next OpenCode run proves the plugin still blocks an out-of-lane write.
 - Files: `opencode.json`, `.ai/handoffs/to-opencode/open/202607091745-deploy-merge-to-master.md` (guard-check step added), `.ai/activity/log.md`
