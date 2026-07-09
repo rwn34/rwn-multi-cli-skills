@@ -87,7 +87,7 @@ by CLI version — verify locally before relying on these:
 |---|---|
 | Claude Code | `claude -p "<prompt>" --permission-mode acceptEdits` |
 | Kimi CLI | `kimi --agent-file .kimi/agents/orchestrator.yaml -p "<prompt>"` (verify flag) |
-| Kiro CLI | `kiro-cli chat --no-interactive "<prompt>"` (verify flag) |
+| Kiro CLI | `kiro-cli --v3 chat --no-interactive --trust-all-tools --agent orchestrator "<prompt>"` (`--v3` is a top-level flag — launches Kiro CLI v3; verified via `kiro-cli --help`) |
 | OpenCode | `opencode run --auto "<prompt>"` (`--auto` required headless: with `edit: "ask"` writes auto-reject otherwise; the framework-guard plugin remains the lane barrier) |
 
 ## OpenCode (narrow-scope 4th CLI — ADR-0002, amended 2026-07-09: replaces Crush)

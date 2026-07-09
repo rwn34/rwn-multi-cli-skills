@@ -47,7 +47,10 @@ headless_cmd() {
         # built-in default does not. Pinning the orchestrator gives the headless
         # session the framework-dir/root/sensitive/ADR-0004 guards (validation
         # T-K2 default-agent gap, 2026-07-09).
-        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
+        # --v3 is a TOP-LEVEL flag (kiro-cli --help: "--v3  Launch the next
+        # generation Kiro agent"; NOT a `chat` subcommand flag) — launches Kiro
+        # CLI v3 for headless dispatch too.
+        kiro)   printf '%s' "kiro-cli --v3 chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
