@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 21:22 — claude-code
+- Action: Built ADR-0008 P1 keystone — self-driving pane-runner. New `tools/4ai-panes/pane-runner.ps1` (IDLE→CLAIM→RUN→DECIDE state machine, auto-continue MAX 5, per-project claim-lock, Get-HeadlessCmd single-source flags matching dispatch-handoffs.sh, 'p'-pause escape hatch). Atomic prepend helper `.ai/tools/activity-append.sh` (mkdir-lock + temp+rename, this entry written by it). Rewired Selector.ps1 pane launch to run the runner (RWN_PANE_BARE=1 falls back to bare CLI). Tests: test-pane-runner.ps1 12/12 pass, .ai/tests/test-activity-append.sh 6/6 pass (8 concurrent writers, zero clobber).
+- Files: tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, tools/4ai-panes/Selector.ps1, tools/4ai-panes/README.md, .ai/tools/activity-append.sh, .ai/tests/test-activity-append.sh, docs/architecture/0008-self-driving-fleet-pane-runner.md
+- Decisions: ASCII-only in .ps1 (PS 5.1 misparses UTF-8 em-dash in non-BOM files). Done-signal = handoff left open/ (no output scraping). Claim liveness by pid (dead-pid=reclaim), overridable scriptblock so tests mock the CLI + pid probe.
+
 ## 2026-07-09 21:08 — claude-code
 - Action: Post-merge handoff cleanup. Moved 3 resolved handoffs open→done via `git mv` now that master merge `b5024c2` landed: `to-opencode/202607091745-deploy-merge-to-master` (merge done via release-engineer lane), `to-claude/202607091112-post-outage-state-and-compat-review` (state resolved), `to-claude/202607091202-validation-campaign-dispatch` (campaign complete, rollup written). Appended " — DONE (superseded by master merge b5024c2 2026-07-09)" to each Status line.
 - Files: `.ai/handoffs/to-opencode/done/202607091745-deploy-merge-to-master.md`, `.ai/handoffs/to-claude/done/202607091112-post-outage-state-and-compat-review.md`, `.ai/handoffs/to-claude/done/202607091202-validation-campaign-dispatch.md`, `.ai/activity/log.md`

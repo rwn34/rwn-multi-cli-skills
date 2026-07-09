@@ -50,6 +50,12 @@ Creates a **Start Menu shortcut** called **"rwn 4AI Panes"** that opens a Window
 
 All CLI panes open with the selected project as working directory. If a CLI is not installed, that pane is skipped automatically. Pane order can be customized with the `o` key.
 
+### Self-driving panes (ADR-0008)
+
+Each pane launches **`pane-runner.ps1`** — a per-pane supervisor loop — rather than a bare CLI. The runner polls that project's `.ai/handoffs/to-<cli>/open/` inbox (filesystem only, zero tokens), and on a qualifying handoff (`Auto: yes` + `Risk: A|B`) it runs the CLI headless, auto-continues while the handoff stays `OPEN` (up to `-MaxContinues`, default 5), and releases a per-project claim-lock when the handoff moves to `done/`. Risk-C handoffs are never auto-run. Press **`p`** in a pane to pause the loop and drop to the interactive CLI; **Ctrl-C** stops the runner.
+
+**Plain REPL fallback:** set `RWN_PANE_BARE=1` before launching (or select "Open without directory") to get the old bare-CLI behavior in every pane. See [`docs/architecture/0008-self-driving-fleet-pane-runner.md`](../../docs/architecture/0008-self-driving-fleet-pane-runner.md).
+
 ---
 
 ## 2. Files
@@ -57,7 +63,9 @@ All CLI panes open with the selected project as working directory. If a CLI is n
 | File | Purpose |
 |------|---------|
 | `Launch4Panes.ps1` | Entry point. Launches wt.exe with the selector as a single full-screen pane. Auto-closes after launch. |
-| `Selector.ps1` | Interactive box-drawing menu. Handles project selection, layout customization, and dynamic pane splitting. Also auto-installs the AI framework into the selected project (`Install-Framework`, see §6). After splitting, this pane becomes the first CLI in the layout. |
+| `Selector.ps1` | Interactive box-drawing menu. Handles project selection, layout customization, and dynamic pane splitting. Also auto-installs the AI framework into the selected project (`Install-Framework`, see §6). After splitting, this pane becomes the first CLI in the layout. Each pane launches `pane-runner.ps1` unless `RWN_PANE_BARE` is set or no project dir is chosen. |
+| `pane-runner.ps1` | Per-pane self-driving supervisor loop (ADR-0008): polls this project's handoff inbox, runs the CLI headless on qualifying handoffs, auto-continues past step caps (MAX 5), and holds a per-project claim-lock. `-Cli`, `-ProjectDir`, `-MaxContinues`, `-PollSeconds`. |
+| `test-pane-runner.ps1` | Pester-free harness for `pane-runner.ps1` decision logic (mock CLI, no real launch). Run: `powershell -File test-pane-runner.ps1`. |
 | `install-framework.log` | Generated at runtime next to the scripts by `Install-Framework` — an append-only trace of each framework install attempt (source, git state, installer exit codes, fallback copies). Not committed. |
 | `Launch4Panes.vbs` | VBS wrapper. Opens the PS1 from Start Menu without leaving a lingering window. |
 | `icon.ico` | Custom icon for the Start Menu shortcut (dark theme, 4 colored bars). |

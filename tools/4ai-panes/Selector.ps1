@@ -892,16 +892,32 @@ if ($cliAvailable["Kiro"] -and $targetDir) {
     }
 }
 
+# ── Pane launch: self-driving runner vs bare CLI (ADR-0008) ──
+# Each pane normally launches pane-runner.ps1 (the self-driving supervisor loop
+# that auto-continues + auto-executes handoffs for its CLI). Fall back to the
+# bare interactive CLI when the owner wants a plain REPL: set env RWN_PANE_BARE=1,
+# or when there is no project dir (nodir mode) — the runner needs a project's
+# .ai/ to watch, so no-dir always uses the bare CLI.
+$cliLower = @{ Claude = 'claude'; Kiro = 'kiro'; Kimi = 'kimi'; OpenCode = 'opencode' }
+$paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
+$bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
+function Get-PaneLaunch {
+    param([string]$CliName, [string]$TargetDir)
+    if ($bareMode -or (-not $TargetDir) -or (-not (Test-Path $paneRunner))) {
+        return "powershell -NoExit -NoProfile -Command `"$($cliDefs[$CliName].cmd)`""
+    }
+    return "powershell -NoExit -NoProfile -File `"$paneRunner`" -Cli $($cliLower[$CliName]) -ProjectDir `"$TargetDir`""
+}
+
 # Split sequence: first CLI stays in this pane, remaining CLIs split off to the right
 $splitFractions = @(0.75, 0.6667, 0.5)
 
 for ($i = 1; $i -lt $activeCLIs.Count; $i++) {
     $cliName = $activeCLIs[$i]
-    $cliCmd = $cliDefs[$cliName].cmd
     $fraction = $splitFractions[$i - 1]
 
     $dirArg = if ($targetDir) { "-d `"$targetDir`"" } else { "" }
-    $splitCmd = "$dirArg powershell -NoExit -NoProfile -Command `"$cliCmd`""
+    $splitCmd = "$dirArg $(Get-PaneLaunch -CliName $cliName -TargetDir $targetDir)"
     $wtCmd = "-w rwn4ai split-pane -V -s $fraction $splitCmd"
     try {
         & cmd.exe /c "`"$wtExe`" $wtCmd"
@@ -911,12 +927,17 @@ for ($i = 1; $i -lt $activeCLIs.Count; $i++) {
     }
 }
 
-# This pane -> first CLI in the layout
+# This pane -> first CLI in the layout.
+# Self-driving path: run the pane-runner loop directly in this pane so it too
+# supervises its CLI. Bare path (RWN_PANE_BARE / nodir): plain interactive REPL.
 $firstCli = $activeCLIs[0]
-$firstCmd = $cliDefs[$firstCli].cmd
 
 Clear-Host
 if ($targetDir) {
     Set-Location $targetDir
 }
-Invoke-Expression $firstCmd
+if ($bareMode -or (-not $targetDir) -or (-not (Test-Path $paneRunner))) {
+    Invoke-Expression $cliDefs[$firstCli].cmd
+} else {
+    & $paneRunner -Cli $cliLower[$firstCli] -ProjectDir $targetDir
+}
