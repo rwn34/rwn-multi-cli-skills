@@ -1,0 +1,73 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "activity-log-inject",
+      "description": "v3 migration of the v2 agentSpawn hook. Injects recent activity-log context at session start.",
+      "trigger": "SessionStart",
+      "action": { "type": "command", "command": "bash .kiro/hooks/activity-log-inject.sh" },
+      "enabled": true
+    },
+    {
+      "name": "root-file-guard",
+      "description": "Blocks writes to repo-root files not on the ADR-0001 allowlist. Reuses the v2 pure-bash fail-CLOSED guard (no python dependency).",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|write",
+      "action": { "type": "command", "command": "bash .kiro/hooks/root-file-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "framework-dir-guard",
+      "description": "Blocks cross-CLI config writes (.claude/, .kimi/, .opencode/, graph dirs). Reuses the v2 pure-bash fail-CLOSED guard.",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|write",
+      "action": { "type": "command", "command": "bash .kiro/hooks/framework-dir-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "sensitive-file-guard",
+      "description": "Blocks writes to secrets (.env*, keys, credentials). Reuses the v2 pure-bash fail-CLOSED guard.",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|write",
+      "action": { "type": "command", "command": "bash .kiro/hooks/sensitive-file-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "worktree-confinement-guard",
+      "description": "Confines executor writes to their own worktree + shared .ai/ (ADR-0004). Reuses the v2 pure-bash fail-CLOSED guard.",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|write",
+      "action": { "type": "command", "command": "bash .kiro/hooks/worktree-confinement-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "fleet-whitelist-guard",
+      "description": "Blocks cross-project fleet handoff writes outside the talks_to whitelist (ADR-0004). Reuses the v2 pure-bash fail-CLOSED guard.",
+      "trigger": "PreToolUse",
+      "matcher": "fs_write|str_replace|write",
+      "action": { "type": "command", "command": "bash .kiro/hooks/fleet-whitelist-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "destructive-cmd-guard",
+      "description": "Blocks destructive shell (rm -rf, force-push, reset --hard, DROP/TRUNCATE). Reuses the v2 pure-bash fail-CLOSED guard.",
+      "trigger": "PreToolUse",
+      "matcher": "shell|execute_bash|bash",
+      "action": { "type": "command", "command": "bash .kiro/hooks/destructive-cmd-guard.sh" },
+      "timeout": 30,
+      "enabled": true
+    },
+    {
+      "name": "activity-log-remind",
+      "description": "v3 migration of the v2 stop hook. Reminds to prepend an activity-log entry at session end.",
+      "trigger": "Stop",
+      "action": { "type": "command", "command": "bash .kiro/hooks/activity-log-remind.sh" },
+      "enabled": true
+    }
+  ]
+}
