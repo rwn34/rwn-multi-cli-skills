@@ -1,0 +1,6 @@
+# Runtime state opencode auto-creates on first run (it generates the same
+# ignore set itself when this file is absent; it preserves an existing one).
+node_modules
+package.json
+package-lock.json
+bun.lock

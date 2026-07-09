@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "zhipu-coding": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Zhipu Coding",
+      "options": {
+        "baseURL": "https://open.bigmodel.cn/api/coding/paas/v4",
+        "apiKey": "{env:ZHIPU_API_KEY}"
+      },
+      "models": {
+        "glm-4.7": { "name": "GLM-4.7" },
+        "glm-4.7-flash": { "name": "GLM-4.7 Flash" }
+      }
+    }
+  },
+  "model": "zhipu-coding/glm-4.7",
+  "permission": {
+    "edit": "ask",
+    "bash": "ask"
+  },
+  "agent": {
+    "opencode": {
+      "mode": "primary",
+      "description": "OpenCode — 4th CLI of this framework: general helper + DevOps deployment operator (ADR-0002 Stage 2, Crush replacement per owner decision 2026-07-09). Contract: AGENTS.md at repo root.",
+      "model": "zhipu-coding/glm-4.7",
+      "prompt": "{file:./AGENTS.md}"
+    }
+  }
+}
