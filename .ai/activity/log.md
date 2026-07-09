@@ -17,6 +17,16 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 21:08 — claude-code
+- Action: Post-merge handoff cleanup. Moved 3 resolved handoffs open→done via `git mv` now that master merge `b5024c2` landed: `to-opencode/202607091745-deploy-merge-to-master` (merge done via release-engineer lane), `to-claude/202607091112-post-outage-state-and-compat-review` (state resolved), `to-claude/202607091202-validation-campaign-dispatch` (campaign complete, rollup written). Appended " — DONE (superseded by master merge b5024c2 2026-07-09)" to each Status line.
+- Files: `.ai/handoffs/to-opencode/done/202607091745-deploy-merge-to-master.md`, `.ai/handoffs/to-claude/done/202607091112-post-outage-state-and-compat-review.md`, `.ai/handoffs/to-claude/done/202607091202-validation-campaign-dispatch.md`, `.ai/activity/log.md`
+- Decisions: Left `docs/architecture/0008-*.md` (parallel doc-writer owns it) and `.claude/settings.local.json` uncommitted per instruction.
+
+## 2026-07-09 21:04 — claude-code
+- Action: Executed owner-approved no-ff merge of `claude/project-overview-pn5l4e` → `master` (fallback deploy lane, Tier C, no tag/no publish). All gates green pre-merge: SSOT drift 0/24, Claude hooks 54/54, Kimi 48/48, Kiro 52/52, OpenCode 45/45, tsc exit 0, vitest 80 pass / 3 env-fails + pack (KNOWN profile — git/npm not on PATH in execSync subshells). Merge `b5024c2`, pushed; remote==local verified. Returned to feature branch, tree clean (only settings.local.json).
+- Files: master branch (127 files, +6519/-1277); .ai/activity/log.md
+- Decisions: Treated the 3 vitest failures + pack.test.ts setup fail as the sanctioned KNOWN env profile (all `git`/`npm` not recognized in subshell PATH), not regressions — gate green. Rollback on record: `git revert -m 1 b5024c2`.
+
 ## 2026-07-09 18:52 — claude-code
 - Action: Captured owner 3-month lived-experience feedback as a durable improvement backlog + tracked tasks (recall-later request). Four items: (1) handoff state model too coarse (open/done) — proposed claim-marker + Status enum vs owner's open/ongoing/review/done dirs, shares the P1 pane-watcher claim-lock; (2) no sanctioned home for one-off scripts → gitignored `.scratch/` (root-guard exempt, ADR-0001 note) — trivial, do first; (3) crash recovery painful for ~7 projects → launcher multi-select + `.4pane-session` "restore last session"; (4) heavyweight cross-CLI live context-share → separate `.ai/context/` note channel surfaced by the pane-watcher. Sequenced into ADR-0007 roadmap (P2/P3).
 - Files: `.ai/research/framework-improvement-backlog.md` (NEW), `.ai/activity/log.md`
