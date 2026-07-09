@@ -19,8 +19,24 @@ is only true in some modes.** Do not rely on hooks as the sole guarantee.
 |---|---|---|---|
 | Claude | ✅ blocks | ✅ blocks | ✅ blocks (hooks inherit) |
 | OpenCode | ✅ | ✅ | ✅ (JS plugin fires every tool call) |
-| Kimi | ✅ (config fixed 2026-07-09) | ❌ **`kimi -p` runs ZERO hooks** | ❌ prompt-only |
+| Kimi | ❌ **custom hooks did NOT fire live** (owner pane test 2026-07-09: `.kiro/` write succeeded; only Kimi's NATIVE secret guard blocked `.env`) | ❌ **`kimi -p` runs ZERO hooks** | ❌ prompt-only |
 | Kiro | ✅ (needs `--agent orchestrator`; bare chat = hookless default) | ❌ **`--trust-all-tools` makes hooks + `allowedPaths` inert** | ❌ subagent hooks never fire |
+
+**Kimi live-test finding + ROOT CAUSE (2026-07-09):** an owner interactive-pane
+test showed a `.kiro/` write succeeding (not blocked). Kimi's own live diagnosis
+(17:16) found TWO causes: (1) **stale session** — Kimi caches hook config at
+session start; the test pane held config cached from 06:06 and never reloaded,
+so the fixed hooks weren't even loaded; (2) the guards had the **python-stub
+fail-open** bug (same class fixed in Claude/Kiro). BOTH now fixed: all 5
+`.kimi/hooks/*.sh` rewritten python-independent + fail-CLOSED (48/48; manual
+stdin tests block `.kiro/`/`.env`/root/destructive; fail-closed on malformed
+JSON). **Caveat that persists:** Kimi only (re)loads hook config at session
+START — a long-lived pane runs whatever config existed when it launched, so a
+config fix requires a fresh Kimi session to take effect. **Live block
+confirmation pending a fresh Kimi pane re-test.** Regardless, the git
+pre-commit backstop (ADR-0005) is the guaranteed net — LIVE-PROVEN to reject a
+`kimi-cli`→`.kiro/` commit ("committer 'kimi-cli' may not commit this path",
+exit 1): a bad Kimi write can hit local disk but CANNOT reach the shared repo.
 
 **Root causes:**
 - **Claude (now FIXED):** hooks parsed JSON via `python3`, which on Windows

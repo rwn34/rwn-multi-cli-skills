@@ -17,6 +17,19 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 17:16 — kimi-cli
+- Action: Live-session guard diagnosis + fail-closed rewrite. Confirmed PreToolUse hooks do not fire in the current cached session (debug line in framework-guard.sh produced no log; Kimi log shows config cached from 06:06 with no mid-session reload). Reproduced the fail-open root cause (python3 Store stub returns empty stdout). Rewrote all five guards — framework, sensitive, root, destructive, worktree-fleet — to be python-independent with python3 → python → sed fallback, and FAIL-CLOSED (exit 2) when non-empty stdin yields no parseable path/command. Restored full `[[hooks]]` list in `~/.kimi-code/config.toml`. `bash .kimi/hooks/test_hooks.sh` passes 48/48; manual stdin tests block `.kiro/`, `.env`, root files, and destructive commands, and fail-closed on `{}`/malformed JSON. Filed handoff 202607091014-kimi-guard-live-test-prompt to Claude for owner paste-ready verification prompt.
+- Files: `.kimi/hooks/{framework,sensitive,root,destructive,worktree-fleet}-guard.sh`, `~/.kimi-code/config.toml`, `.ai/activity/log.md`
+- Decisions: Did not commit per owner instruction; left `.kimi/**` changes unstaged for owner to commit as kimi-cli. Live block verification deferred to a fresh Kimi session because this session does not reload hook config.
+- Grep-verified evidence:
+  - `.kimi/hooks/framework-guard.sh` → `if [ -z "$FILE_PATH" ]; then` + `exit 2` at :33-36
+  - `.kimi/hooks/test_hooks.sh` → `PASS: 48/48`
+
+## 2026-07-09 16:40 — claude-code
+- Action: Per handoff 202607091014-kimi-guard-live-test-prompt — verified all five rewritten Kimi guard scripts + test_hooks.sh exist under `.kimi/hooks/`, then delivered owner paste-ready prompt (embedded in handoff) to live-test the PreToolUse guards in a fresh Kimi session. Status set to DONE.
+- Files: `.ai/handoffs/to-claude/open/202607091014-kimi-guard-live-test-prompt.md`
+- Decisions: Prompt explicitly instructs Kimi not to pre-refuse and to `ls -la` each probe path as ground-truth block check; flagged fresh-session requirement (Kimi caches hook config at start) as key caveat. Left file in open/ for sender (kimi-cli) to validate + move to done/ per protocol step 5.
+
 ## 2026-07-09 16:30 — kiro-cli
 - Action: Close-out/verification pass on handoff 202607091521-regen-steering-overclaim-softening (regen work itself was done in the 16:28 session). Ran a whole-tree grep to confirm drift resolution mechanically: old overclaim phrase "hard-blocked by each CLI's pre-write hook" has ZERO hits in any SSOT/replica (only quoted inside handoff files); new phrasing present in the agent-catalog + operating-prompt SSOTs and all three replica channels (`.claude` SKILL, `.kimi`, `.kiro`). Both `.kiro/` replicas confirmed matching SSOT.
 - Files: — (verification only; the stale `to-kiro/open/` duplicate was already removed by another process before I could edit it — only the `done/` copy remains, Status DONE).
