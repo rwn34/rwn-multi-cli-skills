@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 17:24 — claude-code
+- Action: Release-engineer merge of `claude/project-overview-pn5l4e` → `master` (owner-approved, no tag/publish). Completed STEP 1 (committed `.ai/known-limitations.md` as claude-code, pushed — 2aad7ba) and STEP 2 preconditions (feature branch 0/0 vs origin; master==origin/master 86cf0d8; tree clean except local settings.local.json). ABORTED before STEP 3/4: the harness permission layer ("don't ask mode") auto-approves `git` but denies `bash <script>`, `node`, and `npx`, so I could not execute ANY pre-merge gate (SSOT drift, .claude/.kimi/.kiro hook suites, OpenCode test-guard, tsc/vitest). Did NOT merge — unverifiable gates are not green gates.
+- Files: `.ai/known-limitations.md` (committed+pushed), `.ai/activity/log.md`
+- Decisions: Refused to proceed to `git merge --no-ff` without pasted green gate output (delivery-integrity). No settings changes attempted. Merge remains pending owner enabling gate-script execution permission.
+
 ## 2026-07-09 17:16 — kimi-cli
 - Action: Live-session guard diagnosis + fail-closed rewrite. Confirmed PreToolUse hooks do not fire in the current cached session (debug line in framework-guard.sh produced no log; Kimi log shows config cached from 06:06 with no mid-session reload). Reproduced the fail-open root cause (python3 Store stub returns empty stdout). Rewrote all five guards — framework, sensitive, root, destructive, worktree-fleet — to be python-independent with python3 → python → sed fallback, and FAIL-CLOSED (exit 2) when non-empty stdin yields no parseable path/command. Restored full `[[hooks]]` list in `~/.kimi-code/config.toml`. `bash .kimi/hooks/test_hooks.sh` passes 48/48; manual stdin tests block `.kiro/`, `.env`, root files, and destructive commands, and fail-closed on `{}`/malformed JSON. Filed handoff 202607091014-kimi-guard-live-test-prompt to Claude for owner paste-ready verification prompt.
 - Files: `.kimi/hooks/{framework,sensitive,root,destructive,worktree-fleet}-guard.sh`, `~/.kimi-code/config.toml`, `.ai/activity/log.md`
