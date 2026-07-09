@@ -26,10 +26,6 @@ Root-file policy is strict: any file not explicitly listed below requires orches
   terse third-person per-CLI lane summaries. Claude Code custodian.
 - `README.md` — project README
 - `CLAUDE.md` — Claude Code's always-loaded memory
-- `CRUSH.md` — DEPRECATED (2026-07-09, ADR-0002 amendment: OpenCode
-  replaces Crush). Retained on disk until the swap's e2e verification gate
-  (swap workstream task 10) passes; this entry is deleted in the same
-  commit that deletes the file.
 - `LICENSE` (or `LICENSE.*`) — GitHub / npm / PyPI / crates.io auto-detection
 - `CHANGELOG.md` (or `CHANGELOG`) — release-tooling convention (keepachangelog, release-please, semantic-release)
 - `CONTRIBUTING.md` — optional; canonical version lives at `docs/guides/contributing.md`. Root file allowed for GitHub auto-link UX.
@@ -80,10 +76,6 @@ Root-file policy is strict: any file not explicitly listed below requires orches
   local data). As a dotfolder it is exempt from the loose-file-at-root
   question by nature (see note below Category H); listed here for
   discoverability, same as `.crush/` was.
-- `.crush.json` — DEPRECATED (2026-07-09, see `CRUSH.md` note in
-  Category A). Deleted, with this entry, after the swap's e2e gate.
-- `.crush/` — DEPRECATED (2026-07-09). Local data dir; removed with the
-  Crush uninstall.
 
 Custodianship note *[amended 2026-07-09]*: Claude Code is custodian of
 OpenCode's framework files — `.opencode/contract.md` (the OpenCode contract,
@@ -92,8 +84,8 @@ wired through the `opencode` agent prompt in `opencode.json`), `AGENTS.md`
 `.opencode/` (guard plugins, agents).
 OpenCode requests changes to its own files via
 `.ai/handoffs/to-claude/open/` — the same change-request path Crush used.
-During the deprecation window, the same custodianship still covers
-`CRUSH.md` and `.crush.json` until their deletion.
+(`CRUSH.md` and `.crush.json` were deleted 2026-07-09 after the swap's e2e
+verification gate passed — swap workstream task 10.)
 
 ### F. Language manifests (allowlist extended only when a language is chosen — amend this ADR at that time)
 

@@ -73,10 +73,9 @@ run_test "t22 .codegraph allowed"        "$WE" '{"tool_input":{"file_path":".cod
 run_test "t23 .kimigraph blocked"        "$WE" '{"tool_input":{"file_path":".kimigraph/kimigraph.db"}}'  2
 run_test "t24 .kirograph blocked"        "$WE" '{"tool_input":{"file_path":".kirograph/kirograph.db"}}'  2
 
-# --- write-edit: Crush custodianship (ADR-0001 amendment + ADR-0002 — Claude maintains Crush's files) ---
-# t25/t26 kept through the deprecation window; removed with the files at task-10 deletion.
-run_test "t25 CRUSH.md allowed"          "$WE" '{"tool_input":{"file_path":"CRUSH.md"}}'                 0
-run_test "t26 .crush.json allowed"       "$WE" '{"tool_input":{"file_path":".crush.json"}}'              0
+# --- write-edit: Crush retirement (task-10 deletion 2026-07-09 — CRUSH.md/.crush.json removed from ADR-0001 + allowlist) ---
+run_test "t25 CRUSH.md blocked"          "$WE" '{"tool_input":{"file_path":"CRUSH.md"}}'                 2
+run_test "t26 .crush.json blocked"       "$WE" '{"tool_input":{"file_path":".crush.json"}}'              2
 
 # --- write-edit: OpenCode custodianship (ADR-0001/0002 amendments 2026-07-09 — Claude maintains OpenCode's files) ---
 run_test "t26b opencode.json allowed"    "$WE" '{"tool_input":{"file_path":"opencode.json"}}'            0
