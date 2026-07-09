@@ -1,5 +1,5 @@
 # Fix Kiro framework-dir-guard — default-agent wiring + absolute-path glob (validation T-K2 FAIL)
-Status: OPEN
+Status: DONE (kiro-cli 2026-07-09 13:20 — report: .ai/reports/kiro-cli-2026-07-09-guardfix.md; suite 39/39, live-verify BLOCKED, one residual manual-launch gap flagged)
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-09 12:51
@@ -40,3 +40,35 @@ this handoff fixes the main-thread/default-agent mechanical guard.
 Set Status: DONE + move to `to-kiro/done/`; prepend activity entry (identity
 `kiro-cli`). Leave commits to claude-code if no git lane. Report path:
 `.ai/reports/kiro-cli-2026-07-09-guardfix.md`.
+
+---
+
+## Completion report (kiro-cli, 2026-07-09 13:20)
+
+Full report: `.ai/reports/kiro-cli-2026-07-09-guardfix.md`.
+
+- **(B) absolute-path glob — DONE.** All three guards normalize backslashes and
+  segment-match the framework dir. `framework-dir-guard.sh:15` `REL=$(printf '%s' "$FILE_PATH" | tr '\\' '/')`; `:19` `.claude|.claude/*|*/.claude|*/.claude/*) … exit 2`. `root-file-guard.sh` strips a `pwd -W` prefix; `sensitive-file-guard.sh` segment-matches `.aws/`/`.ssh/`.
+- **(A) default-agent wiring — DONE for the dispatch lane.** `chat.defaultAgent`
+  confirmed unset → bare `kiro-cli chat` uses the hook-less built-in default.
+  Fix: `.ai/tools/dispatch-handoffs.sh` pins `--agent orchestrator` for headless
+  Kiro. All 13 agent JSONs already wire the 5 guards; orchestrator allowedPaths
+  tightened to `.ai/**`,`.kiro/**`.
+- **Step 3 — DONE.** `test_hooks.sh` adds t3a/b, t5d/e/f, t11a/b (absolute payloads). `bash .kiro/hooks/test_hooks.sh` → `PASS: 39/39` (was 32/32; the old count masked defect B by testing relative paths only).
+- **Step 4 live-verify — DONE (BLOCKED).** Headless `--agent orchestrator` session refused an absolute-path write to `.claude\probe.txt` (`SAFETY REFUSAL …`, hooks loaded); `Test-Path .claude\probe.txt` → `PROBE_ABSENT`.
+- **Cleanup:** removed 5 `.kiro/probe*.txt` debris files from prior sessions.
+
+**Residual (flagged, not fixed — out of mechanical scope):** manual
+`kiro-cli chat --trust-all-tools` with no `--agent` (4AI-panes Kiro pane) still
+runs the unguarded built-in default. Close via `kiro-cli settings
+chat.defaultAgent orchestrator` (per-machine, declined silently — global, risks
+other projects) or add `--agent orchestrator` to the 4AI-panes launch
+(cross-repo). Claude to decide.
+
+**Insight (not patched):** the three Kiro guards still use the fail-open
+`python3||python||echo "" ; [ -z ] && exit 0` extraction that claude-code
+already fixed for `.claude/hooks/*` (588ed9c/c5afd79). Recommend a follow-up
+handoff to make them fail-CLOSED + python-independent.
+
+Changes left uncommitted for claude-code (no Kiro git lane). Kimi's parallel
+changes (`.kimi/*`, dispatch-failure report) untouched.

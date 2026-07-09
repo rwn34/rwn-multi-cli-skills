@@ -17,6 +17,14 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 14:02 — kiro-cli
+- Action: Re-dispatched onto handoff `202607091345-fix-guard-python-failopen.md` (Auto:yes/Risk:B) — found it ALREADY closed by a parallel kiro-cli instance (see 13:58 entry): all six `.kiro/hooks/*.sh` guards carry the fail-CLOSED python-independent extractor, tests t30–t42 added, suite PASS 52/52. Confirmed the code state independently by grep (fail-closed marker present in all six guards incl. destructive-cmd-guard:21). Could NOT run the suite myself — every shell spawn in this session failed with `STATUS_DLL_INIT_FAILED` (0xc0000142), so I relied on the 13:58 instance's verified run. Reconciled the report file after a same-path write collision between the two instances — final version reflects the verified 52/52 result.
+- Files: `.ai/reports/kiro-cli-2026-07-09-guard-pythonfix.md` (reconciled), `.ai/activity/log.md`
+- Decisions: Dispatcher double-processing race (two kiro-cli instances on one Auto:yes/Risk:B handoff) — worth flagging: `dispatch-handoffs.sh` has no in-flight lock, so a re-run before open/→done/ move re-launches the recipient. Left Status DONE untouched (the 13:58 verified run owns that claim). Did not add a duplicate completion note to the handoff body. Physical open/→done/ move + commit remain claude-code's (no Kiro git lane; I also have no shell this session).
+- Grep-verified evidence:
+  - `rg -n "refusing to fail open" .kiro/hooks/*.sh` → 6/6 guards match (destructive-cmd-guard.sh:21, framework-dir-guard.sh:22, root-file-guard.sh:17, sensitive-file-guard.sh:17, fleet-whitelist-guard.sh:22, worktree-confinement-guard.sh:20)
+  - `.kiro/hooks/destructive-cmd-guard.sh:18` → `sed -n 's/.*"command"...//p'` fallback present; `:20-22` fail-CLOSED `exit 2`
+
 ## 2026-07-09 13:58 — kiro-cli
 - Action: Closed handoff `202607091345-fix-guard-python-failopen.md` (Auto:yes/Risk:B). Fixed the python fail-open class in all six `.kiro/hooks/*.sh` guards that parse stdin JSON — the `python3 || python || echo` chain keyed on exit status silently no-op'd (fail-OPEN) when python3 = Windows Store alias stub. Replaced with: empty-stdin gate → python3/python optional-first → pure-`sed` fallback on EMPTY output → fail-CLOSED (exit 2) if non-empty stdin yields no field. `file_path` for the 5 fs_write guards, `command` for destructive-cmd-guard. Added tests t30–t42 (python-less repro under `PATH=/usr/bin:/bin` + fail-closed-on-unparseable). Suite PASS: 52/52 (subagent-run). Restores INTERACTIVE-mode enforcement only; headless --trust-all-tools gap unchanged (git pre-commit backstop ADR-0005 is that net).
 - Files: `.kiro/hooks/{framework-dir-guard,root-file-guard,sensitive-file-guard,worktree-confinement-guard,fleet-whitelist-guard,destructive-cmd-guard,test_hooks}.sh`, `.ai/reports/kiro-cli-2026-07-09-guard-pythonfix.md`, `.ai/handoffs/to-kiro/open/202607091345-fix-guard-python-failopen.md` (Status→DONE)
