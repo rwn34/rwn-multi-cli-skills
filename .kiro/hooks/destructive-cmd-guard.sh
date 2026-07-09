@@ -2,10 +2,25 @@
 # Hook: preToolUse — block destructive shell commands
 # See docs/architecture/0001-root-file-exceptions.md and consolidated audit for pattern rationale
 
-CMD=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-      python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-      echo "")
-[ -z "$CMD" ] && exit 0
+# Extraction MUST NOT depend on python (fail-CLOSED). python3 can resolve to a
+# Windows Store alias stub (empty stdout, exit 0), so a `|| python` chain keyed on
+# exit status silently no-ops → a destructive command sails through (fail-OPEN).
+# Mirror .claude/hooks/pretool-write-edit.sh (588ed9c): python optional-first,
+# pure-sed fallback on EMPTY output, fail-CLOSED if nothing parses. Matched to
+# execute_bash only, so stdin always carries command.
+INPUT=$(cat)
+# Empty (or whitespace-only) stdin → nothing to evaluate → allow.
+if [ -z "$(printf '%s' "$INPUT" | tr -d '[:space:]')" ]; then
+    exit 0
+fi
+CMD=$(printf '%s' "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null)
+[ -z "$CMD" ] && CMD=$(printf '%s' "$INPUT" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null)
+[ -z "$CMD" ] && CMD=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+# Non-empty stdin but no command parsed → refuse to fail open.
+if [ -z "$CMD" ]; then
+    echo "BLOCKED: could not parse tool input (no command found) — refusing to fail open." >&2
+    exit 2
+fi
 CMD=$(echo "$CMD" | tr '[:upper:]' '[:lower:]')
 
 # Normalize whitespace for boundary matching
