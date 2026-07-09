@@ -47,10 +47,18 @@ headless_cmd() {
         # built-in default does not. Pinning the orchestrator gives the headless
         # session the framework-dir/root/sensitive/ADR-0004 guards (validation
         # T-K2 default-agent gap, 2026-07-09).
-        # --v3 is a TOP-LEVEL flag (kiro-cli --help: "--v3  Launch the next
-        # generation Kiro agent"; NOT a `chat` subcommand flag) — launches Kiro
-        # CLI v3 for headless dispatch too.
-        kiro)   printf '%s' "kiro-cli --v3 chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
+        # Headless dispatch stays on v2 (NO --v3). Per the v3 docs
+        # (<https://kiro.dev/docs/cli/v3/> "Known gaps", verified 2026-07-09):
+        # "The legacy non-TUI mode (kiro-cli chat without the TUI) does not
+        # support the v3 engine. Use the TUI." --no-interactive IS that classic
+        # non-TUI mode, so `kiro-cli --v3 chat --no-interactive` would silently
+        # fall back to the v2 engine — the --v3 flag here was dead text. v3
+        # enforces only in the interactive TUI; there is no v3 headless surface.
+        # Headless Kiro therefore runs v2, and the git pre-commit backstop
+        # (ADR-0005) is the version-agnostic mechanical floor for these commits.
+        # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
+        # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
+        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).

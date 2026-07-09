@@ -126,3 +126,72 @@ ceiling.
 - commit `52b31fa` — `kiro-cli --v3` pinned in the 4AI-panes pane + dispatcher
 - `.ai/instructions/operating-prompt/principles.md` — SSOT to absorb the
   headless-by-default principle in a later sync (flagged above)
+
+## Amendment 2026-07-09 — v3 migration findings (A/B) correct Decision 1's rationale
+
+The Kiro v3 migration attempt
+(`.ai/reports/kiro-cli-2026-07-09-v3-migration.md`) surfaced two facts, read
+fresh from the v3 docs, that correct — but do not reverse — Decision 1. The
+migration remains PARTIAL and owner-gated; nothing below retires the v2
+fallback.
+
+**Finding A — `permissions.yaml` is NOT repo-injectable.** v3 loads
+`permissions.yaml` only from per-user scope: `~/.kiro/settings/permissions.yaml`
+(user) or `~/.kiro/workspace-roots/<hash(workspaceRoot)>/permissions.yaml`
+(workspace, still per-user, outside the repo). A cloned repo cannot inject
+permission rules, and the hardcoded Kiro scope always denies agent writes to
+`~/.kiro/settings/`, so it cannot be installed programmatically either. The
+repo-committable v3 enforcement path is therefore the **agent-markdown
+`permissions` block** in `.kiro/agents/orchestrator.md`, NOT a committed
+`permissions.yaml`. The owner installs
+`.ai/config-snippets/kiro-v3-permissions.yaml` to the user-scope path by hand
+(install steps are in that snippet's header). This corrects Decision 1's
+implication that `permissions.yaml` is the repo-committed enforcement artifact.
+
+**Finding B — v3 has no headless / non-TUI surface.** The v3 docs
+(<https://kiro.dev/docs/cli/v3/> "Known gaps", verified 2026-07-09) state:
+"The legacy non-TUI mode (`kiro-cli chat` without the TUI) does not support the
+v3 engine. Use the TUI." `--no-interactive` (headless dispatch) IS that classic
+non-TUI mode, so `kiro-cli --v3 chat --no-interactive` silently falls back to
+the v2 engine — the `--v3` flag was dead text in that path. This **corrects
+Decision 1's rationale** that "v3 `permissions.yaml` gives Kiro real *headless*
+enforcement": v3 enforces only in the **interactive TUI**; there is no v3
+headless surface to enforce in *yet*. Decision 1 (adopt v3, additively, v2 kept)
+still stands — v3's enforcement win is real, but it is currently **TUI-only**.
+
+Corroborating CLI evidence (kiro-cli-chat 2.12.0, `kiro-cli --help`, 2026-07-09):
+the canonical documented v3 launch `kiro-cli --v3` **rejects** `--agent`
+(`error: unexpected argument '--agent' found; Usage: kiro-cli.exe --v3`), so the
+hook-bearing orchestrator pin (required per the T-K2 default-agent gap) cannot be
+carried by the documented v3 form; `--agent` is accepted only under the `chat`
+subcommand.
+
+**Resolution — Kiro v3 interactive pane / Kiro v2 headless dispatch.**
+
+- **Headless dispatch stays v2.** The dispatcher (`.ai/tools/dispatch-handoffs.sh`)
+  reverts the `--v3` pin (commit `52b31fa`) on the Kiro headless command back to
+  `kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator`. The
+  git pre-commit backstop (ADR-0005) remains the version-agnostic mechanical
+  floor for these headless commits until v3 ships a headless surface.
+- **Interactive pane targets v3, launch string owner-gated.** v3 TUI is the
+  right enforcement surface for the interactive 4AI-panes pane
+  (`tools/4ai-panes/Selector.ps1`). But the exact v3-TUI launch that ALSO
+  carries `--agent orchestrator` could not be verified without a live TTY
+  (`--v3` alone rejects `--agent`; `--v3 chat --tui --agent orchestrator` parses
+  but engine-engagement is unobservable from a non-interactive shell). The pane
+  is therefore left on the **working v2 interactive form** (`kiro-cli chat
+  --trust-all-tools --agent orchestrator`, which enforces mechanically in
+  interactive mode per the validation rollup) with a TODO for the owner to
+  confirm the v3-TUI string in a live session and switch it over.
+- The v2 fallback (`.kiro/agents/*.json`, `.kiro/hooks/*.sh`) is unchanged and
+  still gated for retirement by future live headless proof — which Finding B
+  shows cannot exist under the current v3 build.
+
+## References (amendment 2026-07-09)
+
+- `.ai/reports/kiro-cli-2026-07-09-v3-migration.md` — the migration report
+  (Findings A/B, blocked Step-4 validation, owner TUI probes)
+- `.ai/config-snippets/kiro-v3-permissions.yaml` — owner-installed user-scope
+  permissions template (Finding A)
+- `.kiro/agents/orchestrator.md` — the repo-committable v3 enforcement path
+  (agent-md `permissions` block, Finding A)
