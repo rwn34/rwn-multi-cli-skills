@@ -3,7 +3,8 @@
 How to bring an **old framework install** in an adopter project up to the
 current template state. "Old" means the project was set up from an earlier
 version of this template and is missing newer pieces — Rule 2.5 delegation
-enforcement, `CRUSH.md`, the operating-prompt and delivery-integrity SSOTs,
+enforcement, the OpenCode file set (`AGENTS.md` contract content,
+`opencode.json`, `.opencode/`), the operating-prompt and delivery-integrity SSOTs,
 role lanes (ADR-0002), rationalized graph wiring (ADR-0003), or the
 `.ai/.framework-version` marker itself.
 
@@ -85,8 +86,8 @@ SSOTs (plus `examples.md` where present):
 - `.ai/sync.md`, `.ai/cli-map.md`, `.ai/README.md`
 - `.ai/known-limitations.md` — **Lesson (b):** this file was missing from
   the original 4AI-panes copy list and had to be patched in afterward. It
-  carries the Crush known-issue entries among others. It is on this list on
-  purpose; do not drop it.
+  carries the CLI known-issue entries (including the closed Crush→OpenCode
+  history) among others. It is on this list on purpose; do not drop it.
 - `.ai/tools/check-ssot-drift.sh`
 - `.ai/handoffs/README.md`, `.ai/handoffs/template.md` (protocol v2 adds
   the `Risk:` field)
@@ -121,14 +122,16 @@ frontmatter header):
 - `.kimi/agents/*.yaml` (13 files)
 - `.kiro/agents/*.json`
 
-**Root contracts and Crush files:**
+**Root contracts and OpenCode files:**
 
 - `CLAUDE.md`, `AGENTS.md`, `.kimi/AGENTS.md`
-- `CRUSH.md` and `.crush.json` — Crush's entire contract lives in these two
-  files (no skill/steering channel; Claude is custodian per ADR-0001/0002).
-  An old install predating Crush onboarding has *neither*, which is the
-  worst stale-fleet failure mode: a Crush pane running `--yolo` with no
-  contract at all.
+- `opencode.json` and `.opencode/` — OpenCode's config + guard plugins;
+  its contract lives in `AGENTS.md` (read natively; Claude is custodian per
+  ADR-0001/0002, amended 2026-07-09). Historical context: before the
+  2026-07-09 swap this slot was `CRUSH.md`/`.crush.json`, and the worst
+  stale-fleet failure mode was a Crush pane running `--yolo` with no
+  contract at all — OpenCode's harness-level permissions + plugin guards
+  remove that failure class, but a stale install can still miss them.
 
 **CI:**
 

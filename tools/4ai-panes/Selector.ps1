@@ -1,6 +1,6 @@
 # Selector.ps1 - Interactive project selector for rwn-4AI-panes
 # Phase 1: Box-drawing menu with arrow-key navigation
-# Phase 2: Splits into 4 panes: Claude | Kiro | Kimi | Crush
+# Phase 2: Splits into 4 panes: Claude | Kiro | Kimi | OpenCode
 
 $ErrorActionPreference = "SilentlyContinue"
 
@@ -27,7 +27,7 @@ $cliDefs = [ordered]@{}
 $cliDefs["Claude"] = @{ detect = "claude"; cmd = "claude --dangerously-skip-permissions" }
 $cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools" }
 $cliDefs["Kimi"]   = @{ detect = "kimi"; cmd = "kimi --yolo" }
-$cliDefs["Crush"]  = @{ detect = "crush"; cmd = "crush --yolo" }
+$cliDefs["OpenCode"] = @{ detect = "opencode"; cmd = "opencode" }  # no --yolo equivalent; permissions + framework-guard plugin govern (ADR-0002 amendment 2026-07-09)
 
 $cliAvailable = @{}
 foreach ($name in $cliDefs.Keys) {
@@ -39,7 +39,7 @@ foreach ($name in $cliAvailable.Keys) {
     if ($cliAvailable[$name]) { $anyAvailable = $true; break }
 }
 if (-not $anyAvailable) {
-    Write-Host "No code CLIs found (claude, kiro-cli, kimi, crush)." -ForegroundColor Red
+    Write-Host "No code CLIs found (claude, kiro-cli, kimi, opencode)." -ForegroundColor Red
     Read-Host "Press Enter to exit"
     Stop-Process -Id $PID
 }
@@ -58,7 +58,7 @@ function Get-Layout {
             }
         } catch {}
     }
-    return @("Claude", "Kiro", "Kimi", "Crush")
+    return @("Claude", "Kiro", "Kimi", "OpenCode")
 }
 
 function Save-Layout($layout) {
@@ -279,8 +279,7 @@ function Install-Framework($targetDir) {
         '.archive',
         'CLAUDE.md',
         'AGENTS.md',
-        'CRUSH.md',
-        '.crush.json',
+        'opencode.json',
         '.mcp.json.example',
         'docs/architecture/0001-root-file-exceptions.md',
         'docs/architecture/0002-cli-role-topology.md',

@@ -9,7 +9,7 @@
 # all CLIs share one coordination plane (one log, one handoff queue).
 #
 # Usage: bash scripts/wt-bootstrap.sh <project-dir> [executor...]
-#        (default executors: kiro kimi crush)
+#        (default executors: kiro kimi opencode)
 #
 # Sourcing this file does nothing — worktrees are created only when invoked.
 #
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ---------- defaults ----------
-DEFAULT_EXECUTORS="kiro kimi crush"
+DEFAULT_EXECUTORS="kiro kimi opencode"
 
 # ---------- logging ----------
 log()  { echo "[wt-bootstrap] $*"; }
@@ -38,7 +38,7 @@ Usage:
 
 Arguments:
   <project-dir>  Path to the PRIMARY checkout (holds the real .git + canonical .ai/).
-  [executor...]  One or more executor names. Default: kiro kimi crush.
+  [executor...]  One or more executor names. Default: kiro kimi opencode.
 
 What it does, per executor:
   1. Create a git worktree at <parent>/.wt/<project>/<executor>/ on branch

@@ -38,7 +38,10 @@ headless_cmd() {
         # 2026-07-09); prompt-only headless invocation via -p.
         kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
         kiro)   printf '%s' "kiro-cli chat --no-interactive \"$prompt\"" ;;
-        crush)  printf '%s' "crush run \"$prompt\"" ;;
+        # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
+        # writes; the framework-guard plugin fires before the permission layer
+        # and remains the mechanical lane barrier (verified 2026-07-09).
+        opencode) printf '%s' "opencode run --auto \"$prompt\"" ;;
         *)      return 1 ;;
     esac
 }
@@ -48,7 +51,7 @@ bin_for() {
         claude) echo "claude" ;;
         kimi)   echo "kimi" ;;
         kiro)   echo "kiro-cli" ;;
-        crush)  echo "crush" ;;
+        opencode) echo "opencode" ;;
     esac
 }
 

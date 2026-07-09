@@ -309,8 +309,8 @@ describe('Phase A integration: fixture install produces marker + manifest', () =
     const keys = Object.keys(read!.files);
     expect(keys.length).toBeGreaterThan(50);
     expect(keys).toContain('CLAUDE.md');
-    expect(keys).toContain('CRUSH.md');
-    expect(keys).toContain('.crush.json');
+    expect(keys).toContain('AGENTS.md');
+    expect(keys).toContain('opencode.json');
     for (const entry of Object.values(read!.files)) {
       expect(entry.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(entry.version_first_seen).toBe(VERSION);

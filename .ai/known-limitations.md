@@ -5,37 +5,29 @@ Any AI CLI hitting behavior that seems wrong should check here first.
 
 ---
 
-## Crush — no hook layer at all; runs permission-bypassed in daily use
+## Crush — no hook layer (CLOSED by OpenCode swap, 2026-07-09)
 
-**Status:** Open by design. Documented 2026-07-07 at Crush onboarding (ADR-0002).
+**Status:** CLOSED 2026-07-09. Crush is replaced by OpenCode as the 4th CLI
+(ADR-0002 amendment 2026-07-09, owner directive) — the "no hook layer,
+prompt-only guardrails" gap this entry documented no longer applies to the
+lane. History: documented 2026-07-07 at Crush onboarding; Stage 2 granted
+2026-07-08; identity drift in daily `--yolo` use confirmed the gap as a
+practical failure and motivated the swap.
 
-**What:** Crush has no pre-tool hook mechanism, no steering channel, and no
-subagent roster. In the daily 4AI-panes setup it launches as `crush --yolo`
-(see `.ai/research/4ai-panes-integration-notes.md`), so interactive permission
-prompts are off too. **Nothing at the tool layer prevents Crush from writing
-anywhere.**
+**How the gap is closed:** OpenCode's guardrails are mechanical, not
+prompt-level — its permission system (`allow`/`ask`/`deny`) removes denied
+tools from the model's tool list at the harness level (smoke-test proven
+2026-07-09), and the JS plugin `.opencode/plugin/framework-guard.js` provides
+worktree-confinement / lane-guard parity with the other CLIs' hook layers.
+Per-deploy human confirmation is retained as policy (Tier C) regardless.
 
-**Mitigations:**
-1. Prompt-level SAFETY RULES in `CRUSH.md` (root context file, always loaded)
-   replicate the guard rules — write scope limited to `.ai/` log/reports/
-   handoffs; destructive/deploy/publish commands forbidden; dry-run only.
-2. Role containment: ADR-0002 (amended 2026-07-08) gives Crush a general-helper
-   + deploy-operator lane — its briefs never require source edits, and every
-   mutating deploy command is individually human-confirmed.
-3. Custodianship: Claude maintains `CRUSH.md` / `.crush.json`, so Crush's own
-   drift can't erode its rules.
-
-**Residual risk:** prompt-level enforcement is SOFT (same class as the Kiro
-subagent gap below, but broader). Do not hand Crush tasks whose failure mode
-is destructive without a human gate.
-
-**Update 2026-07-08:** Stage 2 GRANTED by owner directive (ADR-0002 amended):
-Crush is now general helper + DevOps deployment operator. The compensating
-controls, because Crush still has no hook layer: (a) mandatory dry-run before
-any mutating deploy command, (b) per-deploy human confirmation — deploys stay
-Tier-C hard-gated in the autonomy policy regardless of which CLI executes,
-(c) refuse on dirty tree / failing tests, (d) deploy briefs must enumerate the
-exact commands Crush may run — no improvisation.
+**Minor known quirk (OpenCode):** the OpenCode TUI fails under
+headless/redirected launches with OpenTUI DLL error 126; it renders correctly
+in a real Windows Terminal session (owner-verified 2026-07-09). Headless work
+uses `opencode run` and is unaffected. Also: `opencode run` headless with
+`edit: "ask"` auto-rejects writes — the dispatcher passes `--auto`; the
+framework-guard plugin fires before the permission layer and remains the
+mechanical lane barrier.
 
 ---
 

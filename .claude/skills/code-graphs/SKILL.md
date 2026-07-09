@@ -49,7 +49,7 @@ to grep/glob/file-reads when:
 | Claude Code | CodeGraph | `.codegraph/` | **active** | https://github.com/colbymchenry/codegraph |
 | Kimi CLI | KimiGraph | `.kimigraph/` | optional-off | https://github.com/rwn34/kimigraph |
 | Kiro CLI | KiroGraph | `.kirograph/` | optional-off | https://github.com/davide-desio-eleva/kirograph |
-| Crush | none | — | no graph lane (ops/release role, ADR-0002) | — |
+| OpenCode | none | — | no graph lane (ops/release role, ADR-0002; lane successor to Crush 2026-07-09) | — |
 
 MCP wiring — each CLI registers at most its **own** graph (no cross-wiring):
 
@@ -58,7 +58,7 @@ MCP wiring — each CLI registers at most its **own** graph (no cross-wiring):
 | Claude Code | `.mcp.json` (project root) | codegraph |
 | Kimi CLI | `~/.kimi/mcp.json` (global) | none by default (user removes graph entries; re-add `kimigraph` only on demonstrated need) |
 | Kiro | `.kiro/settings/mcp.json` (project) | none by default (re-add `kirograph` only on demonstrated need) |
-| Crush | `.crush.json` (project root) | none |
+| OpenCode | `opencode.json` (project root) | none |
 
 Tool name prefixes match the graph: `codegraph_*`, `kimigraph_*`, `kirograph_*`.
 
@@ -128,12 +128,12 @@ CodeGraph is **FTS5-only** — no semantic/vector search. For semantic
 similarity, use Kimi or Kiro (their tools support it as an opt-in). Run
 `codegraph --help` after install for the authoritative tool list.
 
-### Crush — no graph wiring (ADR-0003)
+### OpenCode — no graph wiring (ADR-0003)
 
-Crush's ops/release lane (ADR-0002) doesn't need structural code queries;
-`.crush.json` carries no graph MCP entries. If a need is demonstrated, wire
-`codegraph` there via the `mcp` key (`type: "stdio"`) — Claude is custodian
-of `.crush.json`.
+OpenCode's ops/release lane (ADR-0002, lane successor to Crush 2026-07-09)
+doesn't need structural code queries; `opencode.json` carries no graph MCP
+entries. If a need is demonstrated, wire `codegraph` there via OpenCode's
+`mcp` config key — Claude is custodian of `opencode.json`.
 
 ### Kimi — KimiGraph (FTS5 + sqlite-vec semantic)
 
@@ -214,7 +214,8 @@ are opt-in via `.kirograph/config.json`.
 ## Adoption status
 
 Rationalized 2026-07-07 per ADR-0003: CodeGraph (Claude) active, KimiGraph +
-KiroGraph optional-off, no cross-wiring, Crush none. Rationale: exploration
+KiroGraph optional-off, no cross-wiring, OpenCode none (as Crush's lane
+successor, 2026-07-09). Rationale: exploration
 payoff concentrates in the architect/orchestrator lane (ADR-0002); executors
 receive precise briefs and rarely need whole-repo structural queries; the
 demoted graphs generated recurring MCP/PATH/staleness maintenance.

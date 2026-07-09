@@ -88,27 +88,28 @@ by CLI version — verify locally before relying on these:
 | Claude Code | `claude -p "<prompt>" --permission-mode acceptEdits` |
 | Kimi CLI | `kimi --agent-file .kimi/agents/orchestrator.yaml -p "<prompt>"` (verify flag) |
 | Kiro CLI | `kiro-cli chat --no-interactive "<prompt>"` (verify flag) |
-| Crush | `crush run "<prompt>"` |
+| OpenCode | `opencode run --auto "<prompt>"` (`--auto` required headless: with `edit: "ask"` writes auto-reject otherwise; the framework-guard plugin remains the lane barrier) |
 
-## Crush (narrow-scope 4th CLI — ADR-0002)
+## OpenCode (narrow-scope 4th CLI — ADR-0002, amended 2026-07-09: replaces Crush)
 
-Crush is onboarded as a **narrow ops/release operator** (see
+OpenCode fills the **general helper + deploy operator** lane (see
 `docs/architecture/0002-cli-role-topology.md`), not a full framework peer. Its
 mapping is deliberately minimal:
 
-| Abstract concept | Crush |
+| Abstract concept | OpenCode |
 |---|---|
-| **Session-root config** | `.crush.json` (project root — MCP wiring) |
-| **Always-loaded steering** | `CRUSH.md` (project root — Crush reads root context files natively) |
-| **On-demand instruction** | none (context files only — no skill/resource channel) |
-| **Agent isolation** | none (no subagent roster; single-agent CLI) |
-| **Lifecycle automation** | none (no hook layer — boundaries are prompt-enforced via `CRUSH.md` SAFETY RULES) |
-| **Activity-log identity** | `crush` |
-| **Handoff inbox** | `.ai/handoffs/to-crush/open/` |
+| **Session-root config** | `opencode.json` (project root — permissions, provider wiring; NO key material) |
+| **Always-loaded steering** | `AGENTS.md` (project root — OpenCode reads it natively as its contract) |
+| **On-demand instruction** | none (contract file only — no skill/resource channel used) |
+| **Agent isolation** | agents system available; single `opencode` primary agent configured |
+| **Lifecycle automation** | JS plugin hooks (`.opencode/plugin/framework-guard.js` — worktree-confinement / lane guards) + harness-level `allow`/`ask`/`deny` permissions |
+| **Activity-log identity** | `opencode` |
+| **Handoff inbox** | `.ai/handoffs/to-opencode/open/` |
 
-**Custodianship:** Crush cannot self-manage framework files. Claude Code
-maintains `CRUSH.md` and `.crush.json` (ADR-0001 custodianship note). Crush has
-no SSOT replicas — its contract is self-contained in `CRUSH.md` — so it does
+**Custodianship:** OpenCode does not self-manage framework files. Claude Code
+maintains `AGENTS.md` (OpenCode-facing content), `opencode.json`, and
+`.opencode/` (ADR-0001 custodianship note, amended 2026-07-09). OpenCode has
+no SSOT replicas — its contract is self-contained in `AGENTS.md` — so it does
 not participate in `.ai/tools/check-ssot-drift.sh`.
 
 ## Adding a new CLI to this project

@@ -116,8 +116,9 @@ review/release pipeline — authoritative in
   peer review (other executor's `reviewer`, report to `.ai/reports/`) →
   Claude pre-merge gate (branch state, CI, linked issue, review) → user
   approves merge → deploy.
-- **Deploy (amended 2026-07-08):** Kimi/Kiro have no deploy lane. Crush is
-  the deploy operator (Stage 2 granted): mandatory dry-run, per-deploy human
+- **Deploy (amended 2026-07-08; operator swapped 2026-07-09):** Kimi/Kiro have
+  no deploy lane. OpenCode is the deploy operator (Stage 2, carried over from
+  Crush per ADR-0002 amendment 2026-07-09): mandatory dry-run, per-deploy human
   confirmation, refuses on dirty tree or failing tests. Claude's
   `release-engineer` is the fallback lane under the same conditions.
 

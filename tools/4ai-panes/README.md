@@ -1,6 +1,6 @@
 # rwn 4AI Panes
 
-> **Goal:** One maximized Windows Terminal window with 4 vertical panes — Claude, Kiro, Kimi, Crush — no alt-tabbing.
+> **Goal:** One maximized Windows Terminal window with 4 vertical panes — Claude, Kiro, Kimi, OpenCode — no alt-tabbing.
 
 ---
 
@@ -19,7 +19,7 @@ Two per-project **Selector badges** were added at import (`Get-ProjectBadges` in
 
 Exactly one of the three framework-version badges appears per project; `[H:<n>]` is appended only when open handoffs exist. Badge checks are deliberately cheap (two `Test-Path` calls + one shallow glob per project) — any error in a broken project dir yields an empty/partial badge, never a crash.
 
-Role policy for the four panes (who does what across Claude/Kiro/Kimi/Crush) is owned by [`docs/architecture/0002-cli-role-topology.md`](../../docs/architecture/0002-cli-role-topology.md) in this repo (amended 2026-07-08).
+Role policy for the four panes (who does what across Claude/Kiro/Kimi/OpenCode) is owned by [`docs/architecture/0002-cli-role-topology.md`](../../docs/architecture/0002-cli-role-topology.md) in this repo (amended 2026-07-08; OpenCode replaces Crush 2026-07-09).
 
 ---
 
@@ -34,14 +34,14 @@ Creates a **Start Menu shortcut** called **"rwn 4AI Panes"** that opens a Window
 - Claude (`claude --dangerously-skip-permissions`)
 - Kiro (`kiro-cli chat --trust-all-tools`)
 - Kimi (`kimi --agent-file .kimi/agents/orchestrator.yaml --yolo`)
-- Crush (`crush --yolo`)
+- OpenCode (`opencode` — no --yolo equivalent; permissions + framework-guard plugin govern)
 
 **Default layout:**
 
 ```
 +----------+----------+----------+----------+
 |          |          |          |          |
-| Claude   | Kiro     | Kimi     | Crush    |
+| Claude   | Kiro     | Kimi     | OpenCode |
 |          |          |          |          |
 |          |          |          |          |
 +----------+----------+----------+----------+
@@ -75,7 +75,7 @@ All CLI panes open with the selected project as working directory. If a CLI is n
 - Optional: `claude` on PATH
 - Optional: `kiro-cli` on PATH
 - Optional: `kimi` on PATH
-- Optional: `crush` on PATH
+- Optional: `opencode` on PATH
 
 ### 3.2 Install
 
@@ -139,7 +139,7 @@ Press **o** in the project selector to open the layout picker:
 | > 1. Claude                                   |
 |   2. Kiro                                     |
 |   3. Kimi                                     |
-|   4. Crush                                    |
+|   4. OpenCode                                 |
 +----------------------------------------------+
 | Up/Down:select  s/S:swap up/down  Enter:save  |
 +----------------------------------------------+
@@ -193,7 +193,7 @@ Starting: Selector(100%)
 
   Split 3 (from Pane3):
     Pane4 takes 50% of Pane3 -> Pane3=25%, Pane4=25%
-    -> Claude(25%) | Kiro(25%) | Kimi(25%) | Crush(25%)
+    -> Claude(25%) | Kiro(25%) | Kimi(25%) | OpenCode(25%)
 ```
 
 The `-s` flag in `wt.exe split-pane` means "new pane takes this fraction of the **current** pane." Three sequential splits yield 4 equal 25% columns. The split order follows the saved layout — first CLI stays in the original pane, remaining CLIs split off to the right.
@@ -214,10 +214,10 @@ At startup, the selector checks for each CLI on PATH:
 $cliDefs["Claude"] = @{ detect = "claude"; ... }
 $cliDefs["Kiro"]   = @{ detect = "kiro-cli"; ... }
 $cliDefs["Kimi"]   = @{ detect = "kimi"; ... }
-$cliDefs["Crush"]  = @{ detect = "crush"; ... }
+$cliDefs["OpenCode"] = @{ detect = "opencode"; ... }
 ```
 
-Missing CLIs are skipped — their pane simply doesn't appear. The status bar shows the current layout with availability: `Claude[Y] Kiro[Y] Kimi[Y] Crush[Y]` (green if all found, yellow if some missing).
+Missing CLIs are skipped — their pane simply doesn't appear. The status bar shows the current layout with availability: `Claude[Y] Kiro[Y] Kimi[Y] OpenCode[Y]` (green if all found, yellow if some missing).
 
 ---
 
@@ -267,10 +267,10 @@ JSON, stored alongside scripts:
 JSON array of CLI names in pane order (left to right):
 
 ```json
-["Claude", "Kiro", "Kimi", "Crush"]
+["Claude", "Kiro", "Kimi", "OpenCode"]
 ```
 
-- Defaults to `["Claude", "Kiro", "Kimi", "Crush"]` if file is missing or invalid
+- Defaults to `["Claude", "Kiro", "Kimi", "OpenCode"]` if file is missing or invalid
 - Only installed CLIs are activated; unavailable ones are skipped at runtime
 
 ---
@@ -323,7 +323,7 @@ Edit the `$cliDefs` ordered dictionary in `Selector.ps1`. Each entry needs a `de
 - Optional: `claude` CLI on PATH
 - Optional: `kiro-cli` CLI on PATH
 - Optional: `kimi` CLI on PATH
-- Optional: `crush` CLI on PATH
+- Optional: `opencode` CLI on PATH
 
 ---
 

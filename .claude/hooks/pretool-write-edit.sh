@@ -125,7 +125,8 @@ if [ -z "$agent_type" ]; then
         .ai|.ai/*) : ;;                                  # shared framework state
         .claude|.claude/*) : ;;                          # Claude config
         CLAUDE.md|AGENTS.md) : ;;                        # Claude-owned root contracts
-        CRUSH.md|.crush.json) : ;;                       # Crush custodianship (ADR-0001)
+        CRUSH.md|.crush.json) : ;;                       # Crush custodianship (ADR-0001) — deprecation window until task-10 deletion
+        opencode.json|.opencode|.opencode/*) : ;;        # OpenCode custodianship (ADR-0001/0002 amendments 2026-07-09)
         .codegraph|.codegraph/*) : ;;                    # Claude's graph dir
         .mcp.json|.mcp.json.example) : ;;                # Claude's MCP config
         *)
@@ -150,8 +151,9 @@ case "$rel" in
     .editorconfig) exit 0 ;;
     # Category D — platform / CI-vendor dotfiles at root
     .dockerignore|.gitlab-ci.yml) exit 0 ;;
-    # Category E — MCP convention + Crush config (Claude is Crush's custodian per ADR-0001/0002)
-    .mcp.json|.mcp.json.example|.crush.json) exit 0 ;;
+    # Category E — MCP convention + OpenCode config (Claude is OpenCode's custodian per ADR-0001/0002
+    # amendments 2026-07-09); .crush.json kept through the deprecation window (task-10 deletion)
+    .mcp.json|.mcp.json.example|.crush.json|opencode.json) exit 0 ;;
     # Categories F/G/H — amend this allowlist alongside the ADR when a language or tool is chosen.
     # Examples to uncomment later: package.json, pyproject.toml, Cargo.toml, go.mod, .nvmrc, .python-version, .tool-versions
     *)

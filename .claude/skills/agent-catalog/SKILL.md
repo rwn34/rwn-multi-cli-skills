@@ -102,13 +102,15 @@ lane — see `docs/architecture/0002-cli-role-topology.md` (authoritative):
 - **Kimi CLI** — high-throughput executor + tester; peer-reviews Kiro's work.
 - **Kiro CLI** — premium-reasoning executor + tester; peer-reviews Kimi's
   work.
-- **Crush** — general helper + DevOps deployment operator (Stage 2 granted
-  2026-07-08: dry-run first, per-deploy human confirmation, refuse on dirty
+- **OpenCode** — general helper + DevOps deployment operator (Stage 2 granted
+  2026-07-08; OpenCode replaces Crush in this lane per ADR-0002 amendment
+  2026-07-09: dry-run first, per-deploy human confirmation, refuse on dirty
   tree/failing tests). Ops chores and release checklists — NOT code review,
-  never source edits. No hook layer: `CRUSH.md` SAFETY RULES are its only
-  guardrail.
+  never source edits. Guardrails are mechanical: harness-level
+  `allow`/`ask`/`deny` permissions + `.opencode/plugin/` framework-guard
+  hooks; contract in `AGENTS.md`.
 - **Deploy separation:** Kimi and Kiro have NO deploy lane — deploy actions
-  are out of scope for their `release-engineer` agents. Crush deploys;
+  are out of scope for their `release-engineer` agents. OpenCode deploys;
   Claude's `release-engineer` is the fallback lane (same conditions).
   Author ≠ reviewer ≠ deployer.
 
