@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 12:02 — kiro-cli
+- Action: Per owner directive, wrote a validation-campaign handoff to claude-code (`to-claude/open/202607091202-validation-campaign-dispatch.md`, Auto:no/Risk:B). It instructs Claude (architect + final reviewer) to author + headless-dispatch Auto:yes/Risk:B validation handoffs to Kiro/Kimi/OpenCode — each runs its compat-report §5 test subset (steering/skills/agents/hooks/tools + live enforcement probes) and writes a self-validation report — then Claude runs its own subset (T-C2 subagent hook inheritance, T-C3 source-write block), aggregates into a rollup, and gives the owner a GO/NO-GO for the master merge.
+- Files: `.ai/handoffs/to-claude/open/202607091202-validation-campaign-dispatch.md`, `.ai/activity/log.md`
+- Decisions: Auto:no because the owner is relaying to interactive Claude (a headless Claude orchestrating further headless dispatches is fragile/unsupervised). Gating test is T-K3 (Kiro subagent adversarial write, since subagent hooks don't fire); merge stays Tier C. Left handoff authoring/dispatch to Claude per the orchestrator lane rather than pre-staging the executor handoffs myself.
+
 ## 2026-07-09 11:15 — kiro-cli
 - Action: (1) Wrote state-sync handoff to claude-code (`to-claude/open/202607091112-...`, Auto:no/Risk:C) so it can resume post-outage without re-deriving state — records my two preservation commits, the closed graph handoffs, and the remaining Tier-C items (merge, 4-pane launch). (2) Produced a grounded cross-CLI compatibility review + per-CLI validation test plan at `.ai/reports/kiro-cli-2026-07-09-cross-cli-compatibility-review.md`, reading the actual config surface of all four CLIs. Verdict: structurally compatible + all 4 automated suites pass, but subagent-level enforcement, headless round-trips, and enforcement asymmetry are only partially proven. Ranked the gaps (HIGH: Kiro subagent hooks don't fire + `--trust-all-tools`; version-fragile headless flags) and laid out a live test matrix to run before production.
 - Files: `.ai/handoffs/to-claude/open/202607091112-post-outage-state-and-compat-review.md`, `.ai/reports/kiro-cli-2026-07-09-cross-cli-compatibility-review.md`, `.ai/activity/log.md`
