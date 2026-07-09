@@ -17,6 +17,15 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 11:05 — kiro-cli
+- Action: Post-outage continuity — claude-code hit its session limit mid-Task-11 (remove KimiGraph/KiroGraph), stranding a verified batch of graph-removal edits uncommitted. Verified tree consistent (drift 0/24, hooks 32/32+36/36+41/41, `.kimigraph`/`.kirograph`/`tools/kirograph` all gone), then committed + pushed the batch as `9595406` to protect it through the outage. KimiGraph removal was already committed (`a75900b`), KiroGraph removal was my 10:41 work. Remaining Task-11-adjacent items are Tier C (owner+claude): merge branch→master, 4-pane acceptance launch — left for claude-code's return.
+- Files: committed `9595406` = `.ai/instructions/code-graphs/principles.md`, `.claude/skills/code-graphs/SKILL.md`, `.ai/known-limitations.md`, `.claude/agents/orchestrator.md`, `.claude/hooks/pretool-write-edit.sh`, `docs/architecture/0003-code-graph-rationalization.md` (claude-authored, uncommitted at limit) + `.kiro/` side (mine) + moved kiro done-handoff
+- Decisions: Committed claude-authored framework edits under kiro-cli to avoid stranding verified work — Tier A on feature branch, freely reorganizable/amendable by claude when back. Did NOT merge to master (Tier C, owner's call). Push succeeded `a75900b..9595406`.
+- Grep-verified evidence:
+  - `git log --oneline -1` → `9595406 chore(graphs): commit verified KiroGraph-removal batch (Task 11 continuation)`
+  - `check-ssot-drift.sh` → `Checked: 24 replicas, Drift: 0`
+  - both removal handoffs at `.ai/handoffs/to-{kimi,kiro}/done/` (open queues empty)
+
 ## 2026-07-09 10:43 — kimi-cli
 - Action: Executed handoff 202607091040 — removed KimiGraph entirely from Kimi's lane per owner directive (ADR-0003 amendment)
 - Files: `.kimi/steering/code-graphs.md` (regenerated from SSOT), `.kimi/hooks/framework-guard.sh`, `.kimi/hooks/test_hooks.sh`, `.kimi/AGENTS.md` (DELETED), `.kimi/instructions.md` (DELETED), `.kimigraph/` (DELETED), `~/.kimi/config.toml` (kimigraph MCP already absent)
