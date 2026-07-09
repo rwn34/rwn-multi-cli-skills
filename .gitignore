@@ -86,3 +86,8 @@ id_ed25519*
 !.kirograph/config.json
 .kimigraph/*
 !.kimigraph/config.json
+
+# ---- Sanctioned ephemeral scratch space ----
+# ephemeral one-off scripts + probe artifacts — never committed
+/.scratch/*
+!/.scratch/README.md
