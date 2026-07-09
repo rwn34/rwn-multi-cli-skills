@@ -3,18 +3,39 @@
 # Blocks writes that violate (1) framework-dir rule, (2) sensitive-file rule, (3) root-file policy.
 # Reads tool call JSON from stdin; exit 2 + stderr to block with a reason.
 
-# Extract file_path + agent_type via python (jq not reliably installed on Windows/Git Bash)
+# Extract file_path + agent_type from the tool-call JSON on stdin.
 # agent_type is present in hook input for SUBAGENT tool calls; absent/empty on the main thread.
+#
+# CRITICAL (fail-CLOSED): extraction MUST NOT depend on python. In the live Claude
+# hook runtime python3 can resolve to a Windows Store alias stub that prints nothing
+# and exits 0 — a `|| python` chain keyed on exit status never fires, path comes back
+# empty, and the old `[ -z "$path" ] && exit 0` made every rule a no-op (fail-open).
+# So: python is only an OPTIONAL first attempt (fast, handles JSON escapes); the real
+# extractor is a pure-bash/sed fallback that runs whenever the python result is EMPTY
+# (not merely when it exits non-zero). jq is not reliably installed on Windows/Git Bash.
 input=$(cat)
-path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      echo "")
-agent_type=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
-      echo "")
 
-# No path? allow (nothing to evaluate)
-[ -z "$path" ] && exit 0
+# Empty (or whitespace-only) stdin → nothing to evaluate → allow.
+if [ -z "$(printf '%s' "$input" | tr -d '[:space:]')" ]; then
+    exit 0
+fi
+
+path=$(printf '%s' "$input" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+[ -z "$path" ] && path=$(printf '%s' "$input" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+[ -z "$path" ] && path=$(printf '%s' "$input" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+agent_type=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null)
+[ -z "$agent_type" ] && agent_type=$(printf '%s' "$input" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null)
+[ -z "$agent_type" ] && agent_type=$(printf '%s' "$input" | sed -n 's/.*"agent_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+# agent_type may legitimately be absent (main thread) — an empty value here is treated
+# as MAIN-THREAD below (most restrictive path, Rule 2.5). No fail-open risk.
+
+# stdin was non-empty but no file_path parsed. A Write|Edit call always carries
+# file_path, so an empty result means the parse failed — refuse to fail open.
+if [ -z "$path" ]; then
+    echo "BLOCKED by hook: could not parse tool input (no file_path found) — refusing to fail open." >&2
+    exit 2
+fi
 
 # Normalize absolute path → relative if under project root
 project_root=$(pwd)

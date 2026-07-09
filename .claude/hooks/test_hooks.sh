@@ -110,6 +110,30 @@ run_test_cd "t38 worktree in-tree subagent write allowed" "$T/.wt/projA/kiro" "$
 
 rm -rf "$T"
 
+# --- write-edit: python-less environment must NOT fail open (validation campaign 2026-07-09) ---
+# In the live Claude hook runtime python3 can be a Windows Store alias stub that prints
+# nothing + exits 0. These run the hook with python off PATH to prove the pure-bash/sed
+# extractor + fail-CLOSED handling work without python. They FAIL against the pre-fix
+# hook (which returned 0 for both t39 and t40) and PASS after the fix.
+run_test_nopy() {
+  local name="$1" hook="$2" payload="$3" expected="$4"
+  local hook_abs="$PWD/$hook" actual
+  actual=$(printf '%s' "$payload" | PATH="/usr/bin:/bin" bash "$hook_abs" >/dev/null 2>&1; echo $?)
+  if [ "$actual" = "$expected" ]; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1))
+    fails+=("$name (expected $expected, got $actual)")
+  fi
+}
+run_test_nopy "t39 no-python .kimi blocked (fail-closed)"     "$WE" '{"tool_input":{"file_path":".kimi/evil.txt"}}' 2
+run_test_nopy "t40 no-python main-thread src blocked"         "$WE" '{"tool_input":{"file_path":"src/x.ts"}}'       2
+run_test_nopy "t41 no-python subagent src allowed"            "$WE" '{"agent_type":"coder","tool_input":{"file_path":"src/x.ts"}}' 0
+run_test_nopy "t42 no-python empty stdin allowed"             "$WE" ''                                             0
+run_test_nopy "t43 no-python framework .ai allowed"           "$WE" '{"tool_input":{"file_path":".ai/x.md"}}'      0
+# fail-CLOSED: non-empty stdin with no parseable file_path must block (not fail open)
+run_test      "t44 non-empty unparseable stdin blocked"       "$WE" '{"tool_input":{"garbage":true}}'              2
+
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"
