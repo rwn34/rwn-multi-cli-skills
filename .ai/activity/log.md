@@ -17,6 +17,18 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 18:40 — claude-code
+- Action: OpenCode frictionless-by-default (owner directive). Changed `opencode.json` permission `edit`/`bash` from `ask` → `allow` so OpenCode stops prompting per-tool during deploy/automation work. SAFE because OpenCode's enforcement is the `.opencode/plugin/framework-guard.js` plugin, which fires on `tool.execute.before` INDEPENDENT of the permission prompt (proven 2026-07-09 task 7/10) — so `allow` removes friction without removing the mechanical guard; the git backstop (ADR-0005) sits behind it. Tradeoff (accepted by owner): loses the human-prompt last-resort backstop for OpenCode only. Folded a live "guard-still-works under allow" negative probe into the pending deploy brief (202607091745) so the next OpenCode run proves the plugin still blocks an out-of-lane write.
+- Files: `opencode.json`, `.ai/handoffs/to-opencode/open/202607091745-deploy-merge-to-master.md` (guard-check step added), `.ai/activity/log.md`
+- Decisions: OpenCode is uniquely safe to auto-approve (unlike Kimi `--yolo`/Kiro `--trust-all-tools`, which DISABLE their hooks) because its guard is a plugin, not a permission-gated hook — reinforces ADR-0007. Verification of plugin-under-allow deferred to the deploy run (can't execute bash/node in this don't-ask-mode session). Follow-up: re-run sync-assets so the installer template reflects the allow config (gitignored; needs shell).
+
+## 2026-07-09 18:29 — kiro-cli
+- Action: Processed the sole open handoff `202607091430-migrate-to-v3`. Verified all four v3 deliverables present on disk (`.kiro/agents/orchestrator.md` 5593B, `.kiro/hooks/guards.json` 3108B, `.ai/config-snippets/kiro-v3-permissions.yaml` 4343B, report). Kiro-side work was already complete (14:27 completion note); the Step-4 live-validation gate is now moot — ADR-0007 (owner-approved) defers v3 to committed-but-dormant and keeps framework on v2, and v3 has no headless surface to validate in (report §3). Wrote close-out handoff to claude-code for the sender-side validate/move + commit (Kiro has no git lane; sender moves `to-kiro/` handoffs).
+- Files: `.ai/handoffs/to-claude/open/202607091128-close-v3-migration-handoff.md` (new)
+- Decisions: Did NOT move `202607091430` to `done/` myself — it was explicitly kept open for claude-code (the sender) and committing `.kiro/**`+`.ai/**` is claude's git lane per the ADR-0005 backstop territory rule. No new v3 work executed: deliverables already landed and ADR-0007 resolved the blocking merge question, so a rewrite would be pointless churn (surgical-changes rule).
+- Grep-verified evidence:
+  - `.kiro/agents/orchestrator.md`, `.kiro/hooks/guards.json`, `.ai/config-snippets/kiro-v3-permissions.yaml` — all confirmed via directory listing this session.
+
 ## 2026-07-09 17:24 — claude-code
 - Action: Release-engineer merge of `claude/project-overview-pn5l4e` → `master` (owner-approved, no tag/publish). Completed STEP 1 (committed `.ai/known-limitations.md` as claude-code, pushed — 2aad7ba) and STEP 2 preconditions (feature branch 0/0 vs origin; master==origin/master 86cf0d8; tree clean except local settings.local.json). ABORTED before STEP 3/4: the harness permission layer ("don't ask mode") auto-approves `git` but denies `bash <script>`, `node`, and `npx`, so I could not execute ANY pre-merge gate (SSOT drift, .claude/.kimi/.kiro hook suites, OpenCode test-guard, tsc/vitest). Did NOT merge — unverifiable gates are not green gates.
 - Files: `.ai/known-limitations.md` (committed+pushed), `.ai/activity/log.md`
