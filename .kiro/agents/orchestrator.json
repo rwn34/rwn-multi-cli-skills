@@ -40,6 +40,14 @@
         "command": "bash .kiro/hooks/sensitive-file-guard.sh"
       },
       {
+        "matcher": "fs_write",
+        "command": "bash .kiro/hooks/worktree-confinement-guard.sh"
+      },
+      {
+        "matcher": "fs_write",
+        "command": "bash .kiro/hooks/fleet-whitelist-guard.sh"
+      },
+      {
         "matcher": "execute_bash",
         "command": "bash .kiro/hooks/destructive-cmd-guard.sh"
       }

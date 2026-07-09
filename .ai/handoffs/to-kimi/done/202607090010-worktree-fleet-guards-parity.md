@@ -1,8 +1,9 @@
 # Add ADR-0004 worktree-confinement + fleet-whitelist guards to Kimi's hooks
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-09 00:10
+Completed: 2026-07-09 06:55
 Auto: yes
 Risk: B
 

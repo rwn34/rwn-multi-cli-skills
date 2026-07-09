@@ -17,6 +17,25 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 06:52 — kiro-cli
+- Action: ADR-0004 guard parity per handoff 202607090011 — added worktree confinement + fleet whitelist guards to Kiro hook layer
+- Files: `.kiro/hooks/worktree-confinement-guard.sh` (NEW), `.kiro/hooks/fleet-whitelist-guard.sh` (NEW), `.kiro/hooks/test_hooks.sh`, all 13 `.kiro/agents/*.json`
+- Decisions: Separate scripts (not folded into existing guards) for ADR-0004 isolation; deniedPaths NOT feasible for either guard (worktree needs runtime cwd context, fleet needs registry lookup — both impossible in static glob config); subagent coverage remains residual risk per upstream #7671 (mitigated by prompt-level SAFETY RULES)
+- Grep-verified evidence:
+  - `bash .kiro/hooks/test_hooks.sh` → PASS: 32/32
+  - Fleet whitelisted write (`to-proj-b`) → exit 0
+  - Fleet non-whitelisted write (`to-proj-c`) → exit 2 + "Fleet whitelist (ADR-0004)"
+  - Worktree absolute escape → exit 2 + "Worktree confinement (ADR-0004)"
+
+## 2026-07-09 06:55 — kimi-cli
+- Action: ADR-0004 guard parity per handoff 202607090010 — added worktree confinement + fleet whitelist guard to Kimi hook layer
+- Files: `.kimi/hooks/worktree-fleet-guard.sh` (NEW), `.kimi/hooks/test_hooks.sh`, `~/.kimi/config.toml`
+- Decisions: New standalone guard (not folded into framework-guard) to keep ADR-0004 logic isolated; registered in both duplicate hook blocks in global config to ensure coverage; fleet check fail-closed (missing registry blocks)
+- Grep-verified evidence:
+  - `bash .kimi/hooks/test_hooks.sh` → PASS: 36/36
+  - Whitelisted fleet write (`to-proj-b`) → exit 0
+  - Non-whitelisted fleet write (`to-proj-c`) → exit 2 + "Fleet whitelist (ADR-0004): 'rwn-multi-cli-skills' is not whitelisted to talk to 'proj-c'"
+
 ## 2026-07-09 00:15 — claude-code
 - Action: P6 COMPLETE (runbook + installer alignment + Phase A gap-fill; 5 subagents, author≠verifier). Step 0: framework-check.yml md paths-ignore removed (YAML-parsed — drift checker's domain IS .md). Step 1: docs/guides/framework-upgrade-runbook.md written, every path tree-verified, 3 battle-tested lessons embedded. Steps 2+4 (coder): wire-mcp.ts rewritten 85→28 lines per ADR-0003 (codegraph-only, .codegraph-gated, .crush.json never), CRUSH.md/.crush.json added to the 3 FRAMEWORK_FILES lists (were missing everywhere), upgrade_history cap 20 + fixture-install integration test added (Phase A core pre-existed from a prior session). Step 3 (tester, independent): tsc clean; 80 pass/3 known-env fail (+pack suite = 4th env casualty via same cmd-child PATH gap — corrected coder's "5 skipped" framing); ADR-0003 matrix grep-proven (zero kirograph|kimigraph in src/); asset greps green; +1 test (template .crush.json no-graph). Side fixes: root `.mcp.json` CORRECTED to codegraph-only — the 2026-07-07 capstone entry's ".mcp.json codegraph-only" claim was WRONG on disk (all 3 graphs present; every Claude session since attempted kirograph/kimigraph MCP startups); Selector.ps1 env-override $frameworkRepo + runtime version resolution (0.0.4 proven); install-template.sh same runtime resolution (bash side); 4ai-panes README provenance + stale-content passes (date typo 07-09→07-08 caught by doc-writer).
 - Files: `.github/workflows/framework-check.yml`, `docs/guides/framework-upgrade-runbook.md` (NEW), `tools/multi-cli-install/{src/installer/{wire-mcp,copy-framework}.ts,src/upgrade/{version,manifest}.ts,scripts/sync-assets.ts,bin/multi-cli-install.ts,test/{installer,upgrade-phase-a}.test.ts}`, `tools/4ai-panes/{Selector.ps1,README.md}`, `scripts/install-template.sh`, `.mcp.json`, `.ai/research/4ai-panes-integration-notes.md`

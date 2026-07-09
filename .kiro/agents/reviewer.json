@@ -18,7 +18,9 @@
     "preToolUse": [
       { "matcher": "fs_write", "command": "bash .kiro/hooks/root-file-guard.sh" },
       { "matcher": "fs_write", "command": "bash .kiro/hooks/framework-dir-guard.sh" },
-      { "matcher": "fs_write", "command": "bash .kiro/hooks/sensitive-file-guard.sh" }
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/sensitive-file-guard.sh" },
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/worktree-confinement-guard.sh" },
+      { "matcher": "fs_write", "command": "bash .kiro/hooks/fleet-whitelist-guard.sh" }
     ],
     "agentSpawn": [
       { "command": "bash .kiro/hooks/activity-log-inject.sh" }
