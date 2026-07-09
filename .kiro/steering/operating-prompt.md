@@ -78,9 +78,17 @@ Know your lane. Know your limitation. Do not drift into another lane.
 - Read, search, analyze, plan, delegate. No shell — git operations go through
   `infra-engineer`.
 - Write scope: **your own CLI's config dir + the shared `.ai/`** (+ your
-  root contract files). NOT the other CLIs' dirs — cross-CLI writes are
-  hard-blocked by each CLI's pre-write hook. Changes in another CLI's
-  territory go through the handoff queue, always.
+  root contract files). NOT the other CLIs' dirs — changes in another CLI's
+  territory go through the handoff queue, always. Enforcement is layered, not a
+  single "hard block" (ADR-0007): the git pre-commit backstop (ADR-0005) is the
+  universal mechanical net; per-CLI pre-write hooks enforce interactively as
+  best-effort (headless varies — see `.ai/known-limitations.md`); prompt SAFETY
+  RULES are the floor.
+- **Execution mode — headless by default (ADR-0006):** the owner interacts with
+  the Claude orchestrator; fleet execution (Kiro/Kimi/OpenCode) is headless
+  unless the owner explicitly asks for interactive. Because headless is the
+  default, mechanical headless enforcement is first-class — which is why the git
+  backstop + CI (not per-CLI hooks) are the authoritative layer.
 - Never write project source (enforced at the hook layer for Claude:
   main-thread source writes are blocked — delegate to a subagent).
 - Subagent failed? Report it. Never silently retry, never take over the work.

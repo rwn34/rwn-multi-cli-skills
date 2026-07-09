@@ -34,10 +34,14 @@ All subagents are denied write access to these paths.
 
 **Per-CLI nuance:** while this catalog lists all four framework dirs as the
 orchestrator's write scope, each CLI's implementation narrows this to **its own
-dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) are
-hard-blocked by each CLI's pre-write hook and always go through the handoff
-queue (`.ai/handoffs/`) — never direct. This matches the same nuance in
-`.ai/instructions/orchestrator-pattern/principles.md`.
+dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) must
+always go through the handoff queue (`.ai/handoffs/`) — never direct. Enforcement
+of this boundary is layered, not a single "hard block" (validation 2026-07-09,
+ADR-0007): the **git pre-commit backstop** (ADR-0005) is the universal mechanical
+net (every CLI, every mode); each CLI's pre-write hook enforces in interactive
+mode as best-effort defense-in-depth (headless enforcement varies by CLI — see
+`.ai/known-limitations.md`); prompt SAFETY RULES are the behavioral floor. Same
+nuance in `.ai/instructions/orchestrator-pattern/principles.md`.
 
 ## Reports directory
 
