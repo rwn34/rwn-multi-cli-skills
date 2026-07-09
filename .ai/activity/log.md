@@ -17,6 +17,15 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 15:05 — claude-code
+- Action: Kiro v3 migration outcome + target-architecture ADR. Dispatched Kiro v3 migration (handoff 202607091430) — Kiro delivered v3 config ADDITIVELY (`.kiro/agents/orchestrator.md` md-agent w/ permissions block, `.kiro/hooks/guards.json`, permissions.yaml owner-template; commits `960cca7` kiro-cli / `29475ea` claude-code) BUT surfaced two blocking v3 facts: (A) `permissions.yaml` is per-user `~/.kiro/settings/` only, NOT repo-injectable; (B) v3 has NO headless mode ("classic non-TUI unsupported") AND `kiro-cli --v3` REJECTS `--agent`. So v3 can't run headless and can't carry the guard-bearing agent pin. RESOLUTION (commit `67a9610`): reverted `--v3` from dispatcher (headless stays v2) + Selector pane (back to v2 + owner TODO for v3-TUI string); amended ADR-0006 w/ findings A/B. Kiro v3 handoff kept PARTIAL/open (owner-gated TUI validation). Then authored ADR-0007 target architecture (owner-approved): enforcement = git backstop + CI PRIMARY, per-CLI hooks best-effort, NON-GOAL per-CLI headless parity; Kiro v2 active / v3 dormant; headless-by-default; roadmap P0 merge → P1 visible per-pane dispatch → P2 CI+installer+version-probes → P3 optional; CLI-count right-sizing tracked for post-merge data analysis.
+- Files: `docs/architecture/0007-target-architecture-and-roadmap.md` (NEW), `docs/architecture/0006-*.md` (amended), `.ai/tools/dispatch-handoffs.sh`, `tools/4ai-panes/Selector.ps1`, `.kiro/agents/orchestrator.md` + `.kiro/hooks/guards.json` (kiro-authored), `.ai/config-snippets/kiro-v3-permissions.yaml`, `.ai/reports/kiro-cli-2026-07-09-v3-migration.md`, `.ai/activity/log.md`
+- Decisions: Kiro v3 DEFERRED as unfit (no headless + no --agent) — v2 everywhere for framework use, v3 config dormant/owner-experimental. Enforcement strategy pivot codified in ADR-0007: stop chasing per-CLI mechanical parity; git backstop + CI is the guarantee. CLI-count question → data-backed post-merge analysis (owner unsure; answer with evidence not opinion). Remaining owner gates: Kimi interactive live-block (pane), master merge (Tier C).
+- Grep-verified evidence:
+  - ADR-0007: `NON-GOAL` at :63; `P1 — Visible per-pane dispatch` at :95
+  - dispatcher kiro line: `kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator` (no --v3); ADR-0006 amendment records findings A/B
+  - `kiro-cli --v3 --agent orchestrator` → `error: unexpected argument '--agent'` (v3 rejects agent pin)
+
 ---
 
 ## 2026-07-09 14:27 — kiro-cli
