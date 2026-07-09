@@ -17,6 +17,14 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 11:15 — kiro-cli
+- Action: (1) Wrote state-sync handoff to claude-code (`to-claude/open/202607091112-...`, Auto:no/Risk:C) so it can resume post-outage without re-deriving state — records my two preservation commits, the closed graph handoffs, and the remaining Tier-C items (merge, 4-pane launch). (2) Produced a grounded cross-CLI compatibility review + per-CLI validation test plan at `.ai/reports/kiro-cli-2026-07-09-cross-cli-compatibility-review.md`, reading the actual config surface of all four CLIs. Verdict: structurally compatible + all 4 automated suites pass, but subagent-level enforcement, headless round-trips, and enforcement asymmetry are only partially proven. Ranked the gaps (HIGH: Kiro subagent hooks don't fire + `--trust-all-tools`; version-fragile headless flags) and laid out a live test matrix to run before production.
+- Files: `.ai/handoffs/to-claude/open/202607091112-post-outage-state-and-compat-review.md`, `.ai/reports/kiro-cli-2026-07-09-cross-cli-compatibility-review.md`, `.ai/activity/log.md`
+- Decisions: Analysis-only (read-only across all CLI dirs — no cross-CLI writes). Flagged that "guards pass unit tests" ≠ "CLI behaves correctly e2e"; recommended running T-K3 (Kiro subagent adversarial write) + the 4 headless round-trips BEFORE the master merge, not after.
+- Grep-verified evidence:
+  - dispatcher headless forms (`.ai/tools/dispatch-handoffs.sh`): `kiro-cli chat --no-interactive --trust-all-tools`, `opencode run --auto --agent opencode`, `kimi -p`, `claude -p ... --permission-mode acceptEdits`
+  - Kiro subagent soft-enforcement confirmed in `.kiro/agents/coder.json` → `SAFETY RULES — Kiro runtime does NOT fire preToolUse hooks for your session`
+
 ## 2026-07-09 11:05 — kiro-cli
 - Action: Post-outage continuity — claude-code hit its session limit mid-Task-11 (remove KimiGraph/KiroGraph), stranding a verified batch of graph-removal edits uncommitted. Verified tree consistent (drift 0/24, hooks 32/32+36/36+41/41, `.kimigraph`/`.kirograph`/`tools/kirograph` all gone), then committed + pushed the batch as `9595406` to protect it through the outage. KimiGraph removal was already committed (`a75900b`), KiroGraph removal was my 10:41 work. Remaining Task-11-adjacent items are Tier C (owner+claude): merge branch→master, 4-pane acceptance launch — left for claude-code's return.
 - Files: committed `9595406` = `.ai/instructions/code-graphs/principles.md`, `.claude/skills/code-graphs/SKILL.md`, `.ai/known-limitations.md`, `.claude/agents/orchestrator.md`, `.claude/hooks/pretool-write-edit.sh`, `docs/architecture/0003-code-graph-rationalization.md` (claude-authored, uncommitted at limit) + `.kiro/` side (mine) + moved kiro done-handoff
