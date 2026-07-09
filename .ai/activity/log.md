@@ -17,6 +17,15 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 16:30 — kiro-cli
+- Action: Close-out/verification pass on handoff 202607091521-regen-steering-overclaim-softening (regen work itself was done in the 16:28 session). Ran a whole-tree grep to confirm drift resolution mechanically: old overclaim phrase "hard-blocked by each CLI's pre-write hook" has ZERO hits in any SSOT/replica (only quoted inside handoff files); new phrasing present in the agent-catalog + operating-prompt SSOTs and all three replica channels (`.claude` SKILL, `.kimi`, `.kiro`). Both `.kiro/` replicas confirmed matching SSOT.
+- Files: — (verification only; the stale `to-kiro/open/` duplicate was already removed by another process before I could edit it — only the `done/` copy remains, Status DONE).
+- Decisions: Did NOT re-run the regeneration — files already correct, so a rewrite would be pointless churn (surgical-changes rule). Could not run `check-ssot-drift.sh` (no bash/git on PATH). claude-code should run the drift script + commit `.kiro/**` (no Kiro git lane).
+- Grep-verified evidence:
+  - `.kiro/steering/agent-catalog.md` matched `layered, not a single "hard block"` (SSOT agent-catalog/principles.md:39)
+  - `.kiro/steering/operating-prompt.md` matched `Execution mode — headless by default (ADR-0006)` (SSOT operating-prompt/principles.md:87)
+  - `hard-blocked by each CLI's pre-write hook` → only in `to-kiro/done/`, `to-kimi/done/` handoff files; zero replica/SSOT hits
+
 ## 2026-07-09 16:28 — kiro-cli
 - Action: Completed handoff 202607091521-regen-steering-overclaim-softening — regenerated `.kiro/steering/agent-catalog.md` and `.kiro/steering/operating-prompt.md` from SSOT (overclaim softening + headless-by-default note). Could not run `check-ssot-drift.sh` (no bash/git in this shell); verified via grep instead — both replicas match SSOT at identical line numbers.
 - Files: `.kiro/steering/agent-catalog.md`, `.kiro/steering/operating-prompt.md`
