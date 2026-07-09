@@ -27,7 +27,7 @@ $cliDefs = [ordered]@{}
 $cliDefs["Claude"] = @{ detect = "claude"; cmd = "claude --dangerously-skip-permissions" }
 $cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools" }
 $cliDefs["Kimi"]   = @{ detect = "kimi"; cmd = "kimi --yolo" }
-$cliDefs["OpenCode"] = @{ detect = "opencode"; cmd = "opencode" }  # no --yolo equivalent; permissions + framework-guard plugin govern (ADR-0002 amendment 2026-07-09)
+$cliDefs["OpenCode"] = @{ detect = "opencode"; cmd = "opencode --agent opencode" }  # --agent pins the contract-carrying agent (TUI accepts --agent, verified 2026-07-09); no --yolo equivalent — permissions + framework-guard plugin govern (ADR-0002 amendment 2026-07-09)
 
 $cliAvailable = @{}
 foreach ($name in $cliDefs.Keys) {

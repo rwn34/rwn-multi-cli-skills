@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 10:10 — opencode
+- Action: E2E swap verification report per handoff 202607091000-e2e-swap-verification
+- Files: .ai/reports/opencode-2026-07-09-e2e-verification.md
+- Decisions: —
+
 ## 2026-07-09 09:13 — kiro-cli
 - Action: Processed handoff `202607090916-crush-to-opencode-steering-parity.md`: regenerated 4 Kiro steering replicas from SSOT, updated release-engineer.json deploy-lane wording (Crush → OpenCode), verified zero drift (24/24 replicas clean), hook suite 32/32 PASS. Moved handoff to done.
 - Files: `.kiro/steering/operating-prompt.md`, `.kiro/steering/orchestrator-pattern.md`, `.kiro/steering/agent-catalog.md`, `.kiro/steering/code-graphs.md`, `.kiro/agents/release-engineer.json`, `.ai/activity/log.md`

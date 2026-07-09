@@ -1,5 +1,5 @@
 // framework-guard — OpenCode enforcement plugin (Crush-replacement lane, ADR-0002).
-// Mechanical enforcement of the AGENTS.md contract:
+// Mechanical enforcement of the .opencode/contract.md contract:
 //   1. File writes (any tool with args.filePath: edit/write/patch) allowed ONLY to
 //      .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** — mirrors
 //      .claude/hooks/pretool-write-edit.sh normalization (absolute paths,
@@ -9,7 +9,7 @@
 //      includes the target. Fail-CLOSED on missing/unreadable registry.
 //   3. Worktree confinement (ADR-0004): sessions running in .wt/<project>/<executor>/
 //      may write only inside the worktree.
-//   4. Bash screen: forbidden commands (CRUSH.md rule 4 list) + redirect/tee targets
+//   4. Bash screen: forbidden commands (contract rule 4 list) + redirect/tee targets
 //      run through the same path rules. Unresolvable redirect targets ($var,
 //      command substitution) are blocked — fail-closed; bash is permission "ask"
 //      anyway, this layer is defense in depth.
@@ -19,7 +19,7 @@
 import path from "node:path";
 import fs from "node:fs";
 
-const LANE = "OpenCode's writable lane is .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** (see AGENTS.md)";
+const LANE = "OpenCode's writable lane is .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** (see .opencode/contract.md)";
 
 function norm(p) {
   return p.replace(/\\/g, "/");
@@ -37,7 +37,7 @@ function defaultReadRegistry(registryPath) {
   }
 }
 
-function decidePath(filePath, root, readRegistry) {
+function decidePath(filePath, root, readRegistry, op = "write") {
   const abs = norm(path.resolve(root, filePath));
   const rootN = norm(path.resolve(root));
   const inWorktree = /\/\.wt\/[^/]+\/[^/]+(\/|$)/.test(rootN + "/");
@@ -76,7 +76,7 @@ function decidePath(filePath, root, readRegistry) {
   }
 
   if (rel === null) {
-    return block(`write to '${norm(filePath)}' is outside the project root. ${LANE}.`);
+    return block(`${op} of '${norm(filePath)}' is outside the project root. ${LANE}.`);
   }
   if (
     rel === ".ai/activity/log.md" ||
@@ -85,10 +85,10 @@ function decidePath(filePath, root, readRegistry) {
   ) {
     return { allow: true };
   }
-  return block(`write to '${rel}' is outside the lane. ${LANE}.`);
+  return block(`${op} of '${rel || norm(filePath)}' is outside the lane. ${LANE}.`);
 }
 
-// CRUSH.md rule 4 list. --force-with-lease is deliberately NOT matched
+// .opencode/contract.md rule 4 list. --force-with-lease is deliberately NOT matched
 // (it is the sanctioned rollback form in this framework).
 const FORBIDDEN_BASH = [
   { re: /\bgit\s+push\b[^|;&]*\s(--force\b(?!-with-lease)|-f\b)/, what: "git push --force" },
@@ -102,7 +102,7 @@ const BROAD_RM_TARGET = /^["']?(\/\*?|~\/?|\.{1,2}\/?|\*|[A-Za-z]:[\/\\]?\*?|\$H
 function decideBash(command, root, readRegistry) {
   for (const { re, what } of FORBIDDEN_BASH) {
     if (re.test(command)) {
-      return block(`forbidden command (${what}) — never-run list in AGENTS.md.`);
+      return block(`forbidden command (${what}) — never-run list in .opencode/contract.md.`);
     }
   }
 
@@ -116,7 +116,7 @@ function decideBash(command, root, readRegistry) {
     if (!(recursive && force)) continue;
     for (const target of tokens.slice(1).filter((t) => !t.startsWith("-"))) {
       if (BROAD_RM_TARGET.test(target)) {
-        return block(`rm -rf on broad target '${target}' — never-run list in AGENTS.md.`);
+        return block(`rm -rf on broad target '${target}' — never-run list in .opencode/contract.md.`);
       }
     }
   }
@@ -144,7 +144,7 @@ function decideBash(command, root, readRegistry) {
  */
 export function decide({ tool, args, root, readRegistry = defaultReadRegistry }) {
   if (!args) return { allow: true };
-  if (typeof args.filePath === "string") return decidePath(args.filePath, root, readRegistry);
+  if (typeof args.filePath === "string") return decidePath(args.filePath, root, readRegistry, tool || "write");
   if (tool === "bash" && typeof args.command === "string") return decideBash(args.command, root, readRegistry);
   return { allow: true };
 }
