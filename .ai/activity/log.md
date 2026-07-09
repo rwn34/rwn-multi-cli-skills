@@ -17,6 +17,16 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 12:22 — kimi-cli
+- Action: Processed self-validation handoff `202607091211-selfvalidation-campaign.md` (Auto:yes/Risk:B). Ran the Kimi subset: verified hook wiring in `~/.kimi/config.toml`, executed live guard-fire probes, delegated a `coder-executor` subagent for an out-of-scope write probe, asserted identity, ran the hook suite, and confirmed KimiGraph removal. Wrote report `.ai/reports/kimi-cli-2026-07-09-selfvalidation.md` and moved the handoff to `to-kimi/done/`.
+- Files: `.ai/reports/kimi-cli-2026-07-09-selfvalidation.md`, `.ai/handoffs/to-kimi/done/202607091211-selfvalidation-campaign.md`, `.ai/activity/log.md`
+- Decisions: Reported NO-GO because live PreToolUse hooks did not fire on `Write`/`Edit` tool names in this session (matchers configured for `WriteFile`/`StrReplaceFile`), even though the guard scripts and regression suite are correct. Subagent out-of-scope write also succeeded live. No leftover probe files remain.
+- Grep-verified evidence:
+  - `~/.kimi/config.toml` hook block: `root-guard.sh`, `framework-guard.sh`, `worktree-fleet-guard.sh`, `sensitive-guard.sh`
+  - `bash .kimi/hooks/test_hooks.sh` → `PASS: 36/36`
+  - `grep -c kimigraph ~/.kimi/config.toml` → `0`; `.kimigraph/` and `.kimi/steering/kimigraph.md` absent
+  - Manual guard invocations: `.kiro/x` → exit 2; `.env` → exit 2
+
 ## 2026-07-09 12:02 — kiro-cli
 - Action: Per owner directive, wrote a validation-campaign handoff to claude-code (`to-claude/open/202607091202-validation-campaign-dispatch.md`, Auto:no/Risk:B). It instructs Claude (architect + final reviewer) to author + headless-dispatch Auto:yes/Risk:B validation handoffs to Kiro/Kimi/OpenCode — each runs its compat-report §5 test subset (steering/skills/agents/hooks/tools + live enforcement probes) and writes a self-validation report — then Claude runs its own subset (T-C2 subagent hook inheritance, T-C3 source-write block), aggregates into a rollup, and gives the owner a GO/NO-GO for the master merge.
 - Files: `.ai/handoffs/to-claude/open/202607091202-validation-campaign-dispatch.md`, `.ai/activity/log.md`
