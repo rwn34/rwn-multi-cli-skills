@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 09:12 — kimi-cli
+- Action: Processed handoff `202607090915-crush-to-opencode-steering-parity.md`: regenerated the four Kimi steering replicas from `.ai/instructions/` SSOTs (operating-prompt, orchestrator-pattern, agent-catalog, code-graphs), verified zero `.kimi/` drift in `check-ssot-drift.sh`, ran hook suite, and moved handoff to `done/`.
+- Files: `.kimi/steering/operating-prompt.md`, `.kimi/steering/orchestrator-pattern.md`, `.kimi/steering/agent-catalog.md`, `.kimi/steering/code-graphs.md`, `.ai/activity/log.md`, `.ai/handoffs/to-kimi/open/202607090915-crush-to-opencode-steering-parity.md`
+- Decisions: No operative `crush` references remained outside the four replicas; the only `Crush` mentions are historical lane-successor notes already present in the SSOT (e.g. "OpenCode replaces Crush per ADR-0002 amendment 2026-07-09"), so they were left intact. `.kiro/` drift lines are expected to remain until Kiro processes its own parity handoff.
+
 ## 2026-07-09 08:47 — opencode
 - Action: Received and reviewed a misrouted handoff addressed to Kimi CLI (`to-kimi/open/202607090915-crush-to-opencode-steering-parity.md`). Stopped execution because the required steps edit `.kimi/` steering replicas and hooks, which is outside OpenCode's writable lane per AGENTS.md. Updated the handoff Status to BLOCKED with a routing note and filed a report.
 - Files: `.ai/handoffs/to-kimi/open/202607090915-crush-to-opencode-steering-parity.md`, `.ai/reports/opencode-2026-07-09-misrouted-kimi-handoff.md`
