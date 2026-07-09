@@ -115,6 +115,38 @@ claim-lock + #5 together AS the P1 pane-watcher.
 
 ---
 
+## 6. [RISK, not feature] Cost/usage observability
+
+**Why:** once P1 (#5) makes the fleet self-drive with auto-continue across ~28
+sessions, token/credit spend goes opaque. Owner is cost-conscious. Need a simple
+per-CLI/per-project token+credit log + a "spend" view, ideally BEFORE unattended
+auto-continue runs. Build on the existing `zai-usage` skill. Pairs with the
+auto-continue MAX-cap as the two cost controls.
+
+## 7. [RISK, not feature] Concurrency safety of shared `.ai/` files
+
+**Why:** OBSERVED today — two kiro-cli instances clobbered an activity-log header
+(one overwrote the other's entry) and two grabbed the same handoff (13:58/14:02).
+`.ai/tests/concurrency-test-protocol.md` exists but was NEVER run. A self-driving
+fleet (P1) writing to shared `.ai/activity/log.md` + handoff queues across 28
+sessions makes lost/corrupted writes a real integrity risk. Fixes: a prepend-only
+atomic activity-log helper (or per-CLI activity shards merged for reads) + the
+per-project claim-lock (#1) for handoffs + actually RUN the concurrency test.
+Do this alongside/inside the P1 build — self-driving without it will corrupt
+shared state.
+
+---
+
+## STANCE: stop ideating, start building (owner check-in 2026-07-09)
+The backlog is now sufficient. Further FEATURE brainstorming = backlog debt, not
+value. Discipline (per ADR-0007): the highest-value "enhancement" is to USE the
+framework (build P1) and let REAL friction drive the next item — today's four
+latent bugs were all found by exercising it, not imagining features. Resist
+adding: more CLIs, more enforcement layers, more per-CLI parity (surface-area
+trap). Before GROWING the framework, run the #CLI-count analysis (is 4 even
+right?). Recommended: land the merge → build P1 (+ the #1 claim-lock, #7
+concurrency safety it requires) → real use → reassess.
+
 ## Suggested sequencing (relative to ADR-0007 roadmap)
 - #2 (scratch dir) — trivial, do anytime; immediate daily-quality win.
 - **#5 + #1 (auto-continue/auto-handoff + claim-lock) = the P1 pane-watcher
