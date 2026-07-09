@@ -1,19 +1,21 @@
 ---
 name: code-graphs
-description: Local code-knowledge-graph rules — prefer graph MCP queries (codegraph_*/kimigraph_*/kirograph_*) over file reads for structural questions. Use when exploring the codebase, tracing callers/callees/impact, asking "how does X work?", or when a .codegraph/.kimigraph/.kirograph dir exists.
+description: Local code-knowledge-graph rules — prefer CodeGraph MCP queries (codegraph_*) over file reads for structural questions. Use when exploring the codebase, tracing callers/callees/impact, asking "how does X work?", or when a .codegraph dir exists. KimiGraph/KiroGraph were removed 2026-07-09 (ADR-0003 amendment) — no other CLI has a graph.
 ---
 
 <!-- SSOT: .ai/instructions/code-graphs/principles.md — regenerate via .ai/sync.md -->
 
 # Code knowledge graphs
 
-Local code-knowledge-graph rules for this project, rationalized per
-`docs/architecture/0003-code-graph-rationalization.md`: **CodeGraph (Claude)
-is the only active graph**; KimiGraph and KiroGraph are demoted to
-optional-off (documented and installable, but no MCP wiring by default), and
-cross-wiring is ended — each CLI registers at most its own graph. A graph
-indexes source code into its own dot-directory, queried via its own MCP
-server.
+Local code-knowledge-graph rules for this project, per
+`docs/architecture/0003-code-graph-rationalization.md` (amended 2026-07-09:
+**single-graph topology**): **CodeGraph (Claude) is the only code-knowledge
+graph.** KimiGraph and KiroGraph were REMOVED entirely on 2026-07-09 by owner
+directive — MCP registrations, steering files, `.kimigraph/`/`.kirograph/`
+dirs, global npm binaries, and the `tools/kirograph/` source clone. Rationale:
+both malfunctioned more than they worked (MCP load warnings in dispatched
+sessions, recurring repair handoffs); maintenance cost exceeded value. There
+is no re-enable path short of a fresh ADR.
 
 A code graph parses the project with **tree-sitter**, stores symbols and edges
 (callers, callees, imports, type relationships) in a local **SQLite** database,
@@ -21,18 +23,18 @@ and exposes lookups over **MCP**. Typical structural exploration drops from 10+
 file reads to a single graph query — that is the entire point of the tool.
 
 **Companion docs:**
-- `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md` — full design
-  rationale, tool comparison, adoption decisions.
-- `.ai/known-limitations.md` — Kiro subagent hook-inheritance bug + general
-  index-staleness notes.
+- `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md` — historical
+  design rationale (three-graph era, superseded).
+- `.ai/known-limitations.md` — index-staleness notes.
 
 ## The rule
 
-When a graph is **active** for the running CLI, prefer it for structural
-questions before reading files. "How does X work?", "what calls Y?", "what
-breaks if I change Z?" — these are graph queries, not file reads.
+For **Claude Code** (the only CLI with a graph): when `.codegraph/` exists,
+prefer the graph for structural questions before reading files. "How does X
+work?", "what calls Y?", "what breaks if I change Z?" — these are graph
+queries, not file reads.
 
-When a graph is **not active**, ask the user **once** at the start of
+When `.codegraph/` does not exist, ask the user **once** at the start of
 substantive exploration whether to install it. Don't ask again in the same
 session.
 
@@ -42,75 +44,64 @@ to grep/glob/file-reads when:
    the source inline), or
 2. The graph returned no results for the query.
 
-## Per-CLI graph mapping
+**All other CLIs** (Kimi, Kiro, OpenCode): no graph lane. Use your native
+search tools (grep/glob/file reads). Do not install or wire any graph MCP —
+superseded tools removed 2026-07-09; a new graph for any CLI requires a fresh
+ADR.
 
-| CLI | Graph tool | Local dir | Status (ADR-0003) | Repo |
-|---|---|---|---|---|
-| Claude Code | CodeGraph | `.codegraph/` | **active** | https://github.com/colbymchenry/codegraph |
-| Kimi CLI | KimiGraph | `.kimigraph/` | optional-off | https://github.com/rwn34/kimigraph |
-| Kiro CLI | KiroGraph | `.kirograph/` | optional-off | https://github.com/davide-desio-eleva/kirograph |
-| OpenCode | none | — | no graph lane (ops/release role, ADR-0002; lane successor to Crush 2026-07-09) | — |
+## Graph mapping (post-2026-07-09)
 
-MCP wiring — each CLI registers at most its **own** graph (no cross-wiring):
+| CLI | Graph tool | Local dir | Status |
+|---|---|---|---|
+| Claude Code | CodeGraph | `.codegraph/` | **active** (repo: https://github.com/colbymchenry/codegraph) |
+| Kimi CLI | none | — | KimiGraph REMOVED 2026-07-09 (owner directive, ADR-0003 amendment) |
+| Kiro CLI | none | — | KiroGraph REMOVED 2026-07-09 (owner directive, ADR-0003 amendment) |
+| OpenCode | none | — | no graph lane (ops/release role, ADR-0002) |
 
-| CLI | Config file | Graphs registered |
-|---|---|---|
-| Claude Code | `.mcp.json` (project root) | codegraph |
-| Kimi CLI | `~/.kimi/mcp.json` (global) | none by default (user removes graph entries; re-add `kimigraph` only on demonstrated need) |
-| Kiro | `.kiro/settings/mcp.json` (project) | none by default (re-add `kirograph` only on demonstrated need) |
-| OpenCode | `opencode.json` (project root) | none |
+MCP wiring: `.mcp.json` (project root, Claude) registers `codegraph` — nothing
+else, nowhere else. Tool name prefix: `codegraph_*`.
 
-Tool name prefixes match the graph: `codegraph_*`, `kimigraph_*`, `kirograph_*`.
-
-**Kill criterion:** any enabled graph that fails MCP twice in a month, or goes
-unused for a month, is disabled rather than repaired (ADR-0003).
+**Kill criterion (unchanged, now proven):** any graph that fails MCP twice in
+a month, or goes unused for a month, is disabled rather than repaired
+(ADR-0003). KimiGraph and KiroGraph met it.
 
 ## Write boundaries
 
-Each CLI writes only to its own graph dir. Cross-graph writes are blocked at the
-tool layer by each CLI's `pretool-write-edit` hook. Never edit another CLI's
-`.X-graph/` directly — if you genuinely need a change there, send a handoff
-to that CLI.
+Only Claude writes to `.codegraph/` (its own graph dir). The `config.json`
+inside is committed (shared indexing preferences); everything else under it is
+gitignored. `.kimigraph/`/`.kirograph/` no longer exist; hook rules blocking
+writes there are retained as tombstones against accidental recreation.
 
-The `config.json` inside each graph dir is committed (it captures shared
-indexing preferences); everything else under each graph dir is gitignored.
-
-## When the graph is active — usage rules
+## When the graph is active — usage rules (Claude)
 
 1. **Spawn an Explore agent for broad questions.** For "how does X work?",
    "trace the auth flow", "find everything that touches the payment webhook",
    delegate to an explorer subagent and tell it explicitly: *"This project has
-   `<GraphName>` initialized. Use the CLI's `*_explore` / `*_context` MCP tool
-   as your PRIMARY tool — it returns full source sections in one call."*
+   CodeGraph initialized. Use `codegraph_explore` / `codegraph_context` as
+   your PRIMARY tool — it returns full source sections in one call."*
 2. **Don't re-read returned files.** The graph's exploration tools embed source
    sections directly in their response. Reading them again with a file tool
    wastes tokens for no new information.
 3. **Lightweight lookups can be called directly.** The main agent doesn't need
-   to spawn a subagent for `*_search`, `*_callers`, `*_callees`, `*_impact`, or
-   `*_node` — those are cheap, scoped queries.
-4. **Auto-sync mechanisms vary by CLI:**
-   - Claude (CodeGraph) and Kimi (KimiGraph) use OS file-watcher events
-     (FSEvents / inotify / ReadDirectoryChangesW).
-   - Kiro (KiroGraph) uses Kiro's `fileEdited` / `fileCreated` / `fileDeleted`
-     / `agentStop` hooks.
-5. **Run a manual sync if results look stale.** Each tool ships a `sync`
-   subcommand (`codegraph sync`, `kimigraph sync`, `kirograph sync`).
+   to spawn a subagent for `codegraph_search`, `codegraph_callers`,
+   `codegraph_callees`, `codegraph_impact`, or `codegraph_node` — those are
+   cheap, scoped queries.
+4. **Auto-sync** uses OS file-watcher events (FSEvents / inotify /
+   ReadDirectoryChangesW). **Run `codegraph sync` if results look stale** —
+   watchers can miss changes under load.
 
-## When the graph is NOT active
+## When the graph is NOT active (Claude)
 
-If the CLI's graph dir doesn't exist, ask the user once at the start of
-substantive exploration:
+If `.codegraph/` doesn't exist, ask the user once at the start of substantive
+exploration:
 
-> "This project doesn't have `<GraphName>` initialized. Want me to run
-> `<install-cmd>` to build a graph for faster exploration?"
+> "This project doesn't have CodeGraph initialized. Want me to run
+> `npx @colbymchenry/codegraph` to build a graph for faster exploration?"
 
-Substitute the active CLI's tool name and install command from the per-CLI
-reference below. If the user declines, fall back to grep/glob/file reads for
-the rest of the session and don't re-prompt.
+If the user declines, fall back to grep/glob/file reads for the rest of the
+session and don't re-prompt.
 
-## Per-CLI tool reference
-
-### Claude — CodeGraph (FTS5 only)
+## Tool reference — CodeGraph (FTS5 only)
 
 **Install:** `npx @colbymchenry/codegraph`
 
@@ -124,113 +115,35 @@ the rest of the session and don't re-prompt.
 | `codegraph_impact` | What's affected by changing a symbol |
 | `codegraph_node` | Single symbol details + source |
 
-CodeGraph is **FTS5-only** — no semantic/vector search. For semantic
-similarity, use Kimi or Kiro (their tools support it as an opt-in). Run
-`codegraph --help` after install for the authoritative tool list.
-
-### OpenCode — no graph wiring (ADR-0003)
-
-OpenCode's ops/release lane (ADR-0002, lane successor to Crush 2026-07-09)
-doesn't need structural code queries; `opencode.json` carries no graph MCP
-entries. If a need is demonstrated, wire `codegraph` there via OpenCode's
-`mcp` config key — Claude is custodian of `opencode.json`.
-
-### Kimi — KimiGraph (FTS5 + sqlite-vec semantic)
-
-**Install:** `npm install -g rwn-kimigraph` then `kimigraph install`
-
-| Tool | Use for |
-|---|---|
-| `kimigraph_explore` | Primary exploration — full source sections in one call |
-| `kimigraph_search` | Find symbols by name |
-| `kimigraph_context` | Build task context from natural language |
-| `kimigraph_callers` | Who calls this symbol |
-| `kimigraph_callees` | What this symbol calls |
-| `kimigraph_impact` | What's affected by changing a symbol |
-| `kimigraph_node` | Single symbol details + source |
-| `kimigraph_path` | Shortest path between two symbols |
-| `kimigraph_dead_code` | Symbols with zero references (advisory) |
-| `kimigraph_cycles` | Circular dependency chains (advisory) |
-| `kimigraph_signature_search` | Find functions by type signature |
-| `kimigraph_status` | Index health and stats |
-
-KimiGraph adds a 4-tier search (exact → FTS5 → semantic KNN → LIKE fallback)
-and signature-based lookup (e.g., `string -> boolean`). Semantic embeddings are
-opt-in via `enableEmbeddings: true` in `.kimigraph/config.json`.
-
-### Kiro — KiroGraph (6 semantic engines + architecture analysis)
-
-**Install:** `kirograph install` (from source — not yet on npm)
-
-| Tool | Use for |
-|---|---|
-| `kirograph_context` | Primary exploration — full source sections from natural language |
-| `kirograph_search` | Find symbols by name |
-| `kirograph_callers` | Who calls this symbol |
-| `kirograph_callees` | What this symbol calls |
-| `kirograph_impact` | What's affected by changing a symbol |
-| `kirograph_node` | Single symbol details + source |
-| `kirograph_type_hierarchy` | Class/interface inheritance tree |
-| `kirograph_path` | Shortest path between two symbols |
-| `kirograph_dead_code` | Symbols with zero references (advisory) |
-| `kirograph_circular_deps` | Circular import chains (advisory) |
-| `kirograph_files` | Indexed file tree with filters |
-| `kirograph_status` | Index health and stats |
-| `kirograph_hotspots` | Most-connected symbols by edge degree |
-| `kirograph_surprising` | Non-obvious cross-file connections |
-| `kirograph_diff` | Compare current graph vs saved snapshot |
-| `kirograph_architecture` | Package graph + layers (opt-in) |
-| `kirograph_coupling` | Ca/Ce/instability metrics (opt-in) |
-| `kirograph_package` | Inspect a single package (opt-in) |
-
-KiroGraph is the most feature-rich of the three: 6 semantic engine backends
-(cosine, sqlite-vec, orama, pglite, lancedb, qdrant, typesense), architecture
-analysis with package coupling metrics, and a snapshot/diff capability. Both
-embeddings (`enableEmbeddings`) and architecture analysis (`enableArchitecture`)
-are opt-in via `.kirograph/config.json`.
+Run `codegraph --help` after install for the authoritative tool list.
 
 ## Limitations
 
-**Common to all three:**
 - Dynamic imports, reflection, and runtime-generated calls are invisible to
   static analysis. The graph sees only what tree-sitter can parse.
-- Auto-sync watchers can miss changes under load — run the tool's `sync`
-  subcommand if results look stale.
+- Auto-sync watchers can miss changes under load — run `codegraph sync` if
+  results look stale.
 - First index of a large repo is slow; incremental updates are fast.
-
-**Claude / CodeGraph specific:**
-- No embeddings / no semantic search (FTS5 only).
-
-**Kimi / KimiGraph specific:**
-- On Windows, indexing many languages may need
-  `NODE_OPTIONS="--max-old-space-size=4096"` to avoid V8 zone OOM.
-
-**Kiro / KiroGraph specific:**
-- Kiro subagent writes do **not** fire hooks (platform bug #7671), so
-  KiroGraph's hook-based auto-sync misses subagent edits. Run `kirograph sync`
-  manually after subagent work if the index seems stale. See
-  `.ai/known-limitations.md` for the full hook-inheritance entry.
+- No embeddings / no semantic search (FTS5 only). Semantic similarity can be
+  enabled later via the tool's `config.json` if a need is demonstrated.
 
 ## Adoption status
 
-Rationalized 2026-07-07 per ADR-0003: CodeGraph (Claude) active, KimiGraph +
-KiroGraph optional-off, no cross-wiring, OpenCode none (as Crush's lane
-successor, 2026-07-09). Rationale: exploration
-payoff concentrates in the architect/orchestrator lane (ADR-0002); executors
-receive precise briefs and rarely need whole-repo structural queries; the
-demoted graphs generated recurring MCP/PATH/staleness maintenance.
+- 2026-07-07 (ADR-0003): rationalized — CodeGraph active, KimiGraph/KiroGraph
+  demoted to optional-off, cross-wiring ended.
+- 2026-07-09 (ADR-0003 amendment, owner directive): single-graph topology —
+  KimiGraph and KiroGraph removed entirely. Exploration payoff concentrates in
+  the architect/orchestrator lane (ADR-0002); executors receive precise briefs
+  and rarely need whole-repo structural queries; the removed graphs generated
+  recurring MCP/PATH/staleness maintenance and dispatched-session load
+  warnings.
 
-The active graph runs **structural-only** — no embeddings, no heavy model
-downloads. Semantic similarity can be enabled later via the tool's
-`config.json`.
-
-Historical design rationale (the original all-three-in-parallel adoption,
-superseded in part by ADR-0003):
+Historical design rationale (the original all-three-in-parallel adoption):
 `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`.
 
 ---
 
-**This pattern is working if:** AI agents prefer graph queries over file
-reads for structural questions, every CLI writes only to its own graph dir,
-and stale-index incidents trigger a manual sync rather than silent wrong
+**This pattern is working if:** Claude prefers graph queries over file reads
+for structural questions, no CLI recreates a removed graph dir, and
+stale-index incidents trigger `codegraph sync` rather than silent wrong
 answers.

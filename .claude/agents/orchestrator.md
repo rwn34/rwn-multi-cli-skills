@@ -96,12 +96,12 @@ graph for Claude Code) available. Prefer it for structural questions:
 If `.codegraph/` doesn't exist and you're about to do non-trivial exploration,
 ask the user if they want to run `npx @colbymchenry/codegraph`.
 
-Full usage notes + cross-CLI parity rules (KimiGraph for Kimi, KiroGraph for
-Kiro) are in `CLAUDE.md` under "CodeGraph (Claude's code-knowledge-graph tool)"
-and `.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`.
+CodeGraph is the ONLY code-knowledge graph (ADR-0003 amendment 2026-07-09:
+KimiGraph and KiroGraph removed entirely by owner directive — no other CLI
+has a graph lane). Full usage notes: `.ai/instructions/code-graphs/principles.md`.
 
-**Hard rule:** Claude never writes to `.kimigraph/` or `.kirograph/` —
-enforced by `.claude/hooks/pretool-write-edit.sh`.
+**Tombstone rule:** `.kimigraph/`/`.kirograph/` no longer exist; the
+`pretool-write-edit.sh` blocks are retained against accidental recreation.
 
 ## Project knowledge — `docs/**`
 

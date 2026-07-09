@@ -41,10 +41,13 @@ case "$rel" in
         block ".kimi/ is Kimi CLI's territory. Claude never writes there. Use .ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md to request the change." ;;
     .kiro|.kiro/*)
         block ".kiro/ is Kiro CLI's territory. Claude never writes there. Use .ai/handoffs/to-kiro/open/YYYYMMDDHHMM-slug.md to request the change." ;;
+    # TOMBSTONE (2026-07-09): KimiGraph/KiroGraph removed entirely per ADR-0003
+    # amendment (owner directive). Blocks retained against accidental recreation
+    # of the dirs — nothing should ever write here again.
     .kimigraph|.kimigraph/*)
-        block ".kimigraph/ is Kimi's code-graph territory (KimiGraph tool). Claude never writes there." ;;
+        block ".kimigraph/ was KimiGraph's dir — tool REMOVED 2026-07-09 (ADR-0003 amendment). Nothing writes here anymore." ;;
     .kirograph|.kirograph/*)
-        block ".kirograph/ is Kiro's code-graph territory (KiroGraph tool). Claude never writes there." ;;
+        block ".kirograph/ was KiroGraph's dir — tool REMOVED 2026-07-09 (ADR-0003 amendment). Nothing writes here anymore." ;;
 esac
 
 # Rule 2 — sensitive-file patterns. Block even for orchestrator; user must write manually.

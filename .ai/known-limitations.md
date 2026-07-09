@@ -80,33 +80,28 @@ runtime fix is the only hard guarantee.
 
 ---
 
-## Code graph index staleness (all three CLIs)
+## Code graph index staleness (CodeGraph)
 
-**Status:** Characterized 2026-04-26 by kimi-cli.
+**Status:** Characterized 2026-04-26 by kimi-cli. **Scope reduced 2026-07-09:**
+KimiGraph and KiroGraph were removed entirely (owner directive, ADR-0003
+amendment — single-graph topology), which also retires the KiroGraph
+subagent-hook staleness path below. CodeGraph (Claude) is the only graph.
 
-**What:** CodeGraph, KimiGraph, and KiroGraph all maintain a local SQLite index of
-code symbols. When source files change, the index must be re-synced. Each tool has
-auto-sync, but with different reliability:
+**What:** CodeGraph maintains a local SQLite index of code symbols. When source
+files change, the index must be re-synced. Auto-sync uses an OS file watcher
+(FSEvents/inotify/ReadDirectoryChangesW) — agent-agnostic, so subagent writes
+are synced too — but watchers can miss changes under load.
 
-| Tool | Sync mechanism | Subagent writes synced? |
-|---|---|---|
-| CodeGraph | OS file watcher (FSEvents/inotify/ReadDirectoryChangesW) | Yes (OS-level, agent-agnostic) |
-| KimiGraph | OS file watcher (`fs.watch`) | Yes (OS-level, agent-agnostic) |
-| KiroGraph | Kiro hooks (`fileEdited`/`fileCreated`/`fileDeleted`/`agentStop`) | **No** — blocked by Kiro subagent hook-inheritance bug |
-
-**Impact:** If a Kiro subagent edits files, KiroGraph's index goes stale silently.
-The next `kirograph_context` or `kirograph_search` may return outdated symbol
-locations or miss new symbols entirely.
-
-**Mitigation:**
-1. Run `kirograph sync` manually after subagent-heavy sessions.
-2. All three tools run a pre-query freshness check; if they detect a mismatch,
-   some will warn. Do not ignore warnings — run `sync`.
-3. For critical refactors, run a full `kirograph index --force` before starting.
+**Mitigation:** run `codegraph sync` if results look stale; do not ignore
+freshness warnings.
 
 **Acceptance:** Stale index is an advisory failure mode, not a safety issue. The
 worst case is wrong code locations in exploration results (LLM can verify by
 reading the file). No data loss risk.
+
+*Historical (pre-removal):* KiroGraph's hook-based sync missed Kiro subagent
+writes (platform bug #7671); KimiGraph used `fs.watch`. Both tools removed
+2026-07-09 — see ADR-0003 amendment.
 
 ---
 
@@ -153,6 +148,9 @@ v0.x → v1.0.0 stabilization.
 ## KiroGraph — `kirograph install` hangs on interactive prompts in non-TTY
 
 **Status:** Characterized 2026-04-26 by kiro-cli during Phase B Part A install.
+**RESOLVED BY REMOVAL 2026-07-09:** KiroGraph was removed entirely (owner
+directive, ADR-0003 amendment) — this limitation is retired with it. Entry
+kept as historical record only.
 
 **What:** `kirograph install` issues interactive prompts for embeddings,
 architecture, and caveman-mode opt-ins. In non-TTY contexts (CI, non-interactive

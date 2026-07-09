@@ -34,7 +34,7 @@ run_test "t3  allow src/main.rs (not root)" "$HOOKS_DIR/root-file-guard.sh" '{"t
 echo "framework-dir-guard:"
 run_test "t4  allow .ai/handoffs/test.md"       "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".ai/handoffs/test.md"}}'    0
 run_test "t5  block .claude/agents/test.md"     "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".claude/agents/test.md"}}'  2
-run_test "t5a allow .kirograph/config.json"     "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".kirograph/config.json"}}'  0
+run_test "t5a block .kirograph (removed)"       "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".kirograph/config.json"}}'  2
 run_test "t5b block .codegraph/codegraph.db"    "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".codegraph/codegraph.db"}}' 2
 run_test "t5c block .kimigraph/kimigraph.db"    "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"file_path":".kimigraph/kimigraph.db"}}' 2
 
