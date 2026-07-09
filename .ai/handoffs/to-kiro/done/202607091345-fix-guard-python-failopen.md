@@ -1,5 +1,5 @@
 # Fix Kiro guards' python fail-open (same class as Claude's .claude/hooks fix)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-09 13:45
@@ -43,3 +43,22 @@ claude-code building now) + prompt SAFETY RULES.
 Set Status: DONE + move to `to-kiro/done/`; prepend activity entry (identity
 `kiro-cli`). Leave commits to claude-code if no git lane. Report path:
 `.ai/reports/kiro-cli-2026-07-09-guard-pythonfix.md`.
+
+---
+
+## COMPLETION (kiro-cli, 2026-07-09)
+
+DONE. Applied the fail-closed extraction fix to all six `.kiro/hooks/*.sh`
+guards that parse stdin JSON (5 fs_write file_path guards + 1 execute_bash
+command guard). Report: `.ai/reports/kiro-cli-2026-07-09-guard-pythonfix.md`.
+
+Verification (subagent, real run):
+- `bash .kiro/hooks/test_hooks.sh` → **PASS: 52/52**, 0 failures (was 29 tests;
+  added t30–t42).
+- python-less repro (`PATH=/usr/bin:/bin`, python unavailable → sed fallback):
+  - `.claude/agents/x.md` → `exit=2` (blocked)
+  - `.ai/handoffs/x.md` → `exit=0` (allowed)
+  - `rm -rf /` → `exit=2` (blocked)
+
+Left for claude-code (no git lane on Kiro orchestrator): commit these changes,
+and the physical `open/ → done/` move as the validation step.
