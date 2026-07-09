@@ -18,10 +18,15 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 
 ### A. Docs entry points (convention-discoverable by external readers)
 
-- `AGENTS.md` — multi-CLI project pointer
+- `AGENTS.md` — multi-CLI project pointer. Also OpenCode's always-loaded contract file (OpenCode reads `AGENTS.md`
+natively; per ADR-0002 amendment 2026-07-09, OpenCode replaces Crush as
+fourth CLI). Claude Code is custodian of the OpenCode-facing content.
 - `README.md` — project README
 - `CLAUDE.md` — Claude Code's always-loaded memory
-- `CRUSH.md` — Crush CLI's always-loaded context/contract file (Crush reads root context files natively; added per ADR-0002 Crush onboarding)
+- `CRUSH.md` — DEPRECATED (2026-07-09, ADR-0002 amendment: OpenCode
+  replaces Crush). Retained on disk until the swap's e2e verification gate
+  (swap workstream task 10) passes; this entry is deleted in the same
+  commit that deletes the file.
 - `LICENSE` (or `LICENSE.*`) — GitHub / npm / PyPI / crates.io auto-detection
 - `CHANGELOG.md` (or `CHANGELOG`) — release-tooling convention (keepachangelog, release-please, semantic-release)
 - `CONTRIBUTING.md` — optional; canonical version lives at `docs/guides/contributing.md`. Root file allowed for GitHub auto-link UX.
@@ -54,10 +59,27 @@ Root-file policy is strict: any file not explicitly listed below requires orches
 - `.codegraph/` — CodeGraph local knowledge graph (Claude Code tool)
 - `.kirograph/` — KiroGraph local knowledge graph (Kiro CLI tool)
 - `.kimigraph/` — KimiGraph local knowledge graph (Kimi CLI tool)
-- `.crush.json` — Crush CLI config (MCP wiring). NOTE: file predates this amendment (created by the code-graph wiring change without ADR amendment); this entry cures the violation.
-- `.crush/` — Crush CLI local data directory (sessions, logs; gitignored)
+- `opencode.json` — OpenCode CLI project config (permissions allow/ask/deny,
+  provider wiring; NO key material of any kind — keys live in OpenCode's
+  user-scope global config outside the repo, per owner directive
+  2026-07-09). OpenCode resolves this file at project root. Added per
+  ADR-0002 amendment 2026-07-09 (OpenCode replaces Crush as fourth CLI).
+- `.opencode/` — OpenCode project directory (JS guard plugins, agents,
+  local data). As a dotfolder it is exempt from the loose-file-at-root
+  question by nature (see note below Category H); listed here for
+  discoverability, same as `.crush/` was.
+- `.crush.json` — DEPRECATED (2026-07-09, see `CRUSH.md` note in
+  Category A). Deleted, with this entry, after the swap's e2e gate.
+- `.crush/` — DEPRECATED (2026-07-09). Local data dir; removed with the
+  Crush uninstall.
 
-Custodianship note: Crush cannot self-manage framework files (no hooks/steering layer). Claude Code acts as custodian of `CRUSH.md` and `.crush.json` until ADR-0002 Stage 2 revisits this.
+Custodianship note *[amended 2026-07-09]*: Claude Code is custodian of
+OpenCode's framework files — `AGENTS.md` (the OpenCode-facing contract
+content), `opencode.json`, and `.opencode/` (guard plugins, agents).
+OpenCode requests changes to its own files via
+`.ai/handoffs/to-claude/open/` — the same change-request path Crush used.
+During the deprecation window, the same custodianship still covers
+`CRUSH.md` and `.crush.json` until their deletion.
 
 ### F. Language manifests (allowlist extended only when a language is chosen — amend this ADR at that time)
 
