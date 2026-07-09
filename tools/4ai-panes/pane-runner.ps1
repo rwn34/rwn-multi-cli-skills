@@ -63,13 +63,17 @@ function Get-InteractiveCmd {
 
 # -- Overridable hooks (tests replace these with mocks) --
 
-# Real CLI launch: build the headless command and run it as a blocking child,
-# streaming output to the pane. Returns the child's exit code.
+# Real CLI launch: build the headless command and run it as a blocking child.
+# The child's stdout AND stderr are streamed live to the pane console via
+# '2>&1 | Out-Host' so EVERY CLI is visibly active - not just the ones that write
+# straight to the console handle. Out-Host renders to the host and emits nothing
+# onto the pipeline, so the CLI's chatter never leaks into a caller's return
+# value; only the exit code below is returned. Returns the child's exit code.
 $script:InvokeCli = {
     param([string]$CliName, [string]$Prompt)
     $cmd = Get-HeadlessCmd -CliName $CliName -Prompt $Prompt
     Write-Host "  > $cmd" -ForegroundColor DarkGray
-    Invoke-Expression $cmd
+    Invoke-Expression $cmd 2>&1 | Out-Host
     return $LASTEXITCODE
 }
 
@@ -194,6 +198,10 @@ function Invoke-HandoffRun {
         } else {
             Write-Host "== auto-continuing ($continues/$MaxContinues) [$CliName] $rel ==" -ForegroundColor Yellow
         }
+        Write-Host "-- launching $CliName (streaming output below) --" -ForegroundColor DarkCyan
+        # Absorb only the returned exit code here; the CLI's own stdout/stderr is
+        # already streamed live to the pane inside $script:InvokeCli (Out-Host).
+        # This keeps Invoke-HandoffRun's return a clean @{Result;Continues;Invocations}.
         & $script:InvokeCli $CliName $prompt | Out-Null
         $invocations++
 
