@@ -17,6 +17,34 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 10:43 — kimi-cli
+- Action: Executed handoff 202607091040 — removed KimiGraph entirely from Kimi's lane per owner directive (ADR-0003 amendment)
+- Files: `.kimi/steering/code-graphs.md` (regenerated from SSOT), `.kimi/hooks/framework-guard.sh`, `.kimi/hooks/test_hooks.sh`, `.kimi/AGENTS.md` (DELETED), `.kimi/instructions.md` (DELETED), `.kimigraph/` (DELETED), `~/.kimi/config.toml` (kimigraph MCP already absent)
+- Decisions: Added `.kimigraph/*` to framework-guard as a tombstone block (prevents accidental recreation); deleted Kimi-specific AGENTS.md/instructions.md that instructed use of removed KimiGraph tools
+- Grep-verified evidence:
+  - `grep -rin kimigraph .kimi/` → only tombstone references in framework-guard/test + SSOT-removal mentions in code-graphs.md
+  - `grep -in kimigraph ~/.kimi/config.toml` → zero hits
+  - `bash .kimi/hooks/test_hooks.sh` → PASS: 36/36
+  - `bash .ai/tools/check-ssot-drift.sh` → Checked: 24 replicas, Drift: 0
+
+## 2026-07-09 10:41 — kiro-cli
+- Action: Executed handoff `202607091041-remove-kirograph-entirely` (owner directive, ADR-0003 amendment) — removed KiroGraph from Kiro's side. mcp.json already had empty `mcpServers` (no entry to strip); `.kiro/steering/kirograph.md` didn't exist. Deleted `.kirograph/` (git rm tracked config.json + removed gitignored kirograph.db/token-savings.jsonl/.session-id) and the 4 auto-sync hook JSONs (mark-dirty-on-create/save, sync-if-dirty/on-delete). Regenerated `.kiro/steering/code-graphs.md` from SSOT. Added a `.kirograph/` tombstone BLOCK to framework-dir-guard.sh (matches SSOT "retained as tombstones") and flipped test t5a from allow→block. Hooks 32/32 PASS, drift 0/24. Deletions staged via git rm; commits left to claude-code per handoff lane. Handoff → done/.
+- Files: `.kirograph/` (DELETED), `.kiro/hooks/kirograph-*.json` ×4 (DELETED), `.kiro/hooks/framework-dir-guard.sh`, `.kiro/hooks/test_hooks.sh`, `.kiro/steering/code-graphs.md`, `.ai/handoffs/to-kiro/done/202607091041-remove-kirograph-entirely.md`
+- Decisions: Handoff enumerated 3 artifacts but grep found 4 additional auto-sync hooks + the t5a allow-test — removed/updated all as operative KiroGraph machinery. Remaining `kirograph` string hits are documentation (code-graphs.md removal notice) + tombstone (guard block + its test) — non-operative by design.
+- Grep-verified evidence:
+  - mcp.json entry gone: `.kiro/settings/mcp.json` → `"mcpServers": {}` (no `kirograph`)
+  - drift: `check-ssot-drift.sh` → `Checked: 24 replicas, Drift: 0`
+  - hooks: `test_hooks.sh` → `PASS: 32/32` incl. `t5a block .kirograph (removed)`
+  - tombstone: `framework-dir-guard.sh:14` → `.kirograph/*|.kirograph\\*) echo "BLOCKED: KiroGraph removed 2026-07-09 ...`
+
+## 2026-07-09 10:25 — claude-code
+- Action: Task 10 COMPLETE — swap e2e-verified, Crush retired. E2E: synthetic handoff dispatched via `opencode run --auto --agent opencode` → opencode wrote the verification report (correct identity/lane/Stage-2 conditions), prepended its own log entry, self-closed the handoff to done/ — FULL protocol adherence. Negative probes proved both defense layers: (1) contract-driven voluntary refusal (guard never needed), (2) forced write → `BLOCKED by framework-guard`. Phase 2: Selector pane `opencode --agent opencode` (TUI accepts --agent, verified via --help; parse 0 errs); guard messages truthful (op-specific, contract.md reference); manifest.ts EXCLUDE_PREFIXES +to-opencode dirs. Phase 3 (commit `a29dd3e`): CRUSH.md + .crush.json deleted with ADR-0001 entries + hook allowlist entries in same commit; t25/t26 now assert crush files BLOCKED. Gates: hooks 41/41, drift 0/24, tsc 0, vitest known profile, assets/CRUSH.md gone. Also: zai-coding fallback removed from user-scope opencode.jsonc (zhipu-coding proven); earlier task 9 attempt-2 SUCCESS (kimi d2b5753, kiro via 7c914fd, drift 0). Commits: bf8e212, d2b5753, 7c914fd, 2386c3c, a29dd3e.
+- Files: .ai/handoffs/to-opencode/done/202607091000-e2e-swap-verification.md, .ai/reports/opencode-2026-07-09-e2e-verification.md, tools/4ai-panes/Selector.ps1, .opencode/plugin/framework-guard.js, tools/multi-cli-install/src/upgrade/manifest.ts, CRUSH.md + .crush.json (DELETED), docs/architecture/0001-root-file-exceptions.md, .claude/hooks/{pretool-write-edit,test_hooks}.sh, ~/.config/opencode/opencode.jsonc (user-scope)
+- Decisions: DEFECT ruled on (Tier B): framework-guard blocks READS outside lane — against OpenCode's release-reviewer charter (config diffs/deploy-readiness need repo reads) and inconsistent (bash cat bypasses it); fix queued in task 11: reads open, writes lane-restricted, bash screen unchanged. OWNER DIRECTIVE queued as task 11: remove KimiGraph + KiroGraph entirely (broken/warnings) — CodeGraph only; includes ADR-0003 amendment, SSOT/replica updates, kimi/kiro handoffs, tools/kirograph/ clone deletion, npm -g uninstalls, hook dead-path cleanup.
+- Grep-verified evidence:
+  - e2e report: `## Identity for the activity log` → `opencode`; guard block: `write to 'tests/e2e-negative-probe.txt' is outside the lane`
+  - `git log --oneline`: `a29dd3e feat(opencode)!: retire CRUSH.md/.crush.json`; drift `Checked: 24 replicas, Drift: 0`
+
 ## 2026-07-09 10:10 — opencode
 - Action: E2E swap verification report per handoff 202607091000-e2e-swap-verification
 - Files: .ai/reports/opencode-2026-07-09-e2e-verification.md

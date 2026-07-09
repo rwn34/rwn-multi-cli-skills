@@ -12,7 +12,7 @@ FILE_PATH=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('to
 
 # Block other CLIs' framework and graph directories
 case "$FILE_PATH" in
-    .claude/*|.kiro/*|.codegraph/*|.kirograph/*)
+    .claude/*|.kiro/*|.codegraph/*|.kirograph/*|.kimigraph/*)
         echo "BLOCKED: Writing to '$FILE_PATH' is not allowed. That path is owned by another CLI. Use .ai/ or .kimi/ for framework-level files." >&2
         exit 2
         ;;
