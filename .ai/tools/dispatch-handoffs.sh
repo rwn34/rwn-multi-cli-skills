@@ -34,7 +34,9 @@ headless_cmd() {
     local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
     case "$cli" in
         claude) printf '%s' "claude -p \"$prompt\" --permission-mode acceptEdits" ;;
-        kimi)   printf '%s' "kimi --agent-file .kimi/agents/orchestrator.yaml -p \"$prompt\"" ;;
+        # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
+        # 2026-07-09); prompt-only headless invocation via -p.
+        kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
         kiro)   printf '%s' "kiro-cli chat --no-interactive \"$prompt\"" ;;
         crush)  printf '%s' "crush run \"$prompt\"" ;;
         *)      return 1 ;;
