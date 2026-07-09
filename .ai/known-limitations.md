@@ -5,6 +5,54 @@ Any AI CLI hitting behavior that seems wrong should check here first.
 
 ---
 
+## Enforcement reality: hooks are NOT a blanket "hard block" (characterized 2026-07-09)
+
+**Status:** Characterized by the cross-CLI validation campaign 2026-07-09
+(`.ai/reports/claude-2026-07-09-validation-rollup.md`). This corrects an
+overclaim: the framework previously described per-CLI PreToolUse hooks as a
+"hard block" on cross-CLI/source/sensitive writes. **Live testing proved that
+is only true in some modes.** Do not rely on hooks as the sole guarantee.
+
+**Proven per-CLI/per-mode matrix (live, not unit-tested):**
+
+| CLI | Interactive | Headless dispatch | Subagent |
+|---|---|---|---|
+| Claude | ✅ blocks | ✅ blocks | ✅ blocks (hooks inherit) |
+| OpenCode | ✅ | ✅ | ✅ (JS plugin fires every tool call) |
+| Kimi | ✅ (config fixed 2026-07-09) | ❌ **`kimi -p` runs ZERO hooks** | ❌ prompt-only |
+| Kiro | ✅ (needs `--agent orchestrator`; bare chat = hookless default) | ❌ **`--trust-all-tools` makes hooks + `allowedPaths` inert** | ❌ subagent hooks never fire |
+
+**Root causes:**
+- **Claude (now FIXED):** hooks parsed JSON via `python3`, which on Windows
+  resolves to the Store alias stub (empty stdout, exit 0) → `|| python`
+  fallback never fired → path empty → fail-OPEN. Fixed 2026-07-09
+  (python-independent sed extraction + fail-CLOSED): commits `588ed9c`
+  (write/edit), `c5afd79` (bash). 54/54 incl. python-less regression.
+- **Kimi:** `kimi -p` (headless) does not execute hooks at all (verified —
+  PreToolUse + SessionStart probes never fired). Interactive mode does.
+- **Kiro:** the mandatory headless flag `--trust-all-tools` auto-approves
+  path-violation prompts, so `allowedPaths` (an approval policy, not a hard
+  deny) and preToolUse hooks are both inert headless. Interactive + a
+  configured agent enforce.
+
+**What actually protects the framework:**
+1. **Interactive mode:** per-CLI hooks (all four, after the 2026-07-09 fixes).
+2. **Headless / trust-all / subagent:** **prompt-level SAFETY RULES** baked
+   into each executor's agent prompt (the model refusing) — soft but proven to
+   hold in the campaign's adversarial test (Kiro T-K3 PASS).
+3. **Universal mechanical net:** the **git pre-commit backstop** (ADR-0005) —
+   a repo-level hook that catches bad writes at the commit chokepoint
+   regardless of any CLI's runtime hook behavior. This is the only mechanical
+   layer that reaches headless/trust-all/hookless runtimes.
+
+**Mitigation / working rule:** treat prompt SAFETY RULES + the git pre-commit
+backstop as the real guarantees for unattended/headless work; treat per-CLI
+hooks as the interactive-mode + defense-in-depth layer. Never dispatch a
+security-sensitive change to a headless Kimi/Kiro session assuming its hooks
+will stop a bad write — they won't.
+
+---
+
 ## Crush — no hook layer (CLOSED by OpenCode swap, 2026-07-09)
 
 **Status:** CLOSED 2026-07-09. Crush is replaced by OpenCode as the 4th CLI
