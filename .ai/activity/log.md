@@ -17,6 +17,21 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 21:56 — kiro-cli
+- Action: Built ADR-0007 P2 CI gate. New .github/workflows/gates.yml — runs on pull_request->master + push->master, ubuntu-latest, Node 20. Seven named steps (fail-on-red, GitHub default): SSOT drift, Claude/Kimi/Kiro hook suites, OpenCode guard (node .opencode/plugin/test-guard.mjs), git pre-commit backstop test (ADR-0005), installer npm ci + npx tsc --noEmit + npx vitest run (working-dir tools/multi-cli-install). Header comment documents the branch-protection repo setting needed to make "gates" REQUIRED. YAML validated (parses clean). Handoff 202607092200-p2-ci-gate moved to done/, Status: DONE. Git commit left to claude-code (no Kiro git lane).
+- Files: .github/workflows/gates.yml, .ai/handoffs/to-kiro/done/202607092200-p2-ci-gate.md
+- Decisions: New workflow rather than extending framework-check.yml (keeps the fast bash-only self-test separate from the heavier Node build/test gate). Branch protection is a GitHub repo setting, not committable — documented in the workflow header.
+
+## 2026-07-09 22:10 — opencode
+- Action: Cost/usage observability design (backlog #6). Wrote `.ai/reports/opencode-2026-07-09-cost-observability-design.md` — a concise design for per-CLI + per-project token/credit tracker. Recommended v1: pane-runner appends JSONL lines to `.ai/usage/<project>.logl` (timestamp, cli, project, model, tokens, auto_continue_count, handoff_ref), simple rollup script `.ai/tools/usage-report.ps1` aggregates into spend table. Pairs with auto-continue MAX cap (ADR-0008) as dual cost controls. Append-only flat files, no backend, smallest viable.
+- Files: .ai/reports/opencode-2026-07-09-cost-observability-design.md
+- Decisions: Kept it a DESIGN (no code build) per handoff rules. Implementation requires source changes (pane-runner modification + usage-report.ps1), so that's a later executor task.
+
+## 2026-07-09 21:54 — kimi-cli
+- Action: Implemented P2 sanctioned scratch dir. Added /.scratch/ + !/.scratch/README.md to root .gitignore; created .scratch/README.md documenting the gitignored ephemeral home for one-off scripts/probes; appended a dated NOTE to ADR-0001 documenting .scratch/ as the sanctioned scratch location.
+- Files: .gitignore, .scratch/README.md, docs/architecture/0001-root-file-exceptions.md
+- Decisions: Chose to track only .scratch/README.md via negation so documentation is preserved while all other scratch contents stay local and uncommitted.
+
 ## 2026-07-09 21:22 — claude-code
 - Action: Built ADR-0008 P1 keystone — self-driving pane-runner. New `tools/4ai-panes/pane-runner.ps1` (IDLE→CLAIM→RUN→DECIDE state machine, auto-continue MAX 5, per-project claim-lock, Get-HeadlessCmd single-source flags matching dispatch-handoffs.sh, 'p'-pause escape hatch). Atomic prepend helper `.ai/tools/activity-append.sh` (mkdir-lock + temp+rename, this entry written by it). Rewired Selector.ps1 pane launch to run the runner (RWN_PANE_BARE=1 falls back to bare CLI). Tests: test-pane-runner.ps1 12/12 pass, .ai/tests/test-activity-append.sh 6/6 pass (8 concurrent writers, zero clobber).
 - Files: tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, tools/4ai-panes/Selector.ps1, tools/4ai-panes/README.md, .ai/tools/activity-append.sh, .ai/tests/test-activity-append.sh, docs/architecture/0008-self-driving-fleet-pane-runner.md
