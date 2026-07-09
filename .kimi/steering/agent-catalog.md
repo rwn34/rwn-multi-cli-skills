@@ -19,12 +19,12 @@ All three CLIs implement these agents in their native config format.
 | 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | E2E test files + `.ai/reports/` | Browser tools + test runners |
 | 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build + git operations |
 | 11 | `release-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Version files + `CHANGELOG*` | git tag, npm publish, dry-run first |
-| 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob, `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
+| 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob | `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
 
 ## Agent classes
 
 - **Default (orchestrator):** Read + delegate + framework-only writes. Cannot touch project source.
-- **Executor:** Can write and run commands within their declared scope.
+- **Executor:** Can write and run commands within its declared scope.
 - **Diagnoser:** Primarily read-only. Can write reports to `.ai/reports/` and test files where noted.
 
 ## Framework directories (orchestrator-only writes)

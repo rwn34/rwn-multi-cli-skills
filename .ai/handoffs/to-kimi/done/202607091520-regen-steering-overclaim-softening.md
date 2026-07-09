@@ -1,5 +1,8 @@
 # Regen Kimi steering replicas — SSOT overclaim softening (agent-catalog + operating-prompt)
 Status: DONE
+Completed: 2026-07-09 16:25
+Touched: `.kimi/steering/agent-catalog.md`, `.kimi/steering/operating-prompt.md`, `.ai/activity/log.md`
+Drift check: 24 replicas checked; no `.kimi/` drift (`.kiro/` drift remains pending Kiro's parallel handoff).
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-09 15:20

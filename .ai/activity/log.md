@@ -17,6 +17,19 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 16:28 — kiro-cli
+- Action: Completed handoff 202607091521-regen-steering-overclaim-softening — regenerated `.kiro/steering/agent-catalog.md` and `.kiro/steering/operating-prompt.md` from SSOT (overclaim softening + headless-by-default note). Could not run `check-ssot-drift.sh` (no bash/git in this shell); verified via grep instead — both replicas match SSOT at identical line numbers.
+- Files: `.kiro/steering/agent-catalog.md`, `.kiro/steering/operating-prompt.md`
+- Decisions: Full-file overwrite = correct body replacement since Kiro steering replicas carry no CLI-specific frontmatter. `.kiro/` drift now resolved; matches `.kimi/` replica and Claude SKILL body.
+- Grep-verified evidence:
+  - `.kiro/steering/agent-catalog.md` → `layered, not a single "hard block"` at :39
+  - `.kiro/steering/operating-prompt.md` → `Execution mode — headless by default (ADR-0006)` at :87
+
+## 2026-07-09 16:25 — kimi-cli
+- Action: Completed handoff 202607091520-regen-steering-overclaim-softening — regenerated `.kimi/steering/agent-catalog.md` and `.kimi/steering/operating-prompt.md` from SSOT; drift check now shows no `.kimi/` drift (only `.kiro/` remains, expected until Kiro runs its parallel handoff).
+- Files: `.kimi/steering/agent-catalog.md`, `.kimi/steering/operating-prompt.md`, `.ai/activity/log.md`
+- Decisions: Confirmed Kimi steering replicas are byte-identical copies per `.ai/sync.md` (no CLI-specific frontmatter). Corrected `.kimi/steering/agent-catalog.md` table column alignment and "its/their" wording to match SSOT exactly.
+
 ## 2026-07-09 16:23 — kimi-cli
 - Action: Per handoff 202607091520-regen-steering-overclaim-softening — regenerated Kimi steering replicas from SSOT: `.kimi/steering/agent-catalog.md` ← `.ai/instructions/agent-catalog/principles.md` and `.kimi/steering/operating-prompt.md` ← `.ai/instructions/operating-prompt/principles.md`. Drift check: 24 replicas checked, only `.kiro/` steering remains drifted (expected until Kiro runs its parallel handoff); no `.kimi/` drift.
 - Files: `.kimi/steering/agent-catalog.md`, `.kimi/steering/operating-prompt.md`, `.ai/activity/log.md`
