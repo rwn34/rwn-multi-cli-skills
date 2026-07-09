@@ -134,6 +134,19 @@ run_test_nopy "t43 no-python framework .ai allowed"           "$WE" '{"tool_inpu
 # fail-CLOSED: non-empty stdin with no parseable file_path must block (not fail open)
 run_test      "t44 non-empty unparseable stdin blocked"       "$WE" '{"tool_input":{"garbage":true}}'              2
 
+# --- pretool-bash: python-less environment must NOT fail open (validation campaign 2026-07-09) ---
+# Same WindowsApps python-stub fail-open class as t39-t44, but on the higher-severity
+# destructive-command guard. These FAIL against the pre-fix bash hook (which returned 0
+# for t45/t46 because cmd came back empty) and PASS after the fail-CLOSED + sed-fallback fix.
+run_test_nopy "t45 no-python rm -rf / blocked (fail-closed)"  "$BH" '{"tool_input":{"command":"rm -rf /"}}'        2
+run_test_nopy "t46 no-python git push --force blocked"        "$BH" '{"tool_input":{"command":"git push --force origin main"}}' 2
+run_test_nopy "t47 no-python benign ls allowed"               "$BH" '{"tool_input":{"command":"ls -la"}}'          0
+run_test_nopy "t48 no-python DROP DATABASE blocked"           "$BH" '{"tool_input":{"command":"DROP DATABASE foo"}}' 2
+run_test_nopy "t49 no-python empty stdin allowed"             "$BH" ''                                             0
+# fail-CLOSED: non-empty stdin with no parseable command must block (not fail open)
+run_test      "t50 bash non-empty unparseable stdin blocked"  "$BH" '{"tool_input":{"garbage":true}}'              2
+run_test_nopy "t51 no-python unparseable stdin blocked"       "$BH" '{"tool_input":{"garbage":true}}'              2
+
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"
