@@ -17,6 +17,49 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 06:52 — kiro-cli
+- Action: ADR-0004 guard parity per handoff 202607090011 — added worktree confinement + fleet whitelist guards to Kiro hook layer
+- Files: `.kiro/hooks/worktree-confinement-guard.sh` (NEW), `.kiro/hooks/fleet-whitelist-guard.sh` (NEW), `.kiro/hooks/test_hooks.sh`, all 13 `.kiro/agents/*.json`
+- Decisions: Separate scripts (not folded into existing guards) for ADR-0004 isolation; deniedPaths NOT feasible for either guard (worktree needs runtime cwd context, fleet needs registry lookup — both impossible in static glob config); subagent coverage remains residual risk per upstream #7671 (mitigated by prompt-level SAFETY RULES)
+- Grep-verified evidence:
+  - `bash .kiro/hooks/test_hooks.sh` → PASS: 32/32
+  - Fleet whitelisted write (`to-proj-b`) → exit 0
+  - Fleet non-whitelisted write (`to-proj-c`) → exit 2 + "Fleet whitelist (ADR-0004)"
+  - Worktree absolute escape → exit 2 + "Worktree confinement (ADR-0004)"
+
+## 2026-07-09 06:55 — kimi-cli
+- Action: ADR-0004 guard parity per handoff 202607090010 — added worktree confinement + fleet whitelist guard to Kimi hook layer
+- Files: `.kimi/hooks/worktree-fleet-guard.sh` (NEW), `.kimi/hooks/test_hooks.sh`, `~/.kimi/config.toml`
+- Decisions: New standalone guard (not folded into framework-guard) to keep ADR-0004 logic isolated; registered in both duplicate hook blocks in global config to ensure coverage; fleet check fail-closed (missing registry blocks)
+- Grep-verified evidence:
+  - `bash .kimi/hooks/test_hooks.sh` → PASS: 36/36
+  - Whitelisted fleet write (`to-proj-b`) → exit 0
+  - Non-whitelisted fleet write (`to-proj-c`) → exit 2 + "Fleet whitelist (ADR-0004): 'rwn-multi-cli-skills' is not whitelisted to talk to 'proj-c'"
+
+## 2026-07-09 00:15 — claude-code
+- Action: P6 COMPLETE (runbook + installer alignment + Phase A gap-fill; 5 subagents, author≠verifier). Step 0: framework-check.yml md paths-ignore removed (YAML-parsed — drift checker's domain IS .md). Step 1: docs/guides/framework-upgrade-runbook.md written, every path tree-verified, 3 battle-tested lessons embedded. Steps 2+4 (coder): wire-mcp.ts rewritten 85→28 lines per ADR-0003 (codegraph-only, .codegraph-gated, .crush.json never), CRUSH.md/.crush.json added to the 3 FRAMEWORK_FILES lists (were missing everywhere), upgrade_history cap 20 + fixture-install integration test added (Phase A core pre-existed from a prior session). Step 3 (tester, independent): tsc clean; 80 pass/3 known-env fail (+pack suite = 4th env casualty via same cmd-child PATH gap — corrected coder's "5 skipped" framing); ADR-0003 matrix grep-proven (zero kirograph|kimigraph in src/); asset greps green; +1 test (template .crush.json no-graph). Side fixes: root `.mcp.json` CORRECTED to codegraph-only — the 2026-07-07 capstone entry's ".mcp.json codegraph-only" claim was WRONG on disk (all 3 graphs present; every Claude session since attempted kirograph/kimigraph MCP startups); Selector.ps1 env-override $frameworkRepo + runtime version resolution (0.0.4 proven); install-template.sh same runtime resolution (bash side); 4ai-panes README provenance + stale-content passes (date typo 07-09→07-08 caught by doc-writer).
+- Files: `.github/workflows/framework-check.yml`, `docs/guides/framework-upgrade-runbook.md` (NEW), `tools/multi-cli-install/{src/installer/{wire-mcp,copy-framework}.ts,src/upgrade/{version,manifest}.ts,scripts/sync-assets.ts,bin/multi-cli-install.ts,test/{installer,upgrade-phase-a}.test.ts}`, `tools/4ai-panes/{Selector.ps1,README.md}`, `scripts/install-template.sh`, `.mcp.json`, `.ai/research/4ai-panes-integration-notes.md`
+- Decisions: Phase A marker/manifest paths = plan defaults (.ai/.framework-version, .ai/.framework-manifest.json) — Tier B, owner notified; plan §12 questions deferred to pre-Phase-B; schedule cloud routine NOT created (Tier C spend, in-session /loop documented instead); assets/ is gitignored build state (re-synced, not committed)
+- Grep-verified evidence:
+  - `wire-mcp.ts:12` → `.codegraph/config.json` gate; `grep -rniE 'kirograph|kimigraph' src/` → zero matches
+  - `.mcp.json` → single `codegraph` server; `version.ts:43` → `UPGRADE_HISTORY_CAP = 20`
+  - Gates: tsc exit 0; vitest `3 failed | 80 passed | 5 skipped (88)` (3+pack = pre-existing env, stash-proven)
+
+## 2026-07-08 23:21 — claude-code
+- Action: P5 import batch (infra-engineer, per handoff 202607082252). Source repo inspection: branch `framework-upgrade-adr0002` deleted locally (survives as origin ref), 0df6908 UNMERGED by ancestry but `git diff 0df6908 master` is EMPTY — master 06c5d84 is content-identical (rebased re-commit), imported from master working tree. Launcher-only import to `tools/4ai-panes/` (Launch4Panes.ps1/.vbs, Selector.ps1, icon.ico, README.md, test-selector-e2e.ps1; framework dirs/ADRs excluded). Added `Get-ProjectBadges` to imported Selector: `[v OK]/[! OLD]/[- none]` framework-version badge + `[H:<n>]` open-handoff count. Verified: PARSE-OK both .ps1; headless AST-extracted function run → this repo `[! OLD] [H:4]` (ground truth 4), nonexistent dir `[- none]` no crash. Included pre-staged dispatch-failure filename collision fix. Committed + pushed.
+- Files: `tools/4ai-panes/*` (new), `.ai/tools/dispatch-handoffs.sh`
+- Decisions: badges ASCII (script is ASCII throughout); `test-selector-e2e.ps1` included as launcher tooling, not framework; `.4pane-history` runtime state excluded.
+
+## 2026-07-08 23:16 — claude-code
+- Action: P4 verification + commit batch (infra-engineer, per handoff 202607082251). Tests: stop-reminder per-queue counts OK (to-claude 4 / to-kimi 1 / to-kiro 1), hook suite PASS 39/39, dispatcher `bash -n` exit 0, forced-failure dispatch via stub binaries (crush/claude/kimi/kiro-cli all stubbed exit 7) → 6 DISPATCH attempts, ALERT + `.ai/reports/dispatch-failure-*.md` per attempt, reports verified then deleted (synthetic). P3+P4 handoffs git-mv'd to done/. Committed + pushed.
+- Files: `.claude/hooks/stop-reminder.sh`, `.ai/tools/dispatch-handoffs.sh`, `.ai/handoffs/README.md`, `.ai/handoffs/to-claude/done/{202607082250-p3-worktree-fleet-guards.md,202607082251-p4-automation-polling.md}` (moved)
+- Decisions: observed same-second claude failures collapse into one report file (`dispatch-failure-20260708161558-claude.md` reused across 3 handoffs) — timestamp+cli filename has no per-handoff uniqueness; flagged, not fixed (verify-only mandate).
+
+## 2026-07-08 23:03 — claude-code
+- Action: Merged `claude/project-overview-pn5l4e` → `master` (no-ff, owner-approved) and pushed; merge commit `b3724f7`, remote verified via ls-remote. Gates before merge: drift 0/24, hooks 32/32, counter-divergence 0. Branch kept; no tag, no publish. Rollback: `git revert -m 1 b3724f7`.
+- Files: — (merge only; no content edits)
+- Decisions: Untracked `tools/kirograph/` left in place per owner intent. Concurrent uncommitted edit to `.ai/handoffs/to-claude/open/202607082252-p5-4ai-panes-import.md` (owner UPDATE note) observed post-merge — left untouched, not mine to commit.
+
 ## 2026-07-08 23:20 — claude-code
 - Action: CORRECTION (delivery-integrity §4) — the 23:05 entry's NOTE claiming handoff `202607071330-fleet-upgrade-continuation.md` "never existed in the tree" was WRONG: it existed on `origin/claude/project-overview-pn5l4e` (commit `84c75be`, written by the 2026-07-07 cloud session at 13:30) and this checkout had not pulled. The push of commit `5fa28e8` was rejected, infra-engineer merged (`82d3e70`, activity-log conflict resolved keeping both sides per prepend-order protocol) and the handoff resurfaced. Lesson: session-start should check `git fetch && git status -sb` for behind-upstream state before declaring artifacts missing. Reconciliation: P5 handoff amended (import from 4AI-panes `0dcbe73`, add framework-version badge), NEW P6 handoff (upgrade runbook + installer ADR-0003/rebuild alignment + --upgrade), old handoff superseded → done/.
 - Files: `.ai/activity/log.md` (this entry), `.ai/handoffs/to-claude/open/202607082252-p5-4ai-panes-import.md` (amended), `.ai/handoffs/to-claude/open/202607082330-p6-runbook-installer-alignment.md` (NEW), `.ai/handoffs/to-claude/done/202607071330-fleet-upgrade-continuation.md` (moved)

@@ -20,6 +20,20 @@ run_test() {
   fi
 }
 
+# Like run_test, but executes the hook with cwd set to $dir (simulates a
+# session rooted elsewhere, e.g. an executor worktree — ADR-0004 Rule 2.6).
+run_test_cd() {
+  local name="$1" dir="$2" hook="$3" payload="$4" expected="$5"
+  local hook_abs="$PWD/$hook" actual
+  actual=$(cd "$dir" && printf '%s' "$payload" | bash "$hook_abs" >/dev/null 2>&1; echo $?)
+  if [ "$actual" = "$expected" ]; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1))
+    fails+=("$name (expected $expected, got $actual)")
+  fi
+}
+
 # --- write-edit: root-file policy ---
 run_test "t1 root non-allowlisted"       "$WE" '{"tool_input":{"file_path":"evil.txt"}}'                 2
 run_test "t2 subagent .gitignore allowed" "$WE" '{"agent_type":"coder","tool_input":{"file_path":".gitignore"}}' 0
@@ -69,6 +83,28 @@ run_test "t28 main-thread docs blocked"  "$WE" '{"tool_input":{"file_path":"docs
 run_test "t29 main-thread .ai allowed"   "$WE" '{"tool_input":{"file_path":".ai/research/x.md"}}'        0
 run_test "t30 subagent docs allowed"     "$WE" '{"agent_type":"doc-writer","tool_input":{"file_path":"docs/specs/x.md"}}' 0
 run_test "t31 subagent .kimi still blocked" "$WE" '{"agent_type":"coder","tool_input":{"file_path":".kimi/agents/x.yaml"}}' 2
+
+# --- write-edit: ADR-0004 worktree confinement (Rule 2.6) + fleet whitelist (Rule 2.7) ---
+# Fixtures in a temp dir; cleaned up below regardless of pass/fail.
+T=$(mktemp -d)
+PROJ_NAME=$(basename "$PWD")
+# fleet fixture 1: registry whitelists this project -> proj-b only
+mkdir -p "$T/f1/.fleet/handoffs/to-proj-b/open" "$T/f1/.fleet/handoffs/to-proj-c/open" "$T/f1/.fleet/activity"
+printf '{"projects":{"%s":{"path":"x","talks_to":["proj-b"]}}}' "$PROJ_NAME" > "$T/f1/.fleet/registry.json"
+# fleet fixture 2: no registry at all
+mkdir -p "$T/f2/.fleet/handoffs/to-proj-b/open"
+# worktree fixture: simulated executor worktree at .wt/projA/kiro
+mkdir -p "$T/.wt/projA/kiro/src"
+
+run_test "t32 fleet whitelisted target allowed"  "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-b/open/x.md\"}}" 0
+run_test "t33 fleet non-whitelisted blocked"     "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-c/open/x.md\"}}" 2
+run_test "t34 fleet missing registry blocked"    "$WE" "{\"tool_input\":{\"file_path\":\"$T/f2/.fleet/handoffs/to-proj-b/open/x.md\"}}" 2
+run_test "t35 fleet activity log allowed"        "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/activity/log.md\"}}" 0
+run_test_cd "t36 worktree absolute escape blocked" "$T/.wt/projA/kiro" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$T/projA/src/x.ts\"}}" 2
+run_test_cd "t37 worktree ../ escape blocked"      "$T/.wt/projA/kiro" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"../kimi/src/x.ts"}}' 2
+run_test_cd "t38 worktree in-tree subagent write allowed" "$T/.wt/projA/kiro" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"src/x.ts"}}' 0
+
+rm -rf "$T"
 
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then

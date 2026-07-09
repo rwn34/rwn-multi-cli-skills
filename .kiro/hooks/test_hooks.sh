@@ -61,6 +61,52 @@ run_test "t20 block DROP DATABASE (upper)" "$HOOKS_DIR/destructive-cmd-guard.sh"
 run_test "t21 block Drop Database (mixed)" "$HOOKS_DIR/destructive-cmd-guard.sh" '{"tool_input":{"command":"Drop Database foo"}}'     2
 run_test "t22 allow git status"            "$HOOKS_DIR/destructive-cmd-guard.sh" '{"tool_input":{"command":"git status"}}'            0
 
+# --- ADR-0004: worktree confinement + fleet whitelist ---
+echo "worktree-confinement-guard + fleet-whitelist-guard:"
+
+# Helper: run_test_cd — executes hook with cwd set to $dir
+run_test_cd() {
+  local name="$1" dir="$2" hook="$3" payload="$4" expected="$5"
+  local hook_abs
+  hook_abs="$(cd "$(dirname "$hook")" && pwd)/$(basename "$hook")"
+  actual=$(cd "$dir" && printf '%s' "$payload" | bash "$hook_abs" >/dev/null 2>&1; echo $?)
+  if [ "$actual" = "$expected" ]; then
+    pass=$((pass+1))
+    echo "  PASS  $name"
+  else
+    fail=$((fail+1))
+    fails+=("$name (expected $expected, got $actual)")
+    echo "  FAIL  $name (expected $expected, got $actual)"
+  fi
+}
+
+# Temp fixtures
+T=$(mktemp -d)
+PROJ_NAME=$(basename "$PWD")
+
+# Fleet fixture 1: registry whitelists this project -> proj-b only
+mkdir -p "$T/f1/.fleet/handoffs/to-proj-b/open" "$T/f1/.fleet/handoffs/to-proj-c/open" "$T/f1/.fleet/activity"
+printf '{"projects":{"%s":{"path":"x","talks_to":["proj-b"]}}}' "$PROJ_NAME" > "$T/f1/.fleet/registry.json"
+
+# Fleet fixture 2: no registry at all
+mkdir -p "$T/f2/.fleet/handoffs/to-proj-b/open"
+
+# Worktree fixture: simulated executor worktree at .wt/projA/kiro
+mkdir -p "$T/.wt/projA/kiro/src"
+
+WC="$HOOKS_DIR/worktree-confinement-guard.sh"
+FW="$HOOKS_DIR/fleet-whitelist-guard.sh"
+
+run_test    "t23 fleet whitelisted target allowed"   "$FW" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-b/open/x.md\"}}" 0
+run_test    "t24 fleet non-whitelisted blocked"      "$FW" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-c/open/x.md\"}}" 2
+run_test    "t25 fleet missing registry blocked"     "$FW" "{\"tool_input\":{\"file_path\":\"$T/f2/.fleet/handoffs/to-proj-b/open/x.md\"}}" 2
+run_test    "t26 fleet activity log allowed"         "$FW" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/activity/log.md\"}}" 0
+run_test_cd "t27 worktree absolute escape blocked"   "$T/.wt/projA/kiro" "$WC" "{\"tool_input\":{\"file_path\":\"$T/projA/src/x.ts\"}}" 2
+run_test_cd "t28 worktree ../ escape blocked"        "$T/.wt/projA/kiro" "$WC" '{"tool_input":{"file_path":"../kimi/src/x.ts"}}' 2
+run_test_cd "t29 worktree in-tree write allowed"     "$T/.wt/projA/kiro" "$WC" '{"tool_input":{"file_path":"src/x.ts"}}' 0
+
+rm -rf "$T"
+
 # --- Summary ---
 echo ""
 total=$((pass+fail))

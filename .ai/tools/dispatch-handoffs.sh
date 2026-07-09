@@ -34,7 +34,9 @@ headless_cmd() {
     local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
     case "$cli" in
         claude) printf '%s' "claude -p \"$prompt\" --permission-mode acceptEdits" ;;
-        kimi)   printf '%s' "kimi --agent-file .kimi/agents/orchestrator.yaml -p \"$prompt\"" ;;
+        # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
+        # 2026-07-09); prompt-only headless invocation via -p.
+        kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
         kiro)   printf '%s' "kiro-cli chat --no-interactive \"$prompt\"" ;;
         crush)  printf '%s' "crush run \"$prompt\"" ;;
         *)      return 1 ;;
@@ -75,8 +77,37 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
         cmd=$(headless_cmd "$cli" "$rel")
         if [ "$MODE" = "exec" ]; then
             echo "DISPATCH [$cli] $rel"
-            ( cd "$root" && eval "$cmd" )
-            echo "---- [$cli] finished (exit $?) ----"
+            out_tmp=$(mktemp)
+            ( cd "$root" && eval "$cmd" ) 2>&1 | tee "$out_tmp"
+            rc=${PIPESTATUS[0]}
+            echo "---- [$cli] finished (exit $rc) ----"
+            # Failure alerting (Tier B — act, then notify): non-zero exit writes a
+            # report so a failed headless dispatch is never silent.
+            if [ "$rc" -ne 0 ]; then
+                ts=$(date -u +%Y%m%d%H%M%S)
+                # Filename includes the handoff slug: same-second failures for one
+                # CLI must not overwrite each other (bug found by stub-binary test
+                # 2026-07-09 — three same-second claude failures collided).
+                slug=$(basename "$f" .md)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (exit $rc)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- Command: $cmd"
+                    echo "- UTC: $ts"
+                    echo ""
+                    echo "## Output tail (last 40 lines)"
+                    echo '```'
+                    tail -40 "$out_tmp"
+                    echo '```'
+                    echo ""
+                    echo "Triage: re-run manually, or relay the handoff by hand. The handoff"
+                    echo "stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+            fi
+            rm -f "$out_tmp"
         else
             echo "WOULD DISPATCH [$cli] $rel"
             echo "    $cmd"

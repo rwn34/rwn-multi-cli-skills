@@ -94,6 +94,25 @@ line is treated as C — conservative by default.
    spec. If OK, sender (or user) moves the file from `open/` to `done/`. If not, the
    file stays in `open/` with a `BLOCKED` status + notes explaining what's wrong.
 
+## Polling — who watches the queues (P4, 2026-07-09)
+
+Three mechanisms, three scopes — they complement, never compete:
+
+| Mechanism | Scope | How |
+|---|---|---|
+| **Session-end reminder** | every Claude session | `stop-reminder.sh` prints per-queue open counts at each turn end — zero setup, always on. |
+| **In-session interval poll** | an active working session | `/loop 15m bash .ai/tools/dispatch-handoffs.sh --exec` — Claude re-runs the dispatcher every 15 min while you work. Stop the loop when done. |
+| **Human glance** | daily 4AI-panes use | Selector badge (planned, P5): per-project open-handoff counts + framework-version state, so the human sees pending Risk-C work without opening files. |
+
+A `schedule` cron routine (out-of-session cloud dispatch) is deliberately NOT
+configured — cloud runs cost money (Tier C) and the dispatcher needs local CLI
+binaries. Revisit only if the fleet outgrows in-session polling.
+
+**Failure alerting:** a headless dispatch that exits non-zero writes
+`.ai/reports/dispatch-failure-<UTC>-<cli>.md` (command, exit code, output
+tail) and leaves the handoff OPEN for retry. Failed dispatches are never
+silent.
+
 ## Handoff file shape
 
 Every handoff opens with a status block and follows the skeleton in `template.md`.

@@ -81,6 +81,8 @@ describe('copyFrameworkFiles', () => {
     expect(existsSync(join(target, '.kiro'))).toBe(true);
     expect(existsSync(join(target, 'CLAUDE.md'))).toBe(true);
     expect(existsSync(join(target, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(join(target, 'CRUSH.md'))).toBe(true);
+    expect(existsSync(join(target, '.crush.json'))).toBe(true);
   });
 
   it('returns list of copied paths', () => {
@@ -223,24 +225,38 @@ describe('CodeGraph wiring', () => {
     expect(existsSync(join(target, '.codegraph', 'cache'))).toBe(false);
   });
 
-  it('wireMcp creates .mcp.json and .crush.json with all graph entries when absent', () => {
+  // ADR-0003 matrix: Claude → codegraph only (when CodeGraph config present);
+  // Kimi/Kiro → none; Crush → none, ever.
+  function seedCodegraphConfig(target: string): void {
+    mkdirSync(join(target, '.codegraph'), { recursive: true });
+    writeFileSync(join(target, '.codegraph', 'config.json'), '{ "include": [], "exclude": [] }\n');
+  }
+
+  it('wireMcp wires codegraph only into .mcp.json — no other graphs, no .crush.json', () => {
     const target = makeTempDir('wire-mcp-create');
+    seedCodegraphConfig(target);
     const touched = wireMcp(target, false);
 
-    expect(touched).toContain('.mcp.json');
-    expect(touched).toContain('.crush.json');
+    expect(touched).toEqual(['.mcp.json']);
     const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
-    expect(mcp.mcpServers.kirograph).toEqual({ command: 'kirograph', args: ['serve', '--mcp'] });
-    expect(mcp.mcpServers.kimigraph).toEqual({ command: 'kimigraph', args: ['serve', '--mcp'] });
-    const crush = JSON.parse(readFileSync(join(target, '.crush.json'), 'utf-8'));
-    expect(crush.mcp.codegraph).toBeDefined();
-    expect(crush.mcp.kirograph).toBeDefined();
-    expect(crush.mcp.kimigraph).toBeDefined();
+    expect(mcp.mcpServers.kirograph).toBeUndefined();
+    expect(mcp.mcpServers.kimigraph).toBeUndefined();
+    expect(existsSync(join(target, '.crush.json'))).toBe(false);
+  });
+
+  it('wireMcp is a no-op when the target has no CodeGraph config', () => {
+    const target = makeTempDir('wire-mcp-no-cg');
+    const touched = wireMcp(target, false);
+
+    expect(touched).toHaveLength(0);
+    expect(existsSync(join(target, '.mcp.json'))).toBe(false);
+    expect(existsSync(join(target, '.crush.json'))).toBe(false);
   });
 
   it('wireMcp merges codegraph into an existing .mcp.json without clobbering other servers', () => {
     const target = makeTempDir('wire-mcp-merge');
+    seedCodegraphConfig(target);
     writeFileSync(
       join(target, '.mcp.json'),
       JSON.stringify({ mcpServers: { other: { command: 'other-server', args: [] } } }, null, 2) + '\n',
@@ -252,15 +268,15 @@ describe('CodeGraph wiring', () => {
     const mcp = JSON.parse(readFileSync(join(target, '.mcp.json'), 'utf-8'));
     expect(mcp.mcpServers.other).toEqual({ command: 'other-server', args: [] });
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
-    expect(mcp.mcpServers.kirograph).toEqual({ command: 'kirograph', args: ['serve', '--mcp'] });
-    expect(mcp.mcpServers.kimigraph).toEqual({ command: 'kimigraph', args: ['serve', '--mcp'] });
+    expect(mcp.mcpServers.kirograph).toBeUndefined();
+    expect(mcp.mcpServers.kimigraph).toBeUndefined();
   });
 
   it('wireMcp leaves an existing codegraph entry untouched', () => {
     const target = makeTempDir('wire-mcp-noop');
-    const existing = { mcpServers: { codegraph: { command: 'custom-codegraph', args: ['x'] }, kirograph: { command: 'kirograph', args: ['serve', '--mcp'] }, kimigraph: { command: 'kimigraph', args: ['serve', '--mcp'] } } };
+    seedCodegraphConfig(target);
+    const existing = { mcpServers: { codegraph: { command: 'custom-codegraph', args: ['x'] } } };
     writeFileSync(join(target, '.mcp.json'), JSON.stringify(existing, null, 2) + '\n');
-    writeFileSync(join(target, '.crush.json'), JSON.stringify({ mcp: { codegraph: { type: 'stdio', command: 'codegraph', args: ['serve', '--mcp'] }, kirograph: { type: 'stdio', command: 'kirograph', args: ['serve', '--mcp'] }, kimigraph: { type: 'stdio', command: 'kimigraph', args: ['serve', '--mcp'] } } }, null, 2) + '\n');
 
     const touched = wireMcp(target, false);
     expect(touched).toHaveLength(0);
@@ -269,12 +285,37 @@ describe('CodeGraph wiring', () => {
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'custom-codegraph', args: ['x'] });
   });
 
+  it('wireMcp never touches an existing .crush.json (Crush gets no graph, ever)', () => {
+    const target = makeTempDir('wire-mcp-crush');
+    seedCodegraphConfig(target);
+    const crushBefore = JSON.stringify({ mcp: {} }, null, 2) + '\n';
+    writeFileSync(join(target, '.crush.json'), crushBefore);
+
+    const touched = wireMcp(target, false);
+    expect(touched).toEqual(['.mcp.json']);
+    expect(readFileSync(join(target, '.crush.json'), 'utf-8')).toBe(crushBefore);
+  });
+
   it('wireMcp dry-run reports path but writes nothing', () => {
     const target = makeTempDir('wire-mcp-dry');
+    seedCodegraphConfig(target);
     const touched = wireMcp(target, true);
 
     expect(touched).toContain('.mcp.json');
     expect(existsSync(join(target, '.mcp.json'))).toBe(false);
+  });
+
+  // ADR-0003 drift guard: the shipped .crush.json template must never carry
+  // graph MCP servers — otherwise every install hands Crush a graph even
+  // though wireMcp itself never touches .crush.json.
+  it('template .crush.json ships with no graph MCP servers', () => {
+    const tplDir = resolveTemplateDir();
+    const raw = readFileSync(join(tplDir, '.crush.json'), 'utf-8');
+    const parsed = JSON.parse(raw) as { mcp?: Record<string, unknown> };
+
+    const graphServers = Object.keys(parsed.mcp ?? {}).filter((k) => /graph/i.test(k));
+    expect(graphServers).toEqual([]);
+    expect(raw).not.toMatch(/kirograph|kimigraph|codegraph/i);
   });
 });
 
