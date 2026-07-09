@@ -1,5 +1,5 @@
 # Self-validation campaign — OpenCode subset (compat-report §5)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: opencode
 Created: 2026-07-09 12:12

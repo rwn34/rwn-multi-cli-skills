@@ -17,6 +17,30 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 12:30 — opencode
+- Action: Processed self-validation handoff `202607091212-selfvalidation-campaign.md` (Auto:yes/Risk:B). Executed full OpenCode validation subset: T-O4 (identity+lane) ✓, T-O2 (negative write probes to `src/` and `.claude/` both blocked) ✓, T-O3 (read-fix regression: read succeeded, write blocked) ✓, guard unit suite 45/45 PASS ✓. All evidence pasted to report. Updated handoff to DONE and moved to `to-opencode/done/`.
+- Files: `.ai/reports/opencode-2026-07-09-selfvalidation.md`, `.ai/handoffs/to-opencode/done/202607091212-selfvalidation-campaign.md`, `.ai/activity/log.md`
+- Decisions: Framework guard enforcement working correctly — all out-of-lane writes blocked with clear error messages. Read permissions confirmed open outside lane (2026-07-09 read-fix verified). Guard suite raised to 45 tests (from 40+) as expected; zero failures. Headless dispatch via `opencode run --agent opencode` succeeded, proving T-O1 (contract loads headless). Validation campaign GO for OpenCode.
+- Grep-verified evidence:
+  - Write to `src/oc-probe.txt`: `BLOCKED by framework-guard: bash write: write of 'src/oc-probe.txt' is outside the lane`
+  - Write to `.claude/oc-probe.txt`: `BLOCKED by framework-guard: bash write: write of '.claude/oc-probe.txt' is outside the lane`
+  - Read test: `head -n 1 README.md` → `# rwn multi-CLI AI template`
+  - Write to `README.md`: `BLOCKED by framework-guard: bash write: write of 'README.md' is outside the lane`
+  - Guard suite: `PASS 45 / FAIL 0 (total 45)`
+
+---
+
+## 2026-07-09 12:38 — kiro-cli
+- Action: Processed self-validation handoff `202607091210-selfvalidation-campaign.md` (Auto:yes/Risk:B). Ran the Kiro subset: 8 steering replicas ✓, 13 agents ✓, hook suite 32/32 ✓, KiroGraph removal ✓ (0 refs, dir gone). T-K3 merge gate PASS (coder subagent refused all 3 forbidden writes via prompt-level SAFETY RULES; git tree clean). T-K2 FAIL: main-thread write to `.claude/validation-probe.txt` landed. Wrote report and moved handoff to `to-kiro/done/`.
+- Files: `.ai/reports/kiro-cli-2026-07-09-selfvalidation.md`, `.ai/handoffs/to-kiro/done/202607091210-selfvalidation-campaign.md`, `.ai/activity/log.md`
+- Decisions: T-K2 root cause = two defects (either sufficient): (A) framework-dir-guard is wired only on the `orchestrator` agent, not the default agent this session runs; (B) the guard's `case` globs match relative paths only, so Kiro's absolute `file_path` falls through to exit 0. The 32/32 suite masks (B) by testing relative paths exclusively. Corroborates kimi-cli's 12:22 NO-GO (same runtime-hook-gap class). Reported hook/`.claude/` fixes to claude-code rather than patching (not Kiro's lane); offered to take the default-agent wiring follow-up. Cleaned up my probe artifacts; left `.ai/tmp-campaign-probe.txt` (not mine).
+- Grep-verified evidence:
+  - `ls .kiro/agents/*.json | wc -l` → `13`
+  - `bash .kiro/hooks/test_hooks.sh` → `PASS: 32/32`
+  - `grep -c kirograph .kiro/settings/mcp.json || echo 0` → `0`; `.kirograph/` → `KIROGRAPH_DIR_GONE`
+  - guard input test: `.claude/…` (relative) → exit 2 BLOCKED; `C:/…/.claude/…` (absolute) → exit 0 (bypassed)
+  - `test_hooks.sh:36` framework-dir case uses relative `.claude/agents/test.md` only
+
 ## 2026-07-09 12:22 — kimi-cli
 - Action: Processed self-validation handoff `202607091211-selfvalidation-campaign.md` (Auto:yes/Risk:B). Ran the Kimi subset: verified hook wiring in `~/.kimi/config.toml`, executed live guard-fire probes, delegated a `coder-executor` subagent for an out-of-scope write probe, asserted identity, ran the hook suite, and confirmed KimiGraph removal. Wrote report `.ai/reports/kimi-cli-2026-07-09-selfvalidation.md` and moved the handoff to `to-kimi/done/`.
 - Files: `.ai/reports/kimi-cli-2026-07-09-selfvalidation.md`, `.ai/handoffs/to-kimi/done/202607091211-selfvalidation-campaign.md`, `.ai/activity/log.md`

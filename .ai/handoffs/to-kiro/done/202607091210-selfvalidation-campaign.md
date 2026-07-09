@@ -1,5 +1,5 @@
 # Self-validation campaign — Kiro subset (compat-report §5)
-Status: OPEN
+Status: DONE (kiro-cli 2026-07-09 12:38 — report: .ai/reports/kiro-cli-2026-07-09-selfvalidation.md; merge gate T-K3 PASS, T-K2 FAIL with root cause filed)
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-09 12:10
