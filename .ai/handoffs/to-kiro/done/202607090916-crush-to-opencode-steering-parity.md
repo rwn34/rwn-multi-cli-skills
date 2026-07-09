@@ -1,10 +1,11 @@
 # Regenerate Kiro steering replicas + release-engineer wording — OpenCode replaces Crush (ADR-0002 amendment 2026-07-09)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-09 09:16
 Auto: yes
 Risk: B
+Completed: 2026-07-09 09:13 by kiro-cli
 
 ## Goal
 Clear the 4 Kiro-side drift lines and the deploy-lane wording in your agent

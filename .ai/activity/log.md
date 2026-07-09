@@ -17,6 +17,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 09:13 — kiro-cli
+- Action: Processed handoff `202607090916-crush-to-opencode-steering-parity.md`: regenerated 4 Kiro steering replicas from SSOT, updated release-engineer.json deploy-lane wording (Crush → OpenCode), verified zero drift (24/24 replicas clean), hook suite 32/32 PASS. Moved handoff to done.
+- Files: `.kiro/steering/operating-prompt.md`, `.kiro/steering/orchestrator-pattern.md`, `.kiro/steering/agent-catalog.md`, `.kiro/steering/code-graphs.md`, `.kiro/agents/release-engineer.json`, `.ai/activity/log.md`
+- Decisions: Remaining "crush" references in steering files are historical (documenting the ADR-0002 amendment transition, e.g. "lane successor to Crush 2026-07-09") — left intact as they come from the SSOT itself.
+
 ## 2026-07-09 09:12 — kimi-cli
 - Action: Processed handoff `202607090915-crush-to-opencode-steering-parity.md`: regenerated the four Kimi steering replicas from `.ai/instructions/` SSOTs (operating-prompt, orchestrator-pattern, agent-catalog, code-graphs), verified zero `.kimi/` drift in `check-ssot-drift.sh`, ran hook suite, and moved handoff to `done/`.
 - Files: `.kimi/steering/operating-prompt.md`, `.kimi/steering/orchestrator-pattern.md`, `.kimi/steering/agent-catalog.md`, `.kimi/steering/code-graphs.md`, `.ai/activity/log.md`, `.ai/handoffs/to-kimi/open/202607090915-crush-to-opencode-steering-parity.md`
