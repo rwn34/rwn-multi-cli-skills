@@ -1,5 +1,5 @@
 # Regen Kimi steering replicas — SSOT overclaim softening (agent-catalog + operating-prompt)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-09 15:20

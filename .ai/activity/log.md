@@ -17,6 +17,14 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-09 16:23 — kimi-cli
+- Action: Per handoff 202607091520-regen-steering-overclaim-softening — regenerated Kimi steering replicas from SSOT: `.kimi/steering/agent-catalog.md` ← `.ai/instructions/agent-catalog/principles.md` and `.kimi/steering/operating-prompt.md` ← `.ai/instructions/operating-prompt/principles.md`. Drift check: 24 replicas checked, only `.kiro/` steering remains drifted (expected until Kiro runs its parallel handoff); no `.kimi/` drift.
+- Files: `.kimi/steering/agent-catalog.md`, `.kimi/steering/operating-prompt.md`, `.ai/activity/log.md`
+- Decisions: Direct copy per `.ai/sync.md` is correct — Kimi steering replicas have no CLI-specific frontmatter, so body-only replacement equals full file replacement.
+- Grep-verified evidence:
+  - `.kimi/steering/agent-catalog.md` → `layered, not a single "hard block"` at :39
+  - `.kimi/steering/operating-prompt.md` → `Execution mode — headless by default (ADR-0006)` at :87
+
 ## 2026-07-09 15:05 — claude-code
 - Action: Kiro v3 migration outcome + target-architecture ADR. Dispatched Kiro v3 migration (handoff 202607091430) — Kiro delivered v3 config ADDITIVELY (`.kiro/agents/orchestrator.md` md-agent w/ permissions block, `.kiro/hooks/guards.json`, permissions.yaml owner-template; commits `960cca7` kiro-cli / `29475ea` claude-code) BUT surfaced two blocking v3 facts: (A) `permissions.yaml` is per-user `~/.kiro/settings/` only, NOT repo-injectable; (B) v3 has NO headless mode ("classic non-TUI unsupported") AND `kiro-cli --v3` REJECTS `--agent`. So v3 can't run headless and can't carry the guard-bearing agent pin. RESOLUTION (commit `67a9610`): reverted `--v3` from dispatcher (headless stays v2) + Selector pane (back to v2 + owner TODO for v3-TUI string); amended ADR-0006 w/ findings A/B. Kiro v3 handoff kept PARTIAL/open (owner-gated TUI validation). Then authored ADR-0007 target architecture (owner-approved): enforcement = git backstop + CI PRIMARY, per-CLI hooks best-effort, NON-GOAL per-CLI headless parity; Kiro v2 active / v3 dormant; headless-by-default; roadmap P0 merge → P1 visible per-pane dispatch → P2 CI+installer+version-probes → P3 optional; CLI-count right-sizing tracked for post-merge data analysis.
 - Files: `docs/architecture/0007-target-architecture-and-roadmap.md` (NEW), `docs/architecture/0006-*.md` (amended), `.ai/tools/dispatch-handoffs.sh`, `tools/4ai-panes/Selector.ps1`, `.kiro/agents/orchestrator.md` + `.kiro/hooks/guards.json` (kiro-authored), `.ai/config-snippets/kiro-v3-permissions.yaml`, `.ai/reports/kiro-cli-2026-07-09-v3-migration.md`, `.ai/activity/log.md`

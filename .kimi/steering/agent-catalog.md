@@ -19,12 +19,12 @@ All three CLIs implement these agents in their native config format.
 | 9 | `e2e-tester` | Diagnoser | fs_read, fs_write, execute_bash, grep, glob, web_fetch | E2E test files + `.ai/reports/` | Browser tools + test runners |
 | 10 | `infra-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_search, web_fetch | IaC/CI dirs only | plan/validate/build + git operations |
 | 11 | `release-engineer` | Executor | fs_read, fs_write, execute_bash, grep, glob, web_fetch | Version files + `CHANGELOG*` | git tag, npm publish, dry-run first |
-| 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob | `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
+| 12 | `data-migrator` | Executor | fs_read, fs_write, execute_bash, grep, glob, `migrations/**`, `seeds/**`, `schema.*` | Migration tools only |
 
 ## Agent classes
 
 - **Default (orchestrator):** Read + delegate + framework-only writes. Cannot touch project source.
-- **Executor:** Can write and run commands within its declared scope.
+- **Executor:** Can write and run commands within their declared scope.
 - **Diagnoser:** Primarily read-only. Can write reports to `.ai/reports/` and test files where noted.
 
 ## Framework directories (orchestrator-only writes)
@@ -34,10 +34,14 @@ All subagents are denied write access to these paths.
 
 **Per-CLI nuance:** while this catalog lists all four framework dirs as the
 orchestrator's write scope, each CLI's implementation narrows this to **its own
-dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) are
-hard-blocked by each CLI's pre-write hook and always go through the handoff
-queue (`.ai/handoffs/`) — never direct. This matches the same nuance in
-`.ai/instructions/orchestrator-pattern/principles.md`.
+dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) must
+always go through the handoff queue (`.ai/handoffs/`) — never direct. Enforcement
+of this boundary is layered, not a single "hard block" (validation 2026-07-09,
+ADR-0007): the **git pre-commit backstop** (ADR-0005) is the universal mechanical
+net (every CLI, every mode); each CLI's pre-write hook enforces in interactive
+mode as best-effort defense-in-depth (headless enforcement varies by CLI — see
+`.ai/known-limitations.md`); prompt SAFETY RULES are the behavioral floor. Same
+nuance in `.ai/instructions/orchestrator-pattern/principles.md`.
 
 ## Reports directory
 
