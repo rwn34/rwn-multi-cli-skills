@@ -41,7 +41,13 @@ headless_cmd() {
         # "Tool approval required but --no-interactive was specified. Use
         # --trust-all-tools" (dispatch failure 2026-07-09, see
         # .ai/reports/dispatch-failure-20260709015110-kiro-*.md).
-        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools \"$prompt\"" ;;
+        # --agent orchestrator REQUIRED: chat.defaultAgent is unset, so a bare
+        # `kiro-cli chat` runs the BUILT-IN default agent which carries NO guard
+        # hooks — every one of the 13 .kiro/agents/*.json wires the guards, the
+        # built-in default does not. Pinning the orchestrator gives the headless
+        # session the framework-dir/root/sensitive/ADR-0004 guards (validation
+        # T-K2 default-agent gap, 2026-07-09).
+        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
