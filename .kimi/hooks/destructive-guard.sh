@@ -2,11 +2,25 @@
 # Hook 4: Destructive command guard
 # Block dangerous shell commands
 
-COMMAND=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-          python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-          echo "")
+INPUT=$(cat)
+[ -z "$INPUT" ] && exit 0
 
-[ -z "$COMMAND" ] && exit 0
+extract_command() {
+    local out
+    out=$(printf '%s' "$1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+    out=$(printf '%s' "$1" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null)
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+    out=$(printf '%s' "$1" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+}
+
+COMMAND=$(extract_command "$INPUT")
+
+if [ -z "$COMMAND" ]; then
+    echo "BLOCKED: Could not parse Bash command input; failing closed against destructive commands." >&2
+    exit 2
+fi
 
 # Normalize: lowercase for matching
 CMD_LOWER=$(echo "$COMMAND" | tr '[:upper:]' '[:lower:]')
