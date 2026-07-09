@@ -253,8 +253,30 @@ phase1() {
   copy_file ".github/workflows/framework-check.yml"
   copy_file ".codegraph/config.json"
 
-  # Note: we did NOT copy scripts/ (would copy this installer into target),
-  # nor README.md/LICENSE/CHANGELOG (target keeps its own).
+  # Universal git pre-commit backstop (ADR-0005). We copy ONLY scripts/git-hooks
+  # (not all of scripts/, which would drag this installer into the target), then
+  # wire core.hooksPath so it is active on the target clone.
+  wire_git_hooks
+
+  # Note: we did NOT copy the rest of scripts/ (would copy this installer into
+  # target), nor README.md/LICENSE/CHANGELOG (target keeps its own).
+}
+
+wire_git_hooks() {
+  copy_dir "scripts/git-hooks"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: chmod +x scripts/git-hooks/* ; git -C \"$TARGET\" config core.hooksPath scripts/git-hooks"
+    return 0
+  fi
+  chmod +x "$TARGET/scripts/git-hooks/pre-commit" 2>/dev/null || true
+  chmod +x "$TARGET/scripts/git-hooks/test-pre-commit.sh" 2>/dev/null || true
+  # core.hooksPath is per-clone and never inherited — must be set explicitly.
+  if git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$TARGET" config core.hooksPath scripts/git-hooks \
+      && log "Wired core.hooksPath -> scripts/git-hooks (ADR-0005 commit backstop)"
+  else
+    warn "Target is not a git repo yet; skipped core.hooksPath. Run: git config core.hooksPath scripts/git-hooks"
+  fi
 }
 
 # ==========================================================================
