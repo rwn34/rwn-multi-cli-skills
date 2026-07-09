@@ -5,7 +5,8 @@ import { join } from 'node:path';
 // - Claude Code: codegraph only, and only when the target actually has a
 //   CodeGraph config (.codegraph/config.json).
 // - Kimi / Kiro: optional-off — no graph wiring by default.
-// - Crush: no graph wiring, ever (.crush.json is never touched here).
+// - OpenCode: no graph wiring, ever (opencode.json is never touched here) —
+//   lane successor to Crush per ADR-0002 amendment 2026-07-09.
 const CODEGRAPH_SERVER = { command: 'codegraph', args: ['serve', '--mcp'] };
 
 export function wireMcp(targetDir: string, dryRun: boolean): string[] {

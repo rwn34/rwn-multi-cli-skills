@@ -37,8 +37,35 @@ headless_cmd() {
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
         kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
-        kiro)   printf '%s' "kiro-cli chat --no-interactive \"$prompt\"" ;;
-        crush)  printf '%s' "crush run \"$prompt\"" ;;
+        # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
+        # "Tool approval required but --no-interactive was specified. Use
+        # --trust-all-tools" (dispatch failure 2026-07-09, see
+        # .ai/reports/dispatch-failure-20260709015110-kiro-*.md).
+        # --agent orchestrator REQUIRED: chat.defaultAgent is unset, so a bare
+        # `kiro-cli chat` runs the BUILT-IN default agent which carries NO guard
+        # hooks — every one of the 13 .kiro/agents/*.json wires the guards, the
+        # built-in default does not. Pinning the orchestrator gives the headless
+        # session the framework-dir/root/sensitive/ADR-0004 guards (validation
+        # T-K2 default-agent gap, 2026-07-09).
+        # Headless dispatch stays on v2 (NO --v3). Per the v3 docs
+        # (<https://kiro.dev/docs/cli/v3/> "Known gaps", verified 2026-07-09):
+        # "The legacy non-TUI mode (kiro-cli chat without the TUI) does not
+        # support the v3 engine. Use the TUI." --no-interactive IS that classic
+        # non-TUI mode, so `kiro-cli --v3 chat --no-interactive` would silently
+        # fall back to the v2 engine — the --v3 flag here was dead text. v3
+        # enforces only in the interactive TUI; there is no v3 headless surface.
+        # Headless Kiro therefore runs v2, and the git pre-commit backstop
+        # (ADR-0005) is the version-agnostic mechanical floor for these commits.
+        # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
+        # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
+        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
+        # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
+        # writes; the framework-guard plugin fires before the permission layer
+        # and remains the mechanical lane barrier (verified 2026-07-09).
+        # --agent opencode pins the contract-carrying agent (.opencode/contract.md);
+        # without it the default build agent runs and never loads the contract
+        # (ADR-0001 NOTE 2026-07-09: no dead text — pin the load path).
+        opencode) printf '%s' "opencode run --auto --agent opencode \"$prompt\"" ;;
         *)      return 1 ;;
     esac
 }
@@ -48,7 +75,7 @@ bin_for() {
         claude) echo "claude" ;;
         kimi)   echo "kimi" ;;
         kiro)   echo "kiro-cli" ;;
-        crush)  echo "crush" ;;
+        opencode) echo "opencode" ;;
     esac
 }
 

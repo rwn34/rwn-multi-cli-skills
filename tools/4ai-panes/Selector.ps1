@@ -1,6 +1,6 @@
 # Selector.ps1 - Interactive project selector for rwn-4AI-panes
 # Phase 1: Box-drawing menu with arrow-key navigation
-# Phase 2: Splits into 4 panes: Claude | Kiro | Kimi | Crush
+# Phase 2: Splits into 4 panes: Claude | Kiro | Kimi | OpenCode
 
 $ErrorActionPreference = "SilentlyContinue"
 
@@ -25,9 +25,9 @@ $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else {
 # Each CLI: name, detection command, launch command
 $cliDefs = [ordered]@{}
 $cliDefs["Claude"] = @{ detect = "claude"; cmd = "claude --dangerously-skip-permissions" }
-$cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools" }
+$cliDefs["Kiro"]   = @{ detect = "kiro-cli"; cmd = "kiro-cli chat --trust-all-tools --agent orchestrator" }  # v2 interactive form (enforces mechanically in interactive mode per rollup 2026-07-09); --agent pins the hook-bearing orchestrator, bare `chat` runs the hookless built-in default (T-K2). TODO(owner): confirm the v3-TUI launch string that ALSO carries --agent. Evidence 2026-07-09 (kiro-cli-chat 2.12.0): canonical `kiro-cli --v3` (per v3 docs) REJECTS --agent ("error: unexpected argument '--agent'; Usage: kiro-cli.exe --v3"); `--v3 chat` WITHOUT --tui is the classic non-TUI mode the docs say does NOT support v3 (silent v2 fallback); `kiro-cli --v3 chat --tui --agent orchestrator` parses but engine-engagement unverifiable without a TTY. Left on working v2 until owner confirms the v3-TUI string in a live session.
 $cliDefs["Kimi"]   = @{ detect = "kimi"; cmd = "kimi --yolo" }
-$cliDefs["Crush"]  = @{ detect = "crush"; cmd = "crush --yolo" }
+$cliDefs["OpenCode"] = @{ detect = "opencode"; cmd = "opencode --agent opencode" }  # --agent pins the contract-carrying agent (TUI accepts --agent, verified 2026-07-09); no --yolo equivalent — permissions + framework-guard plugin govern (ADR-0002 amendment 2026-07-09)
 
 $cliAvailable = @{}
 foreach ($name in $cliDefs.Keys) {
@@ -39,7 +39,7 @@ foreach ($name in $cliAvailable.Keys) {
     if ($cliAvailable[$name]) { $anyAvailable = $true; break }
 }
 if (-not $anyAvailable) {
-    Write-Host "No code CLIs found (claude, kiro-cli, kimi, crush)." -ForegroundColor Red
+    Write-Host "No code CLIs found (claude, kiro-cli, kimi, opencode)." -ForegroundColor Red
     Read-Host "Press Enter to exit"
     Stop-Process -Id $PID
 }
@@ -58,7 +58,7 @@ function Get-Layout {
             }
         } catch {}
     }
-    return @("Claude", "Kiro", "Kimi", "Crush")
+    return @("Claude", "Kiro", "Kimi", "OpenCode")
 }
 
 function Save-Layout($layout) {
@@ -279,8 +279,7 @@ function Install-Framework($targetDir) {
         '.archive',
         'CLAUDE.md',
         'AGENTS.md',
-        'CRUSH.md',
-        '.crush.json',
+        'opencode.json',
         '.mcp.json.example',
         'docs/architecture/0001-root-file-exceptions.md',
         'docs/architecture/0002-cli-role-topology.md',

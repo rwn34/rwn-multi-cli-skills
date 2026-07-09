@@ -3,13 +3,27 @@
 # Blocks executor sessions in .wt/<project>/<executor>/ from escaping the worktree,
 # and limits .fleet/handoffs/to-<project>/ writes to the fleet registry whitelist.
 
-input=$(cat)
-path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      echo "")
+INPUT=$(cat)
+[ -z "$INPUT" ] && exit 0
 
-# Fail open if we cannot parse a path
-[ -z "$path" ] && exit 0
+extract_path() {
+    local out
+    out=$(printf '%s' "$1" | python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null)
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+    out=$(printf '%s' "$1" | python  -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print(ti.get('file_path') or ti.get('path',''))" 2>/dev/null)
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+    out=$(printf '%s' "$1" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+    out=$(printf '%s' "$1" | sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -n "$out" ] && { printf '%s' "$out"; return; }
+}
+
+path=$(extract_path "$INPUT")
+
+if [ -z "$path" ]; then
+    echo "BLOCKED: Could not parse tool input path; failing closed against worktree/fleet writes." >&2
+    exit 2
+fi
 
 project_root=$(pwd)
 project_root="${project_root%/}"

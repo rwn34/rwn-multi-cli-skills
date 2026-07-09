@@ -3,18 +3,39 @@
 # Blocks writes that violate (1) framework-dir rule, (2) sensitive-file rule, (3) root-file policy.
 # Reads tool call JSON from stdin; exit 2 + stderr to block with a reason.
 
-# Extract file_path + agent_type via python (jq not reliably installed on Windows/Git Bash)
+# Extract file_path + agent_type from the tool-call JSON on stdin.
 # agent_type is present in hook input for SUBAGENT tool calls; absent/empty on the main thread.
+#
+# CRITICAL (fail-CLOSED): extraction MUST NOT depend on python. In the live Claude
+# hook runtime python3 can resolve to a Windows Store alias stub that prints nothing
+# and exits 0 — a `|| python` chain keyed on exit status never fires, path comes back
+# empty, and the old `[ -z "$path" ] && exit 0` made every rule a no-op (fail-open).
+# So: python is only an OPTIONAL first attempt (fast, handles JSON escapes); the real
+# extractor is a pure-bash/sed fallback that runs whenever the python result is EMPTY
+# (not merely when it exits non-zero). jq is not reliably installed on Windows/Git Bash.
 input=$(cat)
-path=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" 2>/dev/null || \
-      echo "")
-agent_type=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
-      printf '%s' "$input" | python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null || \
-      echo "")
 
-# No path? allow (nothing to evaluate)
-[ -z "$path" ] && exit 0
+# Empty (or whitespace-only) stdin → nothing to evaluate → allow.
+if [ -z "$(printf '%s' "$input" | tr -d '[:space:]')" ]; then
+    exit 0
+fi
+
+path=$(printf '%s' "$input" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+[ -z "$path" ] && path=$(printf '%s' "$input" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
+[ -z "$path" ] && path=$(printf '%s' "$input" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+agent_type=$(printf '%s' "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null)
+[ -z "$agent_type" ] && agent_type=$(printf '%s' "$input" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_type','') or '')" 2>/dev/null)
+[ -z "$agent_type" ] && agent_type=$(printf '%s' "$input" | sed -n 's/.*"agent_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+# agent_type may legitimately be absent (main thread) — an empty value here is treated
+# as MAIN-THREAD below (most restrictive path, Rule 2.5). No fail-open risk.
+
+# stdin was non-empty but no file_path parsed. A Write|Edit call always carries
+# file_path, so an empty result means the parse failed — refuse to fail open.
+if [ -z "$path" ]; then
+    echo "BLOCKED by hook: could not parse tool input (no file_path found) — refusing to fail open." >&2
+    exit 2
+fi
 
 # Normalize absolute path → relative if under project root
 project_root=$(pwd)
@@ -41,10 +62,13 @@ case "$rel" in
         block ".kimi/ is Kimi CLI's territory. Claude never writes there. Use .ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md to request the change." ;;
     .kiro|.kiro/*)
         block ".kiro/ is Kiro CLI's territory. Claude never writes there. Use .ai/handoffs/to-kiro/open/YYYYMMDDHHMM-slug.md to request the change." ;;
+    # TOMBSTONE (2026-07-09): KimiGraph/KiroGraph removed entirely per ADR-0003
+    # amendment (owner directive). Blocks retained against accidental recreation
+    # of the dirs — nothing should ever write here again.
     .kimigraph|.kimigraph/*)
-        block ".kimigraph/ is Kimi's code-graph territory (KimiGraph tool). Claude never writes there." ;;
+        block ".kimigraph/ was KimiGraph's dir — tool REMOVED 2026-07-09 (ADR-0003 amendment). Nothing writes here anymore." ;;
     .kirograph|.kirograph/*)
-        block ".kirograph/ is Kiro's code-graph territory (KiroGraph tool). Claude never writes there." ;;
+        block ".kirograph/ was KiroGraph's dir — tool REMOVED 2026-07-09 (ADR-0003 amendment). Nothing writes here anymore." ;;
 esac
 
 # Rule 2 — sensitive-file patterns. Block even for orchestrator; user must write manually.
@@ -125,7 +149,7 @@ if [ -z "$agent_type" ]; then
         .ai|.ai/*) : ;;                                  # shared framework state
         .claude|.claude/*) : ;;                          # Claude config
         CLAUDE.md|AGENTS.md) : ;;                        # Claude-owned root contracts
-        CRUSH.md|.crush.json) : ;;                       # Crush custodianship (ADR-0001)
+        opencode.json|.opencode|.opencode/*) : ;;        # OpenCode custodianship (ADR-0001/0002 amendments 2026-07-09)
         .codegraph|.codegraph/*) : ;;                    # Claude's graph dir
         .mcp.json|.mcp.json.example) : ;;                # Claude's MCP config
         *)
@@ -140,7 +164,7 @@ case "$rel" in
     */*) exit 0 ;;    # has slash → not at root → allow
     "") exit 0 ;;     # empty → skip
     # Category A — docs entry points
-    AGENTS.md|README.md|CLAUDE.md|CRUSH.md) exit 0 ;;
+    AGENTS.md|README.md|CLAUDE.md) exit 0 ;;
     LICENSE|LICENSE.*) exit 0 ;;
     CHANGELOG|CHANGELOG.*) exit 0 ;;
     CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md) exit 0 ;;
@@ -150,8 +174,9 @@ case "$rel" in
     .editorconfig) exit 0 ;;
     # Category D — platform / CI-vendor dotfiles at root
     .dockerignore|.gitlab-ci.yml) exit 0 ;;
-    # Category E — MCP convention + Crush config (Claude is Crush's custodian per ADR-0001/0002)
-    .mcp.json|.mcp.json.example|.crush.json) exit 0 ;;
+    # Category E — MCP convention + OpenCode config (Claude is OpenCode's custodian per ADR-0001/0002
+    # amendments 2026-07-09)
+    .mcp.json|.mcp.json.example|opencode.json) exit 0 ;;
     # Categories F/G/H — amend this allowlist alongside the ADR when a language or tool is chosen.
     # Examples to uncomment later: package.json, pyproject.toml, Cargo.toml, go.mod, .nvmrc, .python-version, .tool-versions
     *)

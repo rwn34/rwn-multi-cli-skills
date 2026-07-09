@@ -2,12 +2,11 @@ import { cpSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const FRAMEWORK_DIRS = ['.ai', '.claude', '.kimi', '.kiro', '.archive'];
+const FRAMEWORK_DIRS = ['.ai', '.claude', '.kimi', '.kiro', '.archive', 'scripts/git-hooks'];
 const FRAMEWORK_FILES = [
   'CLAUDE.md',
   'AGENTS.md',
-  'CRUSH.md',
-  '.crush.json',
+  'opencode.json',
   'docs/architecture/0001-root-file-exceptions.md',
   '.github/workflows/framework-check.yml',
   '.codegraph/config.json',

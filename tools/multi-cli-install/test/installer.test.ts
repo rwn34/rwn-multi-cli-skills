@@ -81,8 +81,7 @@ describe('copyFrameworkFiles', () => {
     expect(existsSync(join(target, '.kiro'))).toBe(true);
     expect(existsSync(join(target, 'CLAUDE.md'))).toBe(true);
     expect(existsSync(join(target, 'AGENTS.md'))).toBe(true);
-    expect(existsSync(join(target, 'CRUSH.md'))).toBe(true);
-    expect(existsSync(join(target, '.crush.json'))).toBe(true);
+    expect(existsSync(join(target, 'opencode.json'))).toBe(true);
   });
 
   it('returns list of copied paths', () => {
@@ -226,13 +225,14 @@ describe('CodeGraph wiring', () => {
   });
 
   // ADR-0003 matrix: Claude → codegraph only (when CodeGraph config present);
-  // Kimi/Kiro → none; Crush → none, ever.
+  // Kimi/Kiro → none; OpenCode → none, ever (lane successor to Crush, ADR-0002
+  // amendment 2026-07-09).
   function seedCodegraphConfig(target: string): void {
     mkdirSync(join(target, '.codegraph'), { recursive: true });
     writeFileSync(join(target, '.codegraph', 'config.json'), '{ "include": [], "exclude": [] }\n');
   }
 
-  it('wireMcp wires codegraph only into .mcp.json — no other graphs, no .crush.json', () => {
+  it('wireMcp wires codegraph only into .mcp.json — no other graphs, no opencode.json', () => {
     const target = makeTempDir('wire-mcp-create');
     seedCodegraphConfig(target);
     const touched = wireMcp(target, false);
@@ -242,7 +242,7 @@ describe('CodeGraph wiring', () => {
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'codegraph', args: ['serve', '--mcp'] });
     expect(mcp.mcpServers.kirograph).toBeUndefined();
     expect(mcp.mcpServers.kimigraph).toBeUndefined();
-    expect(existsSync(join(target, '.crush.json'))).toBe(false);
+    expect(existsSync(join(target, 'opencode.json'))).toBe(false);
   });
 
   it('wireMcp is a no-op when the target has no CodeGraph config', () => {
@@ -251,7 +251,7 @@ describe('CodeGraph wiring', () => {
 
     expect(touched).toHaveLength(0);
     expect(existsSync(join(target, '.mcp.json'))).toBe(false);
-    expect(existsSync(join(target, '.crush.json'))).toBe(false);
+    expect(existsSync(join(target, 'opencode.json'))).toBe(false);
   });
 
   it('wireMcp merges codegraph into an existing .mcp.json without clobbering other servers', () => {
@@ -285,15 +285,15 @@ describe('CodeGraph wiring', () => {
     expect(mcp.mcpServers.codegraph).toEqual({ command: 'custom-codegraph', args: ['x'] });
   });
 
-  it('wireMcp never touches an existing .crush.json (Crush gets no graph, ever)', () => {
-    const target = makeTempDir('wire-mcp-crush');
+  it('wireMcp never touches an existing opencode.json (OpenCode gets no graph, ever)', () => {
+    const target = makeTempDir('wire-mcp-opencode');
     seedCodegraphConfig(target);
-    const crushBefore = JSON.stringify({ mcp: {} }, null, 2) + '\n';
-    writeFileSync(join(target, '.crush.json'), crushBefore);
+    const opencodeBefore = JSON.stringify({ permission: { edit: 'ask', bash: 'ask' } }, null, 2) + '\n';
+    writeFileSync(join(target, 'opencode.json'), opencodeBefore);
 
     const touched = wireMcp(target, false);
     expect(touched).toEqual(['.mcp.json']);
-    expect(readFileSync(join(target, '.crush.json'), 'utf-8')).toBe(crushBefore);
+    expect(readFileSync(join(target, 'opencode.json'), 'utf-8')).toBe(opencodeBefore);
   });
 
   it('wireMcp dry-run reports path but writes nothing', () => {
@@ -305,12 +305,12 @@ describe('CodeGraph wiring', () => {
     expect(existsSync(join(target, '.mcp.json'))).toBe(false);
   });
 
-  // ADR-0003 drift guard: the shipped .crush.json template must never carry
-  // graph MCP servers — otherwise every install hands Crush a graph even
-  // though wireMcp itself never touches .crush.json.
-  it('template .crush.json ships with no graph MCP servers', () => {
+  // ADR-0003 drift guard: the shipped opencode.json template must never carry
+  // graph MCP servers — otherwise every install hands OpenCode a graph even
+  // though wireMcp itself never touches opencode.json.
+  it('template opencode.json ships with no graph MCP servers', () => {
     const tplDir = resolveTemplateDir();
-    const raw = readFileSync(join(tplDir, '.crush.json'), 'utf-8');
+    const raw = readFileSync(join(tplDir, 'opencode.json'), 'utf-8');
     const parsed = JSON.parse(raw) as { mcp?: Record<string, unknown> };
 
     const graphServers = Object.keys(parsed.mcp ?? {}).filter((k) => /graph/i.test(k));

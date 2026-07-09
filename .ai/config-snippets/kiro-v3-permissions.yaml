@@ -1,0 +1,143 @@
+# Kiro CLI v3 — permissions.yaml TEMPLATE (owner-installed, NOT repo-enforced)
+# =============================================================================
+# WHY THIS IS A SNIPPET, NOT A REPO FILE:
+#   Per https://kiro.dev/docs/cli/v3/permissions, v3 reads permissions.yaml ONLY
+#   from user/workspace scope OUTSIDE the repository:
+#     - User scope:      ~/.kiro/settings/permissions.yaml
+#     - Workspace scope: ~/.kiro/workspace-roots/<hash(workspaceRoot)>/permissions.yaml
+#   "A cloned repo cannot inject permission rules." A committed .kiro/permissions.yaml
+#   would be DEAD TEXT (never loaded). Additionally the hardcoded Kiro scope ALWAYS
+#   DENIES agent writes to ~/.kiro/settings/, so no agent can install this for you —
+#   the OWNER must place it by hand.
+#
+# HOW TO INSTALL (owner, one-time, per machine):
+#   mkdir -p ~/.kiro/settings
+#   cp .ai/config-snippets/kiro-v3-permissions.yaml ~/.kiro/settings/permissions.yaml
+#   (or merge these rules into an existing ~/.kiro/settings/permissions.yaml)
+#
+# The REPO-committable, portable enforcement lives in .kiro/agents/orchestrator.md
+# frontmatter `permissions.rules` (travels with the repo, enforced when the
+# workspace is trusted). This user-scope file is the belt to that suspenders.
+#
+# Effects resolve by restrictiveness: deny > ask > allow. Unmatched calls default
+# to `ask`. These rules encode the same boundaries the v2 .sh guards enforce.
+# =============================================================================
+rules:
+  # --- DENY: other CLIs' config dirs (cross-CLI writes go via .ai/handoffs/) ---
+  - capability: fs_write
+    effect: deny
+    match:
+      - ".claude/**"
+      - "**/.claude/**"
+      - ".kimi/**"
+      - "**/.kimi/**"
+      - ".opencode/**"
+      - "**/.opencode/**"
+      - ".codegraph/**"
+      - "**/.codegraph/**"
+      - ".kimigraph/**"
+      - "**/.kimigraph/**"
+      - ".kirograph/**"
+      - "**/.kirograph/**"
+
+  # --- DENY: sensitive files (writes) ---
+  - capability: fs_write
+    effect: deny
+    match:
+      - "**/.env"
+      - "**/.env.*"
+      - "**/*.key"
+      - "**/*.pem"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/secrets.*"
+      - "**/credentials*"
+      - "**/.aws/**"
+      - "**/.ssh/**"
+
+  # --- DENY: sensitive files (reads) ---
+  - capability: fs_read
+    effect: deny
+    match:
+      - "**/.env"
+      - "**/.env.*"
+      - "**/*.key"
+      - "**/*.pem"
+      - "**/id_rsa*"
+      - "**/id_ed25519*"
+      - "**/secrets.*"
+      - "**/credentials*"
+
+  # --- DENY: destructive shell (compound commands are split & matched per sub-cmd) ---
+  - capability: shell
+    effect: deny
+    match:
+      - "rm -rf *"
+      - "rm -fr *"
+      - "git push --force*"
+      - "git push -f *"
+      - "git reset --hard*"
+      - "*DROP DATABASE*"
+      - "*TRUNCATE*"
+
+  # --- ASK: repo-root files not on the ADR-0001 allowlist ---
+  # Filesystem `*` matches within a SINGLE path component, i.e. repo-root files
+  # only (nested paths have separators and are unaffected). Deny unlisted root
+  # writes; the allowlist below mirrors docs/architecture/0001-root-file-exceptions.md.
+  - capability: fs_write
+    effect: deny
+    match:
+      - "*"
+    exclude:
+      - "README.md"
+      - "CLAUDE.md"
+      - "AGENTS.md"
+      - "LICENSE"
+      - "LICENSE.*"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "CODE_OF_CONDUCT.md"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".editorconfig"
+      - ".dockerignore"
+      - ".gitlab-ci.yml"
+      - ".mcp.json"
+      - ".mcp.json.example"
+      - "opencode.json"
+
+  # --- ALLOW: Kiro's own lane + shared framework + project source ---
+  - capability: fs_write
+    effect: allow
+    match:
+      - ".kiro/**"
+      - ".ai/**"
+      - "src/**"
+      - "tests/**"
+      - "docs/**"
+      - "infra/**"
+      - "migrations/**"
+      - "seeds/**"
+      - "config/**"
+      - "assets/**"
+      - "scripts/**"
+      - "tools/**"
+
+  # --- ALLOW: reads anywhere (except the sensitive deny above) ---
+  - capability: fs_read
+    effect: allow
+
+  # --- ALLOW: common non-destructive shell (destructive denied above) ---
+  - capability: shell
+    effect: allow
+    match:
+      - "git *"
+      - "npm *"
+      - "npx *"
+      - "node *"
+      - "bash *"
+      - "python *"
+      - "pytest *"
+      - "cargo *"
+      - "go *"

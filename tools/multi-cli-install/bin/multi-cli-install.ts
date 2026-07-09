@@ -2,7 +2,7 @@
 import {
   VERSION, inspect, classifyDirs, computeDefaults, logDecisions,
   planMigration, executePlan, applyPatches,
-  scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy, wireMcp,
+  scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy, wireMcp, wireGitHooks,
 } from '../src/index.js';
 import { writeFrameworkVersion } from '../src/upgrade/version.js';
 import { buildManifestFromInstalledTree, writeFrameworkManifest } from '../src/upgrade/manifest.js';
@@ -128,6 +128,12 @@ async function main() {
     const wired = wireMcp(targetDir, dryRun);
     for (const p of wired) console.log(`  ${p}`);
     if (wired.length === 0) console.log('  skipped (no CodeGraph config, or already wired)');
+    console.log('');
+
+    console.log('Wiring git pre-commit backstop (ADR-0005: core.hooksPath)...');
+    const hooksWired = wireGitHooks(targetDir, dryRun);
+    for (const p of hooksWired) console.log(`  ${p}`);
+    if (hooksWired.length === 0) console.log('  skipped (no pre-commit hook found)');
     console.log('');
 
     // Phase A: write framework version marker + manifest for future --upgrade support.

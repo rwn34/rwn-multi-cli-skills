@@ -10,7 +10,7 @@
 
 A **template** — a starting point you drop into a project — that gives you:
 
-1. **Three AI CLIs coordinating on shared state.** Claude Code (architect/orchestrator), Kimi CLI (high-throughput workhorse), Kiro CLI (premium reasoning via Opus 4.6). They read the same activity log, queue work for each other via file-based handoffs, share a single source of truth for agent definitions. A fourth CLI, Crush, participates as a narrow-scope ops/release operator (see `docs/architecture/0002-cli-role-topology.md`).
+1. **Three AI CLIs coordinating on shared state.** Claude Code (architect/orchestrator), Kimi CLI (high-throughput workhorse), Kiro CLI (premium reasoning via Opus 4.6). They read the same activity log, queue work for each other via file-based handoffs, share a single source of truth for agent definitions. A fourth CLI, OpenCode, participates as a narrow-scope ops/release operator (see `docs/architecture/0002-cli-role-topology.md`, amended 2026-07-09: OpenCode replaces Crush).
 
 2. **Hard write boundaries.** Each CLI can edit only its own config dir + shared `.ai/` + your project code. A hook layer enforces this — if Claude tries to write to `.kiro/`, the write is blocked before it hits disk.
 
@@ -439,9 +439,9 @@ The catalog is the single source of truth: [`.ai/instructions/agent-catalog/prin
 | Claude Code | `.claude/**`, `.ai/**`, project source | `.kimi/**`, `.kiro/**` |
 | Kimi CLI | `.kimi/**`, `.ai/**`, project source | `.claude/**`, `.kiro/**` |
 | Kiro CLI | `.kiro/**`, `.ai/**`, project source | `.claude/**`, `.kimi/**` |
-| Crush | `.ai/**` (activity log, reports, handoffs) | Everything else — no project-source writes, no other CLI dirs (prompt-level enforcement only; see known-limitations) |
+| OpenCode | `.ai/**` (activity log, reports, handoffs) | Everything else — no project-source writes, no other CLI dirs (harness-level permissions + `.opencode/plugin/` framework-guard) |
 
-Enforced by pre-write hooks on all three CLIs. Violations are blocked before filesystem writes happen. Crush has no hook layer — its boundaries are prompt-enforced via `CRUSH.md` only (see `.ai/known-limitations.md`).
+Enforced by pre-write hooks on all three CLIs. Violations are blocked before filesystem writes happen. OpenCode's boundaries are enforced mechanically too — harness-level `allow`/`ask`/`deny` permissions plus a JS framework-guard plugin (see `.ai/known-limitations.md` for history).
 
 ### Safety hooks (what they block)
 
@@ -482,19 +482,17 @@ Shared instruction content (orchestrator rules, agent catalog, coding guidelines
 
 Filenames use UTC timestamps: `YYYYMMDDHHMM-slug.md` (e.g., `202604201530-add-auth-endpoint.md`). This avoids the race condition that `NNN-slug.md` creates when two CLIs dispatch handoffs in the same second. Legacy `NNN-slug.md` handoffs are grandfathered.
 
-## Code knowledge graphs (optional)
+## Code knowledge graph (optional)
 
-Each CLI has its own optional local code-knowledge-graph tool — **CodeGraph** (Claude), **KimiGraph** (Kimi), **KiroGraph** (Kiro). All three share the same architecture (tree-sitter parser → SQLite index → MCP server) and drop typical exploration from 10+ file reads to a single graph query. All three are **optional** — the framework works fine without them.
+Claude Code has an optional local code-knowledge-graph tool — **CodeGraph** (tree-sitter parser → SQLite index → MCP server). It drops typical exploration from 10+ file reads to a single graph query. It is **optional** — the framework works fine without it.
 
 | CLI | Tool | Install command |
 |---|---|---|
 | Claude | CodeGraph | `npx @colbymchenry/codegraph` |
-| Kimi | KimiGraph | `npm install -g rwn-kimigraph` then `kimigraph install` |
-| Kiro | KiroGraph | source-build from `https://github.com/davide-desio-eleva/kirograph` (no npm release yet — see plan for steps) |
 
-Write boundaries: each CLI can only write to its own graph dir (`.codegraph/`, `.kimigraph/`, `.kirograph/`); cross-graph writes are blocked by the existing pretool hook. At adoption these are structural-only (no embeddings); semantic similarity can be enabled later via each tool's own opt-in config.
+KimiGraph (Kimi) and KiroGraph (Kiro) were removed 2026-07-09 by owner directive — see the ADR-0003 amendment in [`docs/architecture/0003-code-graph-rationalization.md`](./docs/architecture/0003-code-graph-rationalization.md). CodeGraph is the only graph in the framework. Write boundary: only Claude writes `.codegraph/`; the pretool hook blocks other writes. Structural-only at adoption (no embeddings).
 
-The canonical cross-CLI usage rules live in [`.ai/instructions/code-graphs/principles.md`](./.ai/instructions/code-graphs/principles.md) — AI agents in this project follow that SSOT automatically (via each CLI's native steering replica) when a graph is active, preferring graph queries over file reads for structural questions. See [.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md](./.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md) for the full rationale and per-tool tradeoffs.
+The canonical usage rules live in [`.ai/instructions/code-graphs/principles.md`](./.ai/instructions/code-graphs/principles.md) — AI agents in this project follow that SSOT automatically when the graph is active, preferring graph queries over file reads for structural questions.
 
 ## Directory map
 
@@ -618,7 +616,7 @@ This template is actively maintained. Expect iteration, expect some things to mo
 - [`.ai/instructions/agent-catalog/principles.md`](./.ai/instructions/agent-catalog/principles.md) — 13-agent roster
 - [`.ai/instructions/code-graphs/principles.md`](./.ai/instructions/code-graphs/principles.md) — Code-graphs SSOT (cross-CLI graph principles)
 - [`scripts/README.md`](./scripts/README.md) — Install script details
-- [`.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`](./.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md) — Code-graph adoption plan (CodeGraph/KimiGraph/KiroGraph)
+- [`.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md`](./.ai/research/codegraph-kirograph-kimigraph-adoption-plan.md) — Code-graph adoption plan (historical — KimiGraph/KiroGraph removed 2026-07-09, CodeGraph only)
 
 ## License
 

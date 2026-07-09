@@ -34,13 +34,14 @@ disagree, regenerate from here. Never edit the replicas directly.
 | `.ai/instructions/delivery-integrity/principles.md` | `.kimi/steering/delivery-integrity.md` | Kimi steering |
 | `.ai/instructions/delivery-integrity/principles.md` | `.kiro/steering/delivery-integrity.md` | Kiro steering |
 
-## Crush (no replicas)
+## OpenCode (no replicas)
 
-Crush has no generated replicas: it is a context-file-only CLI (no
-skill/steering channel), so its contract is self-contained in `CRUSH.md` at
-project root, maintained by Claude Code as custodian (ADR-0001 note,
-ADR-0002 role). When an SSOT rule materially changes Crush's obligations,
-update `CRUSH.md` by hand — it is intentionally a digest, not a byte-identical
+OpenCode has no generated replicas: its contract is self-contained in
+`AGENTS.md` at project root (OpenCode reads it natively as its always-loaded
+contract), maintained by Claude Code as custodian (ADR-0001 note amended
+2026-07-09, ADR-0002 role — OpenCode replaces Crush). When an SSOT rule
+materially changes OpenCode's obligations, update the OpenCode-facing content
+of `AGENTS.md` by hand — it is intentionally a digest, not a byte-identical
 replica, and is excluded from `check-ssot-drift.sh`.
 
 ## Copy commands

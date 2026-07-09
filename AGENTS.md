@@ -1,12 +1,16 @@
 # AGENTS.md
 
+**This file is a ROUTER, not an identity. Determine which CLI you are from
+how you were launched, then read YOUR OWN contract file below. Never adopt
+another CLI's contract.**
+
 This project is worked on by multiple AI CLIs — Claude Code (architect +
 orchestrator + final reviewer), Kimi CLI (executor + tester), Kiro CLI
-(executor + tester), plus Crush as general helper + DevOps deployment
-operator (ADR-0002, amended 2026-07-08) — sharing state via a single source
-of truth plus a cross-CLI activity log. Each CLI stays in its lane; role
-definitions and limitations live in the operating-prompt SSOT
-(`.ai/instructions/operating-prompt/principles.md` §4).
+(executor + tester), plus OpenCode as general helper + DevOps deployment
+operator (ADR-0002 Stage 2, Crush replacement per owner decision 2026-07-09)
+— sharing state via a single source of truth plus a cross-CLI activity log.
+Each CLI stays in its lane; role definitions and limitations live in the
+operating-prompt SSOT (`.ai/instructions/operating-prompt/principles.md` §4).
 
 ## Shared framework
 
@@ -24,7 +28,7 @@ Each CLI reads its own contract from its native always-loaded path:
 | Claude Code | `/CLAUDE.md` (project root — Claude's native auto-load path) |
 | Kimi CLI | `.kimi/steering/00-ai-contract.md` |
 | Kiro CLI | `.kiro/steering/00-ai-contract.md` |
-| Crush | `/CRUSH.md` (project root — Crush's native context file; Claude-maintained per ADR-0001) |
+| OpenCode | `.opencode/contract.md` (loaded via `opencode.json` agent prompt) |
 
 A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 `.claude/` can locate Claude's contract without knowing Claude's conventions.

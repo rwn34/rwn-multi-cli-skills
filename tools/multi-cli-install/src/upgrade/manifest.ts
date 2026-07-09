@@ -7,8 +7,7 @@ const FRAMEWORK_DIRS = ['.ai', '.claude', '.kimi', '.kiro', '.archive'];
 const FRAMEWORK_FILES = [
   'CLAUDE.md',
   'AGENTS.md',
-  'CRUSH.md',
-  '.crush.json',
+  'opencode.json',
   'docs/architecture/0001-root-file-exceptions.md',
   '.github/workflows/framework-check.yml',
   '.codegraph/config.json',
@@ -23,6 +22,8 @@ const EXCLUDE_PREFIXES = [
   '.ai/handoffs/to-kimi/done/',
   '.ai/handoffs/to-kiro/open/',
   '.ai/handoffs/to-kiro/done/',
+  '.ai/handoffs/to-opencode/open/',
+  '.ai/handoffs/to-opencode/done/',
   '.ai/activity/',
   '.ai/reports/',
   '.ai/research/',

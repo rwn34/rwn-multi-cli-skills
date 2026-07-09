@@ -1,5 +1,5 @@
 # Launch4Panes.ps1 - Entry point for rwn-4AI-panes
-# Opens Windows Terminal with Selector (full width), which splits into Claude|Kiro|Kimi|Crush
+# Opens Windows Terminal with Selector (full width), which splits into Claude|Kiro|Kimi|OpenCode
 
 $ErrorActionPreference = "SilentlyContinue"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

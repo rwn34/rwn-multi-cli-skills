@@ -288,7 +288,7 @@ overwrite an existing registry.
 
 | Scope | Where | Between |
 |---|---|---|
-| **Intra-project** | `project-x/.ai/handoffs/` | a project's Claude ↔ its executors (Kiro/Kimi/Crush) |
+| **Intra-project** | `project-x/.ai/handoffs/` | a project's Claude ↔ its executors (Kiro/Kimi/OpenCode) |
 | **Inter-orchestrator** | `.fleet/handoffs/` | Claude-A ↔ Claude-B across projects |
 
 Cross-project work is **always** a handoff written into the recipient's

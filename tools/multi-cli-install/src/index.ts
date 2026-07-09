@@ -9,4 +9,4 @@ export { planMigration, executePlan } from './migration/index.js';
 export type * from './migration/types.js';
 export { generateProjectContext, applyPatches } from './patcher/index.js';
 export type * from './patcher/types.js';
-export { scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy, wireMcp } from './installer/index.js';
+export { scaffoldGreenfield, copyFrameworkFiles, resolveTemplateDir, sanitizeState, adaptPolicy, wireMcp, wireGitHooks } from './installer/index.js';

@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Universal cross-CLI commit backstop  (ADR-0005)
+# =============================================================================
+# Repo-level git pre-commit hook, versioned and wired via `core.hooksPath`.
+# It is the ONE mechanical enforcement layer that fires for EVERY CLI regardless
+# of runtime: headless (`kimi -p`), trust-all (`kiro --trust-all-tools`),
+# subagent, or hookless-default agents — all of them ultimately run `git commit`,
+# and this hook sits on that chokepoint.
+#
+# It cannot stop a bad *write*; it stops a bad write from being *committed*
+# (the action that actually corrupts shared cross-CLI state). See
+# .ai/reports/claude-2026-07-09-validation-rollup.md §4 for the rationale.
+#
+# PURE bash/sed. NO python: the per-CLI hooks failed open because python3 on this
+# host is a WindowsApps alias stub (empty stdout, exit 0). Do not reintroduce it.
+#
+# Owner override (in a pinch): `git commit --no-verify`.
+#
+# Sourcing with PRECOMMIT_LIB=1 defines the decision functions WITHOUT running the
+# hook — this is how scripts/git-hooks/test-pre-commit.sh exercises the logic.
+# =============================================================================
+
+# ---- Decision functions (pure; testable) -----------------------------------
+
+# _is_sensitive <path> — 0 if the path is a secret/credential file (any depth).
+_is_sensitive() {
+    case "$1" in
+        .env|.env.*|*/.env|*/.env.*)                          return 0 ;;
+        *.key|*.pem|*.p12|*.pfx)                              return 0 ;;
+        id_rsa*|*/id_rsa*|id_ed25519*|*/id_ed25519*)          return 0 ;;
+        .aws/*|*/.aws/*|.ssh/*|*/.ssh/*)                      return 0 ;;
+        secrets.*|*/secrets.*)                                return 0 ;;
+        credentials*|*/credentials*)                          return 0 ;;
+    esac
+    return 1
+}
+
+# _is_tombstone <path> — 0 if the path is under a removed-graph dir.
+# KimiGraph/KiroGraph were removed 2026-07-09 (ADR-0003 amendment); nothing
+# should ever be committed under these paths again.
+_is_tombstone() {
+    case "$1" in
+        .kimigraph|.kimigraph/*|.kirograph|.kirograph/*) return 0 ;;
+    esac
+    return 1
+}
+
+# _territory_violation <committer> <path> — 0 if <committer> may NOT commit <path>
+# because it lives in ANOTHER CLI's config dir. Shared .ai/ is writable by all
+# (except OpenCode, whose lane is a strict whitelist). Source writes by
+# claude/kimi/kiro are fine — this catches WRONG-CLI writes to config dirs.
+_territory_violation() {
+    committer="$1"; p="$2"
+    case "$committer" in
+        claude-code)
+            case "$p" in .kimi/*|.kiro/*) return 0 ;; esac ;;
+        kimi-cli)
+            case "$p" in .claude/*|.kiro/*|.opencode/*|opencode.json) return 0 ;; esac ;;
+        kiro-cli)
+            case "$p" in .claude/*|.kimi/*|.opencode/*|opencode.json) return 0 ;; esac ;;
+        opencode)
+            # OpenCode's lane is a whitelist: activity log, reports, handoffs ONLY.
+            case "$p" in
+                .ai/activity/log.md|.ai/reports/*|.ai/handoffs/*) return 1 ;;
+                *) return 0 ;;
+            esac ;;
+        *)
+            # Unknown / unset committer → strictest: block ALL CLI-owned config dirs.
+            case "$p" in .claude/*|.kimi/*|.kiro/*|.opencode/*) return 0 ;; esac ;;
+    esac
+    return 1
+}
+
+# _root_new_violation <path> — 0 if <path> is a repo-root file (no slash) NOT in
+# the ADR-0001 allowlist. Mirrors .claude/hooks/pretool-write-edit.sh Rule 3.
+# Caller applies this ONLY to newly-added files.
+_root_new_violation() {
+    p="$1"
+    case "$p" in
+        */*) return 1 ;;   # has slash → not at root
+        "")  return 1 ;;
+    esac
+    case "$p" in
+        # Category A — docs entry points
+        AGENTS.md|README.md|CLAUDE.md)                  return 1 ;;
+        LICENSE|LICENSE.*)                              return 1 ;;
+        CHANGELOG|CHANGELOG.*)                          return 1 ;;
+        CONTRIBUTING.md|SECURITY.md|CODE_OF_CONDUCT.md) return 1 ;;
+        # Category B — git-mandated dotfiles
+        .gitignore|.gitattributes)                      return 1 ;;
+        # Category C — editor-mandated dotfile
+        .editorconfig)                                  return 1 ;;
+        # Category D — platform / CI-vendor dotfiles at root
+        .dockerignore|.gitlab-ci.yml)                   return 1 ;;
+        # Category E — MCP convention + OpenCode config
+        .mcp.json|.mcp.json.example|opencode.json)      return 1 ;;
+    esac
+    return 0   # at root, not allowlisted → violation
+}
+
+# When sourced as a library, stop here (do not run the hook body).
+if [ -n "$PRECOMMIT_LIB" ]; then
+    return 0 2>/dev/null || exit 0
+fi
+
+# ---- Hook body -------------------------------------------------------------
+
+# Committer identity drives the cross-CLI territory rule.
+committer_raw="$(git config user.name 2>/dev/null)"
+case "$committer_raw" in
+    claude-code|kimi-cli|kiro-cli|opencode) committer="$committer_raw" ;;
+    *) committer="unknown" ;;   # fail-CLOSED: strictest interpretation
+esac
+
+fail_closed() {
+    echo "pre-commit (ADR-0005): $1 — refusing to fail open. Fix or use 'git commit --no-verify'." >&2
+    exit 1
+}
+
+# Gather staged paths (NUL-delimited). Fail CLOSED if git cannot enumerate them.
+tmp_all="$(mktemp)" || fail_closed "mktemp failed"
+if ! git diff --cached --name-only -z > "$tmp_all" 2>/dev/null; then
+    rm -f "$tmp_all"
+    fail_closed "could not list staged files (git diff --cached failed)"
+fi
+
+tmp_add="$(mktemp)" || { rm -f "$tmp_all"; fail_closed "mktemp failed"; }
+if ! git diff --cached --diff-filter=A --name-only -z > "$tmp_add" 2>/dev/null; then
+    rm -f "$tmp_all" "$tmp_add"
+    fail_closed "could not list added files (git diff --cached failed)"
+fi
+
+offenders=""
+
+# Pass 1 — all staged paths: sensitive, tombstone, cross-CLI territory.
+while IFS= read -r -d '' p; do
+    [ -z "$p" ] && continue
+    p="$(printf '%s' "$p" | tr '\\' '/')"
+    reason=""
+    if _is_sensitive "$p"; then
+        reason="sensitive/secret file — never commit credential material"
+    elif _is_tombstone "$p"; then
+        reason="removed-graph tombstone (.kimigraph/ or .kirograph/, ADR-0003) — do not recreate"
+    elif _territory_violation "$committer" "$p"; then
+        reason="cross-CLI territory — committer '$committer' may not commit this path"
+    fi
+    [ -n "$reason" ] && offenders="${offenders}  - ${p}
+      ${reason}
+"
+done < "$tmp_all"
+
+# Pass 2 — newly-added paths only: root-file policy (ADR-0001).
+while IFS= read -r -d '' p; do
+    [ -z "$p" ] && continue
+    p="$(printf '%s' "$p" | tr '\\' '/')"
+    if _root_new_violation "$p"; then
+        offenders="${offenders}  - ${p}
+      new root-level file not in ADR-0001 allowlist (docs/architecture/0001-root-file-exceptions.md)
+"
+    fi
+done < "$tmp_add"
+
+rm -f "$tmp_all" "$tmp_add"
+
+if [ -n "$offenders" ]; then
+    {
+        echo "=============================================================================="
+        echo "COMMIT REJECTED — scripts/git-hooks/pre-commit (ADR-0005 governance backstop)"
+        echo "=============================================================================="
+        echo "Committer (git config user.name): ${committer_raw:-<unset>}  →  policy identity: '$committer'"
+        echo
+        echo "Offending staged paths:"
+        printf '%s' "$offenders"
+        echo "Fix: unstage the path(s)  ->  git reset <path>"
+        echo "     route cross-CLI changes through .ai/handoffs/ (the correct CLI commits them)."
+        echo "     sensitive files must never be committed."
+        echo
+        echo "Owner override (in a pinch):  git commit --no-verify"
+        echo "=============================================================================="
+    } >&2
+    exit 1
+fi
+
+exit 0

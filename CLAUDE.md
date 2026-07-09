@@ -2,10 +2,13 @@
 
 Multiple AI CLIs work in this project (Claude Code = you: architect +
 orchestrator + final reviewer; Kimi CLI and Kiro CLI: executors + testers who
-peer-review each other; Crush: general helper + DevOps deployment operator —
-see `CRUSH.md` + ADR-0002, amended 2026-07-08). They share state via `.ai/` so
-no CLI has to copy-paste another's output to stay coherent. You are custodian
-of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
+peer-review each other; OpenCode: general helper + DevOps deployment operator —
+see `AGENTS.md` + ADR-0002, amended 2026-07-09: OpenCode replaces Crush). They
+share state via `.ai/` so no CLI has to copy-paste another's output to stay
+coherent. You are custodian of OpenCode's files (`AGENTS.md` OpenCode-facing
+content, `opencode.json`, `.opencode/`) per ADR-0001 (amended 2026-07-09;
+`CRUSH.md`/`.crush.json` remain under your custodianship through their
+deprecation window until task-10 deletion).
 
 **Autonomy tiers (operating-prompt SSOT §8):** work autonomously on the
 reversible (Tier A: tests, reviews, reports, delegated edits, commits and

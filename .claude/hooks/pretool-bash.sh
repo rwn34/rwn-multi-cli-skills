@@ -3,11 +3,39 @@
 # Blocks destructive commands that should require explicit user action.
 # Reads tool call JSON from stdin; exit 2 + stderr to block.
 
-cmd=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-     python  -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" 2>/dev/null || \
-     echo "")
+# Extract the Bash `command` field from the tool-call JSON on stdin.
+#
+# CRITICAL (fail-CLOSED): extraction MUST NOT depend on python. In the live Claude
+# hook runtime python3 can resolve to a Windows Store alias stub that prints nothing
+# and exits 0 — a `|| python` chain keyed on exit status never fires, cmd comes back
+# empty, and the old `[ -z "$cmd" ] && exit 0` made every destructive-command rule a
+# no-op (fail-OPEN — the higher-severity twin of the write-edit hole fixed in 588ed9c).
+# So: python is only an OPTIONAL first attempt (fast, handles JSON escapes); the real
+# extractor is a pure-sed fallback that runs whenever the python result is EMPTY (not
+# merely when it exits non-zero). jq is not reliably installed on Windows/Git Bash.
+input=$(cat)
 
-[ -z "$cmd" ] && exit 0
+# Empty (or whitespace-only) stdin → nothing to evaluate → allow.
+if [ -z "$(printf '%s' "$input" | tr -d '[:space:]')" ]; then
+    exit 0
+fi
+
+cmd=$(printf '%s' "$input" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null)
+[ -z "$cmd" ] && cmd=$(printf '%s' "$input" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null)
+# sed fallback (python-less runtime). CAVEAT: Bash commands routinely contain quotes,
+# &&, pipes, and other JSON-escaped characters, so this is best-effort — not a JSON
+# parser. It grabs the "command" value greedily to the LAST double-quote on the line,
+# which is correct when command is the last/only large string field (the normal Bash
+# tool payload). An embedded escaped \" inside the command would be captured verbatim
+# (over-capture), which for a BLOCK hook is safe: it can only match MORE, never less.
+[ -z "$cmd" ] && cmd=$(printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p')
+
+# stdin was non-empty but no command parsed. A Bash tool call always carries
+# command, so an empty result means the parse failed — refuse to fail open.
+if [ -z "$cmd" ]; then
+    echo "BLOCKED by hook: could not parse tool input (no command found) — refusing to fail open." >&2
+    exit 2
+fi
 
 # Normalize whitespace to single spaces for matching
 norm=$(echo "$cmd" | tr -s ' \t' '  ')

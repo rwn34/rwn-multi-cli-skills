@@ -1,7 +1,7 @@
 # <Task title — one short clear line>
 Status: OPEN
-Sender: <claude-code | kimi-cli | kiro-cli | crush>
-Recipient: <claude-code | kimi-cli | kiro-cli | crush>
+Sender: <claude-code | kimi-cli | kiro-cli | opencode>
+Recipient: <claude-code | kimi-cli | kiro-cli | opencode>
 Created: YYYY-MM-DD HH:MM
 Auto: yes
 Risk: <A | B | C>

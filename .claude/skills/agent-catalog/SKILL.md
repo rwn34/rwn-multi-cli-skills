@@ -41,10 +41,14 @@ All subagents are denied write access to these paths.
 
 **Per-CLI nuance:** while this catalog lists all four framework dirs as the
 orchestrator's write scope, each CLI's implementation narrows this to **its own
-dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) are
-hard-blocked by each CLI's pre-write hook and always go through the handoff
-queue (`.ai/handoffs/`) — never direct. This matches the same nuance in
-`.ai/instructions/orchestrator-pattern/principles.md`.
+dir + the shared `.ai/`**. Cross-CLI writes (e.g., Claude editing `.kimi/`) must
+always go through the handoff queue (`.ai/handoffs/`) — never direct. Enforcement
+of this boundary is layered, not a single "hard block" (validation 2026-07-09,
+ADR-0007): the **git pre-commit backstop** (ADR-0005) is the universal mechanical
+net (every CLI, every mode); each CLI's pre-write hook enforces in interactive
+mode as best-effort defense-in-depth (headless enforcement varies by CLI — see
+`.ai/known-limitations.md`); prompt SAFETY RULES are the behavioral floor. Same
+nuance in `.ai/instructions/orchestrator-pattern/principles.md`.
 
 ## Reports directory
 
@@ -102,13 +106,15 @@ lane — see `docs/architecture/0002-cli-role-topology.md` (authoritative):
 - **Kimi CLI** — high-throughput executor + tester; peer-reviews Kiro's work.
 - **Kiro CLI** — premium-reasoning executor + tester; peer-reviews Kimi's
   work.
-- **Crush** — general helper + DevOps deployment operator (Stage 2 granted
-  2026-07-08: dry-run first, per-deploy human confirmation, refuse on dirty
+- **OpenCode** — general helper + DevOps deployment operator (Stage 2 granted
+  2026-07-08; OpenCode replaces Crush in this lane per ADR-0002 amendment
+  2026-07-09: dry-run first, per-deploy human confirmation, refuse on dirty
   tree/failing tests). Ops chores and release checklists — NOT code review,
-  never source edits. No hook layer: `CRUSH.md` SAFETY RULES are its only
-  guardrail.
+  never source edits. Guardrails are mechanical: harness-level
+  `allow`/`ask`/`deny` permissions + `.opencode/plugin/` framework-guard
+  hooks; contract in `AGENTS.md`.
 - **Deploy separation:** Kimi and Kiro have NO deploy lane — deploy actions
-  are out of scope for their `release-engineer` agents. Crush deploys;
+  are out of scope for their `release-engineer` agents. OpenCode deploys;
   Claude's `release-engineer` is the fallback lane (same conditions).
   Author ≠ reviewer ≠ deployer.
 

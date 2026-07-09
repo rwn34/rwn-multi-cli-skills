@@ -14,10 +14,10 @@ conventions.
 
 ## Who can edit what (reminder)
 
-- **Claude Code** edits: `.claude/`, `.ai/`, `CLAUDE.md`, `AGENTS.md`, any non-CLI path. Also custodian of Crush's files (`CRUSH.md`, `.crush.json`) per ADR-0001.
+- **Claude Code** edits: `.claude/`, `.ai/`, `CLAUDE.md`, `AGENTS.md`, any non-CLI path. Also custodian of OpenCode's files (`AGENTS.md` OpenCode-facing content, `opencode.json`, `.opencode/`) per ADR-0001 (amended 2026-07-09).
 - **Kimi CLI** edits: `.kimi/` (project), `~/.kimi/` (global), any non-CLI path.
 - **Kiro CLI** edits: `.kiro/` (project), `~/.kiro/` (global), any non-CLI path.
-- **Crush** edits: `.ai/` only (activity log, reports, handoffs). Its own config is Claude-maintained — Crush requests changes via `to-claude/`.
+- **OpenCode** edits: `.ai/` only (activity log, reports, handoffs). Its own config is Claude-maintained — OpenCode requests changes via `to-claude/`.
 
 Any CLI can edit `.ai/` (shared SSOT + docs + handoffs queue + activity log). When a
 CLI needs a change in another CLI's folder, it writes a handoff to
@@ -38,7 +38,7 @@ Claude to update something in `.claude/` or in Claude's portion of the shared do
     ├── to-kiro/
     │   ├── open/
     │   └── done/
-    └── to-crush/
+    └── to-opencode/            (renamed from to-crush/ 2026-07-09; done/ history preserved)
         ├── open/
         └── done/
 

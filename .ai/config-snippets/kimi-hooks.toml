@@ -3,8 +3,10 @@
 # =============================================================================
 # What:   Wires the project's 4 bash guard scripts into Kimi Code CLI so they
 #         fire automatically on every tool use (root agent + subagents).
-# How:    Append this entire block to your global ~/.kimi/config.toml, then
+# How:    Append this entire block to your global ~/.kimi-code/config.toml, then
 #         restart Kimi Code CLI (or start a fresh session).
+#         Note: hooks run in interactive sessions; they are NOT executed by
+#         `kimi -p` headless prompt mode.
 # Scope:  These guards enforce project policy — ADR-0001 root-file allowlist,
 #         framework-directory boundaries, sensitive-file protection, and
 #         destructive-command blocking.
@@ -21,7 +23,7 @@
 # SAFETY-CHECK.PS1 COEXISTENCE
 # ----------------------------
 # Your existing config.toml probably already has a safety-check.ps1 hook
-# (matched on Shell). That hook is a BROAD safety net — it blocks patterns
+# (matched on Bash). That hook is a BROAD safety net — it blocks patterns
 # that look dangerous in PowerShell. The destructive-guard.sh below is a
 # PROJECT-SPECIFIC policy layer — it knows about ADR-0001, .env rules,
 # git-force blocking, etc. Both can coexist safely:
@@ -33,36 +35,36 @@
 
 # --- Guard 1: Root file guard ---
 # Blocks writes to project root except ADR-0001 allowlist.
-# Fires before WriteFile and StrReplaceFile.
+# Fires before Write and Edit.
 [[hooks]]
 event = "PreToolUse"
-matcher = "WriteFile|StrReplaceFile"
+matcher = "Write|Edit"
 command = "bash .kimi/hooks/root-guard.sh"
 timeout = 10
 
 # --- Guard 2: Framework directory guard ---
 # Blocks writes to .claude/ and .kiro/ (other CLIs' framework dirs).
-# Fires before WriteFile and StrReplaceFile.
+# Fires before Write and Edit.
 [[hooks]]
 event = "PreToolUse"
-matcher = "WriteFile|StrReplaceFile"
+matcher = "Write|Edit"
 command = "bash .kimi/hooks/framework-guard.sh"
 timeout = 10
 
 # --- Guard 3: Sensitive file guard ---
 # Blocks writes to .env*, *.key, *.pem, id_rsa*, secrets.*, credentials.*, etc.
-# Fires before WriteFile and StrReplaceFile.
+# Fires before Write and Edit.
 [[hooks]]
 event = "PreToolUse"
-matcher = "WriteFile|StrReplaceFile"
+matcher = "Write|Edit"
 command = "bash .kimi/hooks/sensitive-guard.sh"
 timeout = 10
 
 # --- Guard 4: Destructive command guard ---
 # Blocks rm -rf /, DROP TABLE, git push --force, git reset --hard, etc.
-# Fires before Shell tool execution.
+# Fires before Bash tool execution.
 [[hooks]]
 event = "PreToolUse"
-matcher = "Shell"
+matcher = "Bash"
 command = "bash .kimi/hooks/destructive-guard.sh"
 timeout = 10

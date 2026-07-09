@@ -5,37 +5,107 @@ Any AI CLI hitting behavior that seems wrong should check here first.
 
 ---
 
-## Crush — no hook layer at all; runs permission-bypassed in daily use
+## Enforcement reality: hooks are NOT a blanket "hard block" (characterized 2026-07-09)
 
-**Status:** Open by design. Documented 2026-07-07 at Crush onboarding (ADR-0002).
+**Status:** Characterized by the cross-CLI validation campaign 2026-07-09
+(`.ai/reports/claude-2026-07-09-validation-rollup.md`). This corrects an
+overclaim: the framework previously described per-CLI PreToolUse hooks as a
+"hard block" on cross-CLI/source/sensitive writes. **Live testing proved that
+is only true in some modes.** Do not rely on hooks as the sole guarantee.
 
-**What:** Crush has no pre-tool hook mechanism, no steering channel, and no
-subagent roster. In the daily 4AI-panes setup it launches as `crush --yolo`
-(see `.ai/research/4ai-panes-integration-notes.md`), so interactive permission
-prompts are off too. **Nothing at the tool layer prevents Crush from writing
-anywhere.**
+**Proven per-CLI/per-mode matrix (live, not unit-tested):**
 
-**Mitigations:**
-1. Prompt-level SAFETY RULES in `CRUSH.md` (root context file, always loaded)
-   replicate the guard rules — write scope limited to `.ai/` log/reports/
-   handoffs; destructive/deploy/publish commands forbidden; dry-run only.
-2. Role containment: ADR-0002 (amended 2026-07-08) gives Crush a general-helper
-   + deploy-operator lane — its briefs never require source edits, and every
-   mutating deploy command is individually human-confirmed.
-3. Custodianship: Claude maintains `CRUSH.md` / `.crush.json`, so Crush's own
-   drift can't erode its rules.
+| CLI | Interactive | Headless dispatch | Subagent |
+|---|---|---|---|
+| Claude | ✅ blocks | ✅ blocks | ✅ blocks (hooks inherit) |
+| OpenCode | ✅ | ✅ | ✅ (JS plugin fires every tool call) |
+| Kimi | ❌ **custom hooks did NOT fire live** (owner pane test 2026-07-09: `.kiro/` write succeeded; only Kimi's NATIVE secret guard blocked `.env`) | ❌ **`kimi -p` runs ZERO hooks** | ❌ prompt-only |
+| Kiro | ✅ (needs `--agent orchestrator`; bare chat = hookless default) | ❌ **`--trust-all-tools` makes hooks + `allowedPaths` inert** | ❌ subagent hooks never fire |
 
-**Residual risk:** prompt-level enforcement is SOFT (same class as the Kiro
-subagent gap below, but broader). Do not hand Crush tasks whose failure mode
-is destructive without a human gate.
+**Kimi live-test finding + ROOT CAUSE (2026-07-09):** an owner interactive-pane
+test showed a `.kiro/` write succeeding (not blocked). Kimi's own live diagnosis
+(17:16) found TWO causes: (1) **stale session** — Kimi caches hook config at
+session start; the test pane held config cached from 06:06 and never reloaded,
+so the fixed hooks weren't even loaded; (2) the guards had the **python-stub
+fail-open** bug (same class fixed in Claude/Kiro). BOTH now fixed: all 5
+`.kimi/hooks/*.sh` rewritten python-independent + fail-CLOSED (48/48; manual
+stdin tests block `.kiro/`/`.env`/root/destructive; fail-closed on malformed
+JSON). **Caveat that persists:** Kimi only (re)loads hook config at session
+START — a long-lived pane runs whatever config existed when it launched, so a
+config fix requires a fresh Kimi session to take effect. **FRESH-SESSION
+RE-TEST (2026-07-09, owner) STILL FAILED:** `.kiro/probe.txt` wrote through;
+only `.env` blocked (Kimi's native secret check). So the fail-closed rewrite +
+fresh session did NOT restore the block — Kimi's custom config `[[hooks]]`
+PreToolUse guards **do not fire for file-write tools** in this setup, period.
+**`--yolo` hypothesis REFUTED (owner no-yolo re-test 2026-07-09):** launched
+`kimi` WITHOUT `--yolo` (approval prompts active — "Approved for session:
+Writing .kiro/probe.txt" fired), and the `.kiro/` write STILL went through. So
+it is NOT the yolo flag. Definitive conclusion: **Kimi's config `[[hooks]]`
+PreToolUse guards do not fire for the `Write`/`Edit` file tools at all in this
+Kimi version — likely Kimi only fires PreToolUse for shell/`Bash`, not file
+writes.** This is a Kimi RUNTIME limitation, unfixable from our config; our
+entire `.kimi/hooks/*` layer (matcher/python/fail-closed fixes) perfects a
+script Kimi never invokes for Write. `.env` is caught only by Kimi's NATIVE
+secret check. We STOP here (ADR-0007 non-goal) — per-CLI hooks are unreliable
+and, for Kimi file-writes, non-functional. **The git pre-commit backstop (ADR-0005) is the guaranteed net** —
+LIVE-PROVEN to reject a `kimi-cli`→`.kiro/` commit ("committer 'kimi-cli' may
+not commit this path", exit 1): a bad Kimi write can hit local disk but CANNOT
+reach the shared repo. Kimi's native secret guard independently protects `.env`.
 
-**Update 2026-07-08:** Stage 2 GRANTED by owner directive (ADR-0002 amended):
-Crush is now general helper + DevOps deployment operator. The compensating
-controls, because Crush still has no hook layer: (a) mandatory dry-run before
-any mutating deploy command, (b) per-deploy human confirmation — deploys stay
-Tier-C hard-gated in the autonomy policy regardless of which CLI executes,
-(c) refuse on dirty tree / failing tests, (d) deploy briefs must enumerate the
-exact commands Crush may run — no improvisation.
+**Root causes:**
+- **Claude (now FIXED):** hooks parsed JSON via `python3`, which on Windows
+  resolves to the Store alias stub (empty stdout, exit 0) → `|| python`
+  fallback never fired → path empty → fail-OPEN. Fixed 2026-07-09
+  (python-independent sed extraction + fail-CLOSED): commits `588ed9c`
+  (write/edit), `c5afd79` (bash). 54/54 incl. python-less regression.
+- **Kimi:** `kimi -p` (headless) does not execute hooks at all (verified —
+  PreToolUse + SessionStart probes never fired). Interactive mode does.
+- **Kiro:** the mandatory headless flag `--trust-all-tools` auto-approves
+  path-violation prompts, so `allowedPaths` (an approval policy, not a hard
+  deny) and preToolUse hooks are both inert headless. Interactive + a
+  configured agent enforce.
+
+**What actually protects the framework:**
+1. **Interactive mode:** per-CLI hooks (all four, after the 2026-07-09 fixes).
+2. **Headless / trust-all / subagent:** **prompt-level SAFETY RULES** baked
+   into each executor's agent prompt (the model refusing) — soft but proven to
+   hold in the campaign's adversarial test (Kiro T-K3 PASS).
+3. **Universal mechanical net:** the **git pre-commit backstop** (ADR-0005) —
+   a repo-level hook that catches bad writes at the commit chokepoint
+   regardless of any CLI's runtime hook behavior. This is the only mechanical
+   layer that reaches headless/trust-all/hookless runtimes.
+
+**Mitigation / working rule:** treat prompt SAFETY RULES + the git pre-commit
+backstop as the real guarantees for unattended/headless work; treat per-CLI
+hooks as the interactive-mode + defense-in-depth layer. Never dispatch a
+security-sensitive change to a headless Kimi/Kiro session assuming its hooks
+will stop a bad write — they won't.
+
+---
+
+## Crush — no hook layer (CLOSED by OpenCode swap, 2026-07-09)
+
+**Status:** CLOSED 2026-07-09. Crush is replaced by OpenCode as the 4th CLI
+(ADR-0002 amendment 2026-07-09, owner directive) — the "no hook layer,
+prompt-only guardrails" gap this entry documented no longer applies to the
+lane. History: documented 2026-07-07 at Crush onboarding; Stage 2 granted
+2026-07-08; identity drift in daily `--yolo` use confirmed the gap as a
+practical failure and motivated the swap.
+
+**How the gap is closed:** OpenCode's guardrails are mechanical, not
+prompt-level — its permission system (`allow`/`ask`/`deny`) removes denied
+tools from the model's tool list at the harness level (smoke-test proven
+2026-07-09), and the JS plugin `.opencode/plugin/framework-guard.js` provides
+worktree-confinement / lane-guard parity with the other CLIs' hook layers.
+Per-deploy human confirmation is retained as policy (Tier C) regardless.
+
+**Minor known quirk (OpenCode):** the OpenCode TUI fails under
+headless/redirected launches with OpenTUI DLL error 126; it renders correctly
+in a real Windows Terminal session (owner-verified 2026-07-09). Headless work
+uses `opencode run` and is unaffected. Also: `opencode run` headless with
+`edit: "ask"` auto-rejects writes — the dispatcher passes `--auto`; the
+framework-guard plugin fires before the permission layer and remains the
+mechanical lane barrier.
 
 ---
 
@@ -88,33 +158,28 @@ runtime fix is the only hard guarantee.
 
 ---
 
-## Code graph index staleness (all three CLIs)
+## Code graph index staleness (CodeGraph)
 
-**Status:** Characterized 2026-04-26 by kimi-cli.
+**Status:** Characterized 2026-04-26 by kimi-cli. **Scope reduced 2026-07-09:**
+KimiGraph and KiroGraph were removed entirely (owner directive, ADR-0003
+amendment — single-graph topology), which also retires the KiroGraph
+subagent-hook staleness path below. CodeGraph (Claude) is the only graph.
 
-**What:** CodeGraph, KimiGraph, and KiroGraph all maintain a local SQLite index of
-code symbols. When source files change, the index must be re-synced. Each tool has
-auto-sync, but with different reliability:
+**What:** CodeGraph maintains a local SQLite index of code symbols. When source
+files change, the index must be re-synced. Auto-sync uses an OS file watcher
+(FSEvents/inotify/ReadDirectoryChangesW) — agent-agnostic, so subagent writes
+are synced too — but watchers can miss changes under load.
 
-| Tool | Sync mechanism | Subagent writes synced? |
-|---|---|---|
-| CodeGraph | OS file watcher (FSEvents/inotify/ReadDirectoryChangesW) | Yes (OS-level, agent-agnostic) |
-| KimiGraph | OS file watcher (`fs.watch`) | Yes (OS-level, agent-agnostic) |
-| KiroGraph | Kiro hooks (`fileEdited`/`fileCreated`/`fileDeleted`/`agentStop`) | **No** — blocked by Kiro subagent hook-inheritance bug |
-
-**Impact:** If a Kiro subagent edits files, KiroGraph's index goes stale silently.
-The next `kirograph_context` or `kirograph_search` may return outdated symbol
-locations or miss new symbols entirely.
-
-**Mitigation:**
-1. Run `kirograph sync` manually after subagent-heavy sessions.
-2. All three tools run a pre-query freshness check; if they detect a mismatch,
-   some will warn. Do not ignore warnings — run `sync`.
-3. For critical refactors, run a full `kirograph index --force` before starting.
+**Mitigation:** run `codegraph sync` if results look stale; do not ignore
+freshness warnings.
 
 **Acceptance:** Stale index is an advisory failure mode, not a safety issue. The
 worst case is wrong code locations in exploration results (LLM can verify by
 reading the file). No data loss risk.
+
+*Historical (pre-removal):* KiroGraph's hook-based sync missed Kiro subagent
+writes (platform bug #7671); KimiGraph used `fs.watch`. Both tools removed
+2026-07-09 — see ADR-0003 amendment.
 
 ---
 
@@ -161,6 +226,9 @@ v0.x → v1.0.0 stabilization.
 ## KiroGraph — `kirograph install` hangs on interactive prompts in non-TTY
 
 **Status:** Characterized 2026-04-26 by kiro-cli during Phase B Part A install.
+**RESOLVED BY REMOVAL 2026-07-09:** KiroGraph was removed entirely (owner
+directive, ADR-0003 amendment) — this limitation is retired with it. Entry
+kept as historical record only.
 
 **What:** `kirograph install` issues interactive prompts for embeddings,
 architecture, and caveman-mode opt-ins. In non-TTY contexts (CI, non-interactive
