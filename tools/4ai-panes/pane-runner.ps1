@@ -389,47 +389,69 @@ function Start-PaneRunner {
 
     try {
         while ($true) {
-            # Manual-override escape hatch: 'p' drops to the interactive CLI.
-            if ([Console]::KeyAvailable) {
-                $k = [Console]::ReadKey($true)
-                if ($k.KeyChar -eq 'p') {
-                    Write-Host "== PAUSED -> dropping to interactive $Cli (exit it to resume the loop) ==" -ForegroundColor Magenta
-                    Push-Location $ProjectDir
-                    try { Invoke-Expression (Get-InteractiveCmd -CliName $Cli) } finally { Pop-Location }
-                    Write-Host "== resumed supervisor loop ==" -ForegroundColor Magenta
+            # Per-iteration reset so the recovery catch below never releases a claim
+            # bound to a stale handoff from a previous iteration.
+            $handoff = $null
+            try {
+                # Manual-override escape hatch: 'p' drops to the interactive CLI.
+                if ([Console]::KeyAvailable) {
+                    $k = [Console]::ReadKey($true)
+                    if ($k.KeyChar -eq 'p') {
+                        Write-Host "== PAUSED -> dropping to interactive $Cli (exit it to resume the loop) ==" -ForegroundColor Magenta
+                        Push-Location $ProjectDir
+                        try { Invoke-Expression (Get-InteractiveCmd -CliName $Cli) } finally { Pop-Location }
+                        Write-Host "== resumed supervisor loop ==" -ForegroundColor Magenta
+                        continue
+                    }
+                }
+
+                $handoff = Get-QualifyingHandoff -ProjectDir $ProjectDir -CliName $Cli
+                if ($null -eq $handoff) {
+                    Start-Sleep -Seconds $PollSeconds
                     continue
                 }
-            }
 
-            $handoff = Get-QualifyingHandoff -ProjectDir $ProjectDir -CliName $Cli
-            if ($null -eq $handoff) {
+                if (Test-ClaimBlocks -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid) {
+                    # Another live pane already owns this project - skip, re-poll.
+                    Start-Sleep -Seconds $PollSeconds
+                    continue
+                }
+
+                # Per-handoff claim (ADR-0009 section 3): if another consumer holds a
+                # live claim on THIS handoff, skip just this one and re-poll.
+                if (-not (Claim-Handoff -Recipient $Cli -HandoffPath $handoff -Owner $Owner)) {
+                    $held = Test-HandoffClaimed -Recipient $Cli -HandoffPath $handoff
+                    $by = if ($held -and $held.owner) { $held.owner } else { 'another consumer' }
+                    Write-Host "-- skip $(Split-Path -Leaf $handoff) (claimed by $by) --" -ForegroundColor DarkGray
+                    Start-Sleep -Seconds $PollSeconds
+                    continue
+                }
+
+                Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
+                try {
+                    Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues | Out-Null
+                } finally {
+                    # Done-signal (moved to done/) or crash/pause: release both claims.
+                    Release-Handoff -Recipient $Cli -HandoffPath $handoff
+                    Remove-Claim -ProjectDir $ProjectDir -CliName $Cli
+                }
+            }
+            catch [System.Management.Automation.PipelineStoppedException] {
+                # Ctrl-C / intentional stop: let it propagate to the outer finally so
+                # the runner stops cleanly instead of looping forever.
+                throw
+            }
+            catch [System.OperationCanceledException] {
+                # PS 5.1 may surface a console cancel as OperationCanceled - also a stop.
+                throw
+            }
+            catch {
+                # Any OTHER error in this iteration must NOT take the pane offline.
+                Write-Host "== ALERT [$Cli] pane-runner iteration error: $($_.Exception.Message) -- recovering, still polling ==" -ForegroundColor Red
+                # Best-effort release so a mid-iteration failure never leaves a claim stuck.
+                try { if ($handoff) { Release-Handoff -Recipient $Cli -HandoffPath $handoff } } catch {}
+                try { Remove-Claim -ProjectDir $ProjectDir -CliName $Cli } catch {}
                 Start-Sleep -Seconds $PollSeconds
-                continue
-            }
-
-            if (Test-ClaimBlocks -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid) {
-                # Another live pane already owns this project - skip, re-poll.
-                Start-Sleep -Seconds $PollSeconds
-                continue
-            }
-
-            # Per-handoff claim (ADR-0009 section 3): if another consumer holds a
-            # live claim on THIS handoff, skip just this one and re-poll.
-            if (-not (Claim-Handoff -Recipient $Cli -HandoffPath $handoff -Owner $Owner)) {
-                $held = Test-HandoffClaimed -Recipient $Cli -HandoffPath $handoff
-                $by = if ($held -and $held.owner) { $held.owner } else { 'another consumer' }
-                Write-Host "-- skip $(Split-Path -Leaf $handoff) (claimed by $by) --" -ForegroundColor DarkGray
-                Start-Sleep -Seconds $PollSeconds
-                continue
-            }
-
-            Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
-            try {
-                Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues | Out-Null
-            } finally {
-                # Done-signal (moved to done/) or crash/pause: release both claims.
-                Release-Handoff -Recipient $Cli -HandoffPath $handoff
-                Remove-Claim -ProjectDir $ProjectDir -CliName $Cli
             }
         }
     } finally {
