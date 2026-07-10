@@ -4,6 +4,9 @@
 
 Accepted (owner-approved 2026-07-09)
 
+Extended by ADR-0009 (operator-over-fleet — 5-pane topology, auto-Claude
+reviewer, and Claude-to-Claude claim-lock coordination).
+
 This ADR realizes ADR-0007's **P1** — "Visible per-pane dispatch (Approach A),
 cwd / multi-tab-scoped, with a per-project claim-lock" — and elevates it from
 "nice UX" to the framework's operating spine. It sits on top of ADR-0004 (the
@@ -214,3 +217,18 @@ Because self-driving amplifies the two observed 2026-07-09 races, this build
   runner.
 - `.ai/tests/concurrency-test-protocol.md` — the never-run protocol this build
   must execute.
+
+## Note (2026-07-09): handoff protocol v3 alignment
+
+The cross-CLI handoff protocol was bumped from v2 to v3 today. Under v3 the
+**recipient self-retires** its own handoff — it sets the file's status to
+`DONE` and moves it from `.ai/handoffs/to-<recipient>/open/` to `.../done/`
+itself (lifecycle step 4, "Report + self-retire") — and the **sender validates
+post-hoc** (step 5), whereas in v2 the sender moved the file only after
+validating. Recipient-self-retire is therefore now the standard handoff-close
+mechanism across all four CLIs. This is consistent with this ADR's DECIDE /
+auto-continuation directive, where the done-signal is precisely "the handoff
+moved to `done/`" — the recipient closing its own loop is exactly the behavior
+the self-driving pane-runner already depends on to distinguish a completed run
+from a step-capped one. See `.ai/handoffs/README.md` "Protocol v3 (lifecycle of
+a single handoff) — 2026-07-09", steps 4–5.

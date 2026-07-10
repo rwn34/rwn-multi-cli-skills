@@ -1,3 +1,23 @@
+## 2026-07-10 07:18 — kiro-cli
+- Action: RESOLVED handoff 202607101530-clean-global-mcp-and-agent-noise (owner directed completion). Task 1 (kirograph MCP): re-confirmed already clean — `~/.kiro/settings/mcp.json` holds only the `github` server, zero kirograph/kimigraph refs; no action. Task 2 (13 agent-conflict warnings): reclassified from gated to Tier-B reversible cleanup — delegated coder subagent to MOVE (not delete) the 13 stale Apr-20 global framework agents (coder…ui-engineer) from `~/.kiro/agents/` into `~/.kiro/agents-backup-20260710/`. Verified: global agents dir now 8 files (agent_config.json.example, kiro_default, backend, devops, frontend, product, security-tester, uiux-tester), backup dir holds the 13. With no name collisions left, the 13 "Agent conflict — using workspace version" lines can no longer be emitted (root-cause proof; live TTY banner unverifiable headless). Self-retired handoff → done/.
+- Files: `~/.kiro/agents/` (13 moved out, global — outside repo tree), `~/.kiro/agents-backup-20260710/` (created, 13 files); `.ai/handoffs/to-kiro/{open→done}/202607101530-clean-global-mcp-and-agent-noise.md`; this log.
+- Decisions: MOVE-to-backup over hard delete for reversibility (`Move-Item ...backup-20260710\* ...\agents\` restores prior state). Kept the 7 Apr-16 globals + kiro_default (no workspace counterpart → don't conflict). Did NOT touch `github` MCP — its "did not load" failure (npx not on PATH) is out of this handoff's kirograph scope and needs a separate owner decision; the plaintext GitHub PAT in `~/.kiro/settings/mcp.json` remains flagged for rotation. Prepended log directly (no shell for the atomic append script).
+
+## 2026-07-10 07:12 — claude-code
+- Action: Pane-runner visibility fix landed (coder, commit 771b978) — every CLI's stdout+stderr now streams live to its pane via `Invoke-Expression $cmd 2>&1 | Out-Host` inside `$script:InvokeCli` (was bare Invoke-Expression whose capturable stdout got swallowed by the call-site `| Out-Null` — Kiro/OpenCode went dark while console-writing Kimi stayed visible), plus a `-- launching <cli> (streaming output below) --` heartbeat per run. Return hashtable stays clean (Out-Host emits nothing to the pipeline). 12/12 tests pass; reinstalled to ~/.rwn-auto/rwn-4AI-panes/pane-runner.ps1 (IDENTICAL diff, parse OK). Kiro investigated my noise-cleanup handoff 202607101530 and correctly refuted its premise (see below) — left it BLOCKED for owner decisions.
+- Files: tools/4ai-panes/pane-runner.ps1
+- Decisions: Stream via Out-Host inside InvokeCli (not removing the call-site Out-Null) so heartbeat+RUN/DONE banners stay clean AND stdout shows. My kirograph-MCP premise was WRONG — no kirograph MCP exists; Kiro's real startup noise = github MCP failing (npx not on PATH) + 13 duplicate global agents in ~/.kiro/agents/. Surfacing to owner: (a) remove 13 dup global agents? (b) github MCP handling; (c) SECURITY: plaintext GitHub PAT in ~/.kiro/settings/mcp.json — recommend rotation.
+
+## 2026-07-10 06:57 — kiro-cli
+- Action: investigated handoff 202607101530-clean-global-mcp-and-agent-noise (global startup noise). Findings correct the handoff's premise: (1) NO kirograph/kimigraph MCP entry exists anywhere in global Kiro config — grep of `~/.kiro/settings`, `~/.kiro/agents`, `~/.kiro/logs` returned 0 matches; `~/.kiro/settings/mcp.json` holds only a `github` server. The real "mcp server did not load correctly" is the `github` server: latest `~/.kiro/logs/20260709T092053888/mcp.log` shows `'npx' is not recognized ... Failed to connect`. (2) The 13 agent-conflict warnings come from `~/.kiro/agents/*.json` (coder…ui-engineer, dated Apr 20) duplicating the workspace `.kiro/agents/`. Left handoff OPEN as BLOCKED: task-1 needs no action (already clean); tasks 2–3 need file-deletion capability I lack (fs_write has no delete), an owner decision on cross-project blast radius, and a headless `kiro-cli` run I can't perform (no shell).
+- Files: — (read-only investigation; no config edits made). SECURITY FLAG: `~/.kiro/settings/mcp.json` stores a plaintext GitHub PAT under the `github` server env.
+- Decisions: Did NOT touch the `github` MCP (credentialed, out of the kirograph scope). Did NOT delete the 13 global agent duplicates — cross-project blast radius (other repos without workspace agents rely on the global roster) is a gated decision, and I have no delete tool. Recommend option (b) removing the redundant global framework agents once the owner confirms.
+
+## 2026-07-09 22:34 — kimi-cli
+- Action: processed handoff 202607091540-self-retire-protocol-v3 — adopted protocol-v3 recipient-self-retire rule in Kimi steering by updating `.kimi/steering/00-ai-contract.md` and bumping `.kimi/steering/operating-prompt.md` from v2 to v3.
+- Files: .kimi/steering/00-ai-contract.md, .kimi/steering/operating-prompt.md
+- Decisions: kept wording in Kimi steering conventions; self-retire rule now explicit alongside existing UTC-filename rule.
+
 # Activity Log
 
 Newest entries at the top. Each CLI prepends an entry after completing substantive work.
@@ -16,6 +36,61 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 `.kimi/steering/00-ai-contract.md`, `.kiro/steering/00-ai-contract.md`) for format and rules.
 
 ---
+
+## 2026-07-09 22:42 — claude-code
+- Action: Handoff protocol v2→v3 (owner-approved). Two clarifications: (1) handoff FILENAMES use UTC (`date -u`), Created/log lines stay local wall-clock — Kimi was the only compliant CLI; Claude/Kiro/OpenCode had used local in filenames; added a worked UTC-vs-local example to the handoff README. (2) Recipient SELF-RETIRES completed handoffs open→done; sender validates post-hoc (was: sender moves). Updated shared SSOT + Claude/OpenCode contracts directly; dispatched handoffs to Kiro + Kimi for their steering; delegated doc-writer to note v3 in ADR-0008.
+- Files: .ai/handoffs/README.md, .ai/handoffs/template.md, CLAUDE.md, AGENTS.md, .ai/handoffs/to-kiro/open/202607091540-utc-filenames-and-self-retire.md, .ai/handoffs/to-kimi/open/202607091540-self-retire-protocol-v3.md
+- Decisions: Housed the authoritative v3 rules in .ai/handoffs/README.md (protocol's home, no SSOT-replica cascade) rather than bloating operating-prompt/principles.md. Kiro/Kimi steering updates go via handoff (their territory); ADR-0008 note via doc-writer (docs/ is project source).
+
+## 2026-07-09 22:33 — kiro-cli
+- Action: processed handoff 202607091540-utc-filenames-and-self-retire — updated `.kiro/steering/00-ai-contract.md` Cross-CLI handoffs section with (1) UTC filename basis vs local `Created:`/log-time rule + worked UTC+7 example, and (2) recipient-self-retire protocol v3 (set Status DONE, move open/→done/ yourself; blocked → leave OPEN as BLOCKED). Both verification greps pass (UTC line + self-retire/v3 line). Self-retired this handoff to done/.
+- Files: .kiro/steering/00-ai-contract.md; .ai/handoffs/to-kiro/{open→done}/202607091540-utc-filenames-and-self-retire.md
+- Decisions: Deliberately did NOT edit `.kiro/steering/operating-prompt.md` (handoff step 3, "Handoff protocol v2" line at :119). It is a drift-checked SSOT replica of `.ai/instructions/operating-prompt/principles.md`; a Kiro-only v2→v3 bump would (a) fail check-ssot-drift.sh and (b) require propagating to `.claude/`/`.kimi/` replicas I cannot write. Flagged for a proper SSOT sync (edit SSOT, regenerate all replicas) — the same later-sync path ADR-0006/0007 already flag for operating-prompt.
+
+## 2026-07-09 22:36 — claude-code
+- Action: processed kiro's reply handoff 202607092216-test-count-reply-kiro (round-trip liveness test) — confirmed 1+3 = 4; outbound handoff 202607092220-test-count-roundtrip.md was already retired to to-kiro/done/ by kiro-cli itself (absent from to-kiro/open/), so no move needed there. Marked reply Status DONE with validation note, delegated infra-engineer to retire the reply to to-claude/done/; verified present in done/, absent from open/.
+- Files: .ai/handoffs/to-claude/done/202607092216-test-count-reply-kiro.md (Status DONE, moved from open/)
+- Decisions: Recipient (kiro) had already moved the outbound handoff per auto-continuation directive; my remaining work was validation + retiring the reply. File untracked, so move lands as fresh untracked path (no open/→done/ rename history until first commit) — same as prior reply retirements.
+
+## 2026-07-09 22:32 — claude-code
+- Action: validated kimi's reply handoff 202607091517-test-count-reply-kimi (round-trip liveness test) — confirmed 1+3 = 4; original to-kimi handoff already in to-kimi/done/. Marked reply Status DONE with validation note, delegated infra-engineer to retire it to to-claude/done/. Verified move (present in done/, absent from open/).
+- Files: .ai/handoffs/to-claude/done/202607091517-test-count-reply-kimi.md (Status DONE, moved from open/)
+- Decisions: File untracked, so move lands as fresh untracked path — no open/→done/ rename history until first commit (same as the opencode/kiro reply retirements).
+
+## 2026-07-09 22:27 — claude-code
+- Action: resumed and closed out handoff 202607092221-test-count-reply-opencode — validation (1+3=4) and Status DONE were already in place from the 22:24 run; remaining step was retiring the reply handoff itself. Delegated infra-engineer to move it to to-claude/done/; verified destination exists and open/ no longer holds it.
+- Files: .ai/handoffs/to-claude/done/202607092221-test-count-reply-opencode.md (moved from open/)
+- Decisions: File was untracked so the move lands as a fresh untracked path in git rather than a recorded rename — no open/→done/ rename history until first commit.
+
+## 2026-07-09 22:18 — kiro-cli
+- Action: closed out round-trip liveness test handoff 202607092220-test-count-roundtrip — retired the completed handoff (Status already DONE, 1+3=4 reply written at 22:16) to to-kiro/done/ via infra-engineer move; verified destination exists and open/ is empty.
+- Files: .ai/handoffs/to-kiro/done/202607092220-test-count-roundtrip.md (moved from open/)
+- Decisions: Moved myself per explicit continuation instruction; protocol default is sender (claude-code) retires, but auto-continuation directed the recipient to finish.
+
+## 2026-07-09 22:24 — claude-code
+- Action: per handoff 202607092221-test-count-reply-opencode — validated OpenCode's return value 1+3 = 4; completed round-trip. Marked reply handoff DONE, delegated infra-engineer to move original test handoff to done/.
+- Files: .ai/handoffs/to-claude/open/202607092221-test-count-reply-opencode.md (Status DONE), .ai/handoffs/to-opencode/done/202607092220-test-count-roundtrip.md (moved from open/)
+- Decisions: —
+
+## 2026-07-09 22:18 — kimi-cli
+- Action: per handoff 202607092220-test-count-roundtrip — completed reply handoff, logged, marked DONE, moved to done/
+- Files: .ai/handoffs/to-kimi/done/202607092220-test-count-roundtrip.md
+- Decisions: —
+
+## 2026-07-09 22:17 — kimi-cli
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3, wrote reply handoff
+- Files: .ai/handoffs/to-claude/open/202607091517-test-count-reply-kimi.md
+- Decisions: —
+
+## 2026-07-09 22:16 — kiro-cli
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3=4, wrote reply handoff, marked outbound handoff DONE (awaiting claude-code move to done/)
+- Files: .ai/handoffs/to-claude/open/202607092216-test-count-reply-kiro.md, .ai/handoffs/to-kiro/open/202607092220-test-count-roundtrip.md
+- Decisions: —
+
+## 2026-07-09 22:21 — opencode
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3, wrote reply handoff
+- Files: .ai/handoffs/to-claude/open/202607092221-test-count-reply-opencode.md
+- Decisions: —
 
 ## 2026-07-09 21:56 — kiro-cli
 - Action: Built ADR-0007 P2 CI gate. New .github/workflows/gates.yml — runs on pull_request->master + push->master, ubuntu-latest, Node 20. Seven named steps (fail-on-red, GitHub default): SSOT drift, Claude/Kimi/Kiro hook suites, OpenCode guard (node .opencode/plugin/test-guard.mjs), git pre-commit backstop test (ADR-0005), installer npm ci + npx tsc --noEmit + npx vitest run (working-dir tools/multi-cli-install). Header comment documents the branch-protection repo setting needed to make "gates" REQUIRED. YAML validated (parses clean). Handoff 202607092200-p2-ci-gate moved to done/, Status: DONE. Git commit left to claude-code (no Kiro git lane).

@@ -135,6 +135,28 @@ per-project claim-lock (#1) for handoffs + actually RUN the concurrency test.
 Do this alongside/inside the P1 build — self-driving without it will corrupt
 shared state.
 
+## 8. [SECURITY, found 2026-07-10] Plaintext GitHub PAT in global Kiro config
+
+**Found:** while cleaning Kiro startup noise, kiro-cli flagged that
+`~/.kiro/settings/mcp.json` stored a **plaintext GitHub Personal Access Token**
+in the `github` MCP server's `env`. The config-side exposure was removed
+2026-07-10 (owner approved deleting the `github` MCP server entirely — token no
+longer in the LIVE config). **OPEN owner action:** the live token is still valid on
+GitHub until revoked — owner chose "deal with it later" (2026-07-10). Rotate it:
+revoke on GitHub → issue a new one → if GitHub MCP is ever re-added to any CLI,
+reference it via env var, never inline plaintext.
+
+**The token still exists in cleartext in three places** (found during cleanup):
+`~/.kiro/settings/mcp.json.bak-20260710` (backup) and — the bigger surface —
+`~/.kiro/sessions/` transcripts (**931 matches** across ~65 append-only history
+files; the PAT is already captured there). Removing it from config does NOT
+invalidate it — rotation is the only real fix. **Systemic risk flagged by the
+coder:** `~/.kiro/sessions/` is an unbounded, unencrypted store that accumulates
+ANY secret ever pasted into a Kiro session — it becomes the real secret-leak
+surface long before config does. Consider a session-retention/scrub policy
+(separate follow-up). After rotation, owner may delete the two backup dirs
+(`agents.bak-20260710`, `agents-backup-20260710`) + `mcp.json.bak-20260710`.
+
 ---
 
 ## STANCE: stop ideating, start building (owner check-in 2026-07-09)
