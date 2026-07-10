@@ -1,5 +1,5 @@
 # Clean Kimi startup noise — stale graph MCP servers (kimigraph/kirograph/codegraph)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-10 (UTC filename 202607100655)
@@ -63,3 +63,23 @@ observer and bury real output.
 ## Report
 Activity entry: where your global MCP config lives, what you removed/changed for
 each of the three servers, and the before/after startup-noise state.
+
+## Resolution (2026-07-11, claude-code — owner-directed, resolved directly)
+
+Kimi did not poll/process this handoff, and the owner reported the three MCP
+errors STILL firing on every new terminal. On explicit owner direction, claude-code
+located and fixed the global config DIRECTLY (rather than waiting on the Kimi
+lane):
+
+- **Location found:** `C:\Users\rwn34\.kimi\mcp.json` (Kimi's GLOBAL, per-user MCP
+  config — not in the repo; that's why it fired on every terminal regardless of
+  project).
+- **Before:** `mcpServers` registered all three dead/wrong servers — `kimigraph`,
+  `kirograph` (both removed 2026-07-09 per ADR-0003; binaries gone → "not
+  recognized"), and `codegraph` (Claude-only; Kimi has no graph lane).
+- **After:** overwrote to `{ "mcpServers": {} }` — all three removed. Kimi starts
+  clean on next launch (already-open terminals need a restart to pick it up).
+
+No repo `.mcp.json` was touched (that is Claude's, and `codegraph` is correct
+there for Claude). Self-retired by the sender since the recipient never acted and
+the owner authorized direct resolution.
