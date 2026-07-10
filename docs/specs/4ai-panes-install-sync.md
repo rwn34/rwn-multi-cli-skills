@@ -19,7 +19,7 @@ by a **manual `Copy-Item`** (README §3.2). There is no automation, so every edi
 to a tool script silently re-stales the install until a human remembers to
 re-copy. This spec is realized by a single **idempotent, allowlist-driven sync
 script** plus **git `post-merge` and `post-checkout` hooks** that invoke it when
-`tools/4ai-panes/**` changes — copying only the eight tool files, never the
+`tools/4ai-panes/**` changes — copying only the nine tool files, never the
 embedded framework or runtime state, and verifying by hash after each copy.
 
 ## Motivation
@@ -96,14 +96,15 @@ Launch4Panes.ps1
 Launch4Panes.vbs
 Selector.ps1
 pane-runner.ps1
+restart-pane.ps1
 test-pane-runner.ps1
 test-selector-e2e.ps1
 README.md
 icon.ico
 ```
 
-All eight exist in `tools/4ai-panes/` today (verified). The list is a literal
-array in the script — adding a ninth tool file is a one-line edit here, and the
+All nine exist in `tools/4ai-panes/` today (verified). The list is a literal
+array in the script — adding a tenth tool file is a one-line edit here, and the
 allowlist is the ONLY place that knowledge lives.
 
 **Explicitly excluded** (never copied, never deleted from the target):
@@ -115,7 +116,7 @@ allowlist is the ONLY place that knowledge lives.
   `.ai-install-rollback-point.txt`, `*.tmp`
 - `.gitignore` (tool-local ignore file, README §2 — not an executable file)
 
-The sync is **copy-only, additive-safe**: it writes the eight allowlisted files
+The sync is **copy-only, additive-safe**: it writes the nine allowlisted files
 and touches nothing else. It never runs `Remove-Item`/recursive delete against
 the target, so an extra file in the install is never a reason to delete embedded
 framework or state.
@@ -240,7 +241,7 @@ confirms all three byte-identical") is exactly this check, made automatic.
   is exactly *why* the manual step is already targeted. File-scoped allowlist
   copy is the corrected form of what the human does by hand.
 - **(c) Symlink / directory-junction install instead of copy.** Tradeoffs: a
-  junction from `~/.rwn-auto/rwn-4AI-panes` (or per-file symlinks for the eight
+  junction from `~/.rwn-auto/rwn-4AI-panes` (or per-file symlinks for the nine
   tool files) to the repo would make drift structurally impossible — the install
   *is* the repo file. But: (1) Windows junction/symlink creation can require
   elevated perms or Developer Mode; (2) the install dir is itself a git working
