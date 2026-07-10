@@ -44,6 +44,11 @@
             "type": "command",
             "shell": "bash",
             "command": "bash .claude/hooks/session-start.sh"
+          },
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash .ai/tools/dispatch-own-queue.sh"
           }
         ]
       }
