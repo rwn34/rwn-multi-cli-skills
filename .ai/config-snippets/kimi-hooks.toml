@@ -68,3 +68,20 @@ event = "PreToolUse"
 matcher = "Bash"
 command = "bash .kimi/hooks/destructive-guard.sh"
 timeout = 10
+
+# --- Handoff reminder (SessionStart) ---
+# Lists qualifying open handoffs (Status: OPEN, Auto: yes, Risk A|B) addressed
+# to kimi-cli at the start of each interactive session, so they are not silently
+# ignored. Non-blocking (exit 0); stdout is injected into context.
+[[hooks]]
+event = "SessionStart"
+command = "bash .kimi/hooks/handoffs-remind.sh"
+timeout = 10
+
+# --- Handoff queue-count reminder (Stop) ---
+# Prints per-queue open-handoff counts at each turn end (gap B4) so every Stop
+# is a poll point across all to-*/open queues. Non-blocking (exit 0).
+[[hooks]]
+event = "Stop"
+command = "bash .kimi/hooks/handoff-queue-count.sh"
+timeout = 10

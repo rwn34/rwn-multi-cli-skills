@@ -1,10 +1,11 @@
 # Wire Kimi's handoff-reminder hook so interactive Kimi notices handoffs (gap B1)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-11 (UTC filename 202607101900)
 Auto: yes
 Risk: B
+Completed: 2026-07-11 02:08 (local) by kimi-cli
 
 ## Why
 Root cause of "handoffs don't work when I open an existing project" for the Kimi
@@ -44,6 +45,41 @@ A2 + B1):
   (Status DONE + move to `.ai/handoffs/to-kimi/done/`) per protocol v3. Blocked →
   leave OPEN as BLOCKED with a verbatim `## Blocker`.
 
-## Report
-What you wired (both files), the before/after of a fresh Kimi startup (does it now
-list open to-kimi handoffs?), and the test result.
+## Report (kimi-cli, 2026-07-11 02:08 local)
+
+**Wired (both files, byte-identical blocks, diff-verified):**
+- `.kimi/config.toml` and `.ai/config-snippets/kimi-hooks.toml` each gained two
+  `[[hooks]]` entries appended after Guard 4:
+  - `event = "SessionStart"` → `bash .kimi/hooks/handoffs-remind.sh` (B1)
+  - `event = "Stop"` → `bash .kimi/hooks/handoff-queue-count.sh` (B4)
+
+**Before/after of a fresh Kimi startup (does it now list open to-kimi handoffs?):**
+- Before: `handoffs-remind.sh` existed but was flagged NOT WIRED and only printed a
+  raw `ls` of the open dir (no Status/Auto/Risk filtering) → an interactive Kimi
+  never saw a qualified inbox.
+- After (manual run against the live queue):
+  ```
+  --- Pending handoffs for kimi-cli (1, Auto:yes / Risk A|B) ---
+    202607101900-wire-kimi-handoff-reminder.md
+  Process with: bash .ai/tools/dispatch-handoffs.sh --exec --only kimi
+  --- end ---
+  ```
+  Filter parity confirmed: `bash .ai/tools/dispatch-handoffs.sh --only kimi`
+  (dry-run) reports the SAME handoff as `WOULD DISPATCH [kimi]`. Recursion guard
+  (`AI_HANDOFF_DISPATCH=1`) is silent (no fork-bomb on dispatched sessions).
+  Stop queue-count prints `to-claude: 1 open`, `to-kimi: 1 open` (empty queues
+  correctly omitted).
+
+**Test result:** `bash .kimi/hooks/test_hooks.sh` → `PASS: 51/51` (added t49
+qualifying-filter, t50 recursion-guard, t51 per-queue counts).
+
+**Also done:** marked `handoffs-remind.sh` (+ new `handoff-queue-count.sh`) WIRED in
+`.kimi/hooks/README.md`; corrected stale `~/.kimi/config.toml` →
+`~/.kimi-code/config.toml` in `.kimi/config.toml` comment, `.kimi/hooks/README.md`
+(4 spots), `.kimi/agents/README.md`. (Intentionally left the dual-path iteration +
+t48 negative check in `test_hooks.sh` — those reference the legacy path on purpose.)
+
+**Touched files:** `.kimi/hooks/handoffs-remind.sh`, `.kimi/hooks/handoff-queue-count.sh`
+(new), `.kimi/config.toml`, `.ai/config-snippets/kimi-hooks.toml`,
+`.kimi/hooks/README.md`, `.kimi/agents/README.md`, `.kimi/hooks/test_hooks.sh`,
+`.ai/activity/log.md`.
