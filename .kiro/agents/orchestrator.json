@@ -24,6 +24,9 @@
     "agentSpawn": [
       {
         "command": "bash .kiro/hooks/activity-log-inject.sh"
+      },
+      {
+        "command": "bash .kiro/hooks/dispatch-own-queue.sh"
       }
     ],
     "preToolUse": [

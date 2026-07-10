@@ -9,6 +9,13 @@
       "enabled": true
     },
     {
+      "name": "dispatch-own-queue",
+      "description": "SessionStart: lists to-kiro/open handoffs and auto-dispatches Auto:yes Risk-A/B ones scoped to Kiro's own queue (gap B3). Recursion-guarded via AI_HANDOFF_DISPATCH; claim-locked against pane-runners.",
+      "trigger": "SessionStart",
+      "action": { "type": "command", "command": "bash .kiro/hooks/dispatch-own-queue.sh" },
+      "enabled": true
+    },
+    {
       "name": "root-file-guard",
       "description": "Blocks writes to repo-root files not on the ADR-0001 allowlist. Reuses the v2 pure-bash fail-CLOSED guard (no python dependency).",
       "trigger": "PreToolUse",
