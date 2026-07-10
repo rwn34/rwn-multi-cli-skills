@@ -21,6 +21,17 @@ $layoutFile = Join-Path $scriptDir ".4pane-layout"
 $wtExe = "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe"
 $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else { "C:/Users/rwn34/Code/rwn-multi-cli-skills" }
 
+# ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
+# RWN_PANE_LAYOUT selects the WT tab layout built per project:
+#   '5pane' (default/unset) = TOP full-width ~20% strip running bare interactive
+#                             Claude (app-Claude, identity claude-code) + BOTTOM 4
+#                             self-driving pane-runner workers (incl. auto-Claude).
+#   '4grid'                 = legacy 4-pane grid (instant fallback if the new WT
+#                             split misbehaves on this machine).
+$paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '5pane' }
+# Top strip height as a fraction of the tab (~0.20 = 20%). Bottom region = 1 - this.
+$topStripFraction = 0.20
+
 # ── CLI Definitions ──
 # Each CLI: name, detection command, launch command
 $cliDefs = [ordered]@{}
@@ -901,6 +912,53 @@ if ($cliAvailable["Kiro"] -and $targetDir) {
 $cliLower = @{ Claude = 'claude'; Kiro = 'kiro'; Kimi = 'kimi'; OpenCode = 'opencode' }
 $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
 $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
+
+# ── 5-pane operator-over-fleet layout (ADR-0009 section 1) ──
+# Build ONE composite WT tab: new-tab = TOP pane (bare interactive Claude =
+# app-Claude, identity claude-code, NOT the pane-runner); split-pane -H sizes the
+# new bottom region to ~80% so the top strip is ~20%; then N-1 vertical splits cut
+# the bottom into equal columns, each running the self-driving pane-runner for one
+# CLI (the Claude column self-identifies as claude-auto via Get-DefaultOwner).
+# Use the legacy 4-grid path when RWN_PANE_LAYOUT=4grid, in bare mode, when there
+# is no project dir, or when Claude / the runner is unavailable.
+$use5pane = ($paneLayoutMode -ne '4grid') -and $targetDir -and $cliAvailable['Claude'] `
+            -and (Test-Path $paneRunner) -and (-not $bareMode)
+
+if ($use5pane) {
+    $dq = '"'
+    $bottomCLIs = $activeCLIs                      # available CLIs, layout order
+    $n = $bottomCLIs.Count
+
+    # TOP pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
+    $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
+    $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
+
+    # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
+    $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
+    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
+    $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
+
+    # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split
+    # operates on the focused (rightmost) region; the k-th split (k = 1..N-1) gives
+    # the new pane (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
+    for ($i = 1; $i -lt $n; $i++) {
+        $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
+        $runner = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
+        $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
+    }
+
+    Write-Host "5-pane layout (top=app-Claude, bottom=$($bottomCLIs -join ', ')):" -ForegroundColor Cyan
+    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
+    try {
+        & cmd.exe /c "`"$wtExe`" $wtCmd"
+        Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to launch 5-pane layout: $_" -ForegroundColor Red
+    }
+    return
+}
+
+# ── Legacy 4-grid path (RWN_PANE_LAYOUT=4grid / bare / nodir fallback) ──
 function Get-PaneLaunch {
     param([string]$CliName, [string]$TargetDir)
     if ($bareMode -or (-not $TargetDir) -or (-not (Test-Path $paneRunner))) {
