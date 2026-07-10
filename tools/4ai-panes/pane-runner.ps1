@@ -136,6 +136,10 @@ function Test-HandoffDone {
 
 # -- Per-project claim-lock (crash-recoverable) --
 
+# A same-host claim whose pid is dead is stale immediately; a foreign-host claim
+# (pid unverifiable locally) is trusted only within this window, then reclaimed.
+$script:ProjectClaimStaleMinutes = 15
+
 function Get-ClaimPath {
     param([string]$ProjectDir, [string]$CliName)
     return (Join-Path $ProjectDir ".ai/.claim-$CliName.json")
@@ -149,18 +153,40 @@ function Get-Claim {
 }
 
 # Should we SKIP because someone else already holds this project's claim?
-# Skip only if a claim exists owned by a DIFFERENT, LIVE pid. A dead-pid claim
-# is stale (crash) -> reclaim (return $false). No claim / our own pid -> $false.
+# No claim / no pid / our own pid -> $false (don't block). Otherwise mirror
+# Test-HandoffClaimed: pid-liveness is only trusted when the claim's host matches
+# ours. Same host + dead pid -> stale (reclaim). Same host + live pid + fresh ts
+# -> block (legit worker). Foreign host -> can't trust the pid; block only within
+# the staleness window (falls through to the time-window check). Never throws.
 function Test-ClaimBlocks {
     param([string]$ProjectDir, [string]$CliName, [int]$MyPid)
     $claim = Get-Claim -ProjectDir $ProjectDir -CliName $CliName
     if ($null -eq $claim) { return $false }
     if (-not $claim.pid) { return $false }
     if ([int]$claim.pid -eq $MyPid) { return $false }
-    return [bool](& $script:TestPidAlive ([int]$claim.pid))
+
+    $sameHost = (-not $claim.host) -or ($claim.host -eq [System.Net.Dns]::GetHostName())
+    if ($sameHost) {
+        # Trustworthy pid on this host: dead pid = crash = reclaim.
+        if (-not [bool](& $script:TestPidAlive ([int]$claim.pid))) { return $false }
+    }
+    # Time-window: an old claim is stale regardless of host (covers a foreign-host
+    # pid we can't verify, and a hung same-host process that never released).
+    if ($claim.ts) {
+        $when = [datetime]::MinValue
+        if ([datetime]::TryParse([string]$claim.ts, [ref]$when)) {
+            $ageMin = ((Get-Date).ToUniversalTime() - $when.ToUniversalTime()).TotalMinutes
+            if ($ageMin -gt $script:ProjectClaimStaleMinutes) { return $false }
+        }
+    }
+    # Same-host live pid (fresh or unparseable ts) -> block. Foreign host within
+    # the window -> block. Anything judged stale above already returned $false.
+    return $true
 }
 
-# Atomic claim write (temp + rename) carrying project + cli + pid + ts.
+# Atomic claim write (temp + rename) carrying project + cli + pid + host + ts.
+# Bytes are emitted BOM-less (UTF8.GetBytes + WriteAllBytes, like Claim-Handoff);
+# Set-Content -Encoding utf8 would prepend a BOM under PS 5.1.
 function Write-Claim {
     param([string]$ProjectDir, [string]$CliName, [int]$MyPid)
     $p = Get-ClaimPath -ProjectDir $ProjectDir -CliName $CliName
@@ -170,10 +196,12 @@ function Write-Claim {
         project = (Split-Path -Leaf $ProjectDir)
         cli     = $CliName
         pid     = $MyPid
-        ts      = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
+        host    = [System.Net.Dns]::GetHostName()
+        ts      = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     $tmp = "$p.tmp.$MyPid"
-    ($obj | ConvertTo-Json -Compress) | Set-Content -Path $tmp -Encoding utf8 -NoNewline
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
     Move-Item -Path $tmp -Destination $p -Force
 }
 
@@ -307,6 +335,7 @@ function Release-Handoff {
 # which point Get-QualifyingHandoff skips it until a human clears the sidecar.
 
 $script:MaxHandoffAttempts = 3   # consecutive failed supervisor attempts before a handoff is quarantined
+$script:QuarantineStaleMinutes = 60   # after this long a quarantined handoff ages out for one retry
 
 # Map a handoff path to its project's .ai/handoffs/.quarantine dir by walking up:
 # .../.ai/handoffs/to-<recipient>/open/<file> -> .../.ai/handoffs/.quarantine
@@ -333,12 +362,25 @@ function Get-HandoffAttemptRecord {
     try { return (Get-Content -Path $p -Raw | ConvertFrom-Json) } catch { return $null }
 }
 
-# $true iff a record exists AND is flagged quarantined.
+# $true iff a record exists, is flagged quarantined, AND has not aged out. A
+# quarantine older than QuarantineStaleMinutes (by quarantined_at, falling back to
+# last_attempt) EXPIRES -> return $false to allow ONE retry; if that retry fails,
+# Add-HandoffAttempt re-quarantines with a fresh quarantined_at (bounded to ~one
+# retry per window, not spam). Never throws - an unparseable ts stays quarantined.
 function Test-HandoffQuarantined {
     param([string]$Recipient, [string]$HandoffPath)
     $rec = Get-HandoffAttemptRecord -Recipient $Recipient -HandoffPath $HandoffPath
     if ($null -eq $rec) { return $false }
-    return [bool]$rec.quarantined
+    if (-not $rec.quarantined) { return $false }
+    $stamp = if ($rec.quarantined_at) { $rec.quarantined_at } else { $rec.last_attempt }
+    if ($stamp) {
+        $when = [datetime]::MinValue
+        if ([datetime]::TryParse([string]$stamp, [ref]$when)) {
+            $ageMin = ((Get-Date).ToUniversalTime() - $when.ToUniversalTime()).TotalMinutes
+            if ($ageMin -gt $script:QuarantineStaleMinutes) { return $false }
+        }
+    }
+    return $true
 }
 
 # Record one failed supervisor attempt: increment the counter, flip quarantined
@@ -360,14 +402,20 @@ function Add-HandoffAttempt {
     $dir = Split-Path -Parent $p
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
+    $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    # Stamp quarantined_at to now whenever this write leaves the handoff quarantined,
+    # so Test-HandoffQuarantined can age it out; $null while below the threshold.
+    $quarantinedAt = if ($quarantined) { $now } else { $null }
+
     $obj = [ordered]@{
-        handoff       = Get-HandoffBasename -HandoffPath $HandoffPath
-        recipient     = $Recipient
-        attempts      = $attempts
-        quarantined   = $quarantined
-        first_attempt = $firstAttempt
-        last_attempt  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-        last_error    = $ErrorText
+        handoff        = Get-HandoffBasename -HandoffPath $HandoffPath
+        recipient      = $Recipient
+        attempts       = $attempts
+        quarantined    = $quarantined
+        quarantined_at = $quarantinedAt
+        first_attempt  = $firstAttempt
+        last_attempt   = $now
+        last_error     = $ErrorText
     }
     $json = $obj | ConvertTo-Json -Compress
     $tmp = "$p.tmp.$PID"

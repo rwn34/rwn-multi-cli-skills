@@ -18,6 +18,11 @@
 #   (m) fresh handoff / no sidecar              (Test-HandoffQuarantined false)
 #   (n) Get-QualifyingHandoff skips quarantined (returns next candidate)
 #   (o) Clear-HandoffAttempts removes sidecar   (Test-HandoffQuarantined false)
+#   (p) REAL InvokeCli vs stderr+nonzero child  (no throw under EAP=Stop; exit=3; EAP restored)
+#   (q) Test-ClaimBlocks foreign host past win  (false -> reclaim)
+#   (r) Test-ClaimBlocks same-host live+fresh   (true  -> block)
+#   (s) Test-HandoffQuarantined expired record  (false -> allow one retry)
+#   (t) Test-HandoffQuarantined fresh record    (true  -> still quarantined)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -25,6 +30,10 @@ $runner = Join-Path $here 'pane-runner.ps1'
 
 # Load functions without starting the supervisor loop.
 . $runner -Cli claude -ProjectDir $here -NoRun
+
+# Capture the REAL $script:InvokeCli BEFORE the mock below overwrites it, so test
+# (p) can exercise the actual native-invocation path (the stderr-crash regression).
+$script:RealInvokeCli = $script:InvokeCli
 
 # -- tiny assert framework --
 $script:pass = 0
@@ -211,6 +220,84 @@ Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk)
 
 # restore the real threshold
 $script:MaxHandoffAttempts = $origMax
+
+# -- (p) REAL invoke path: a native child that writes stderr AND exits non-zero --
+#     This is the regression the mocked tests can't see. We drive the actual
+#     $script:InvokeCli (captured before the mock) with the call-site EAP='Stop'
+#     the supervisor loop uses. Override Get-HeadlessCmd so the spawned command is
+#     a real native process (cmd) that writes stderr and returns exit 3.
+$origHeadless = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return 'cmd /c "echo boom 1>&2 & exit 3"' }
+$ErrorActionPreference = 'Stop'   # replicate the loop's call-site EAP
+$pThrew = $false
+$pCode = $null
+try {
+    $pCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+} catch {
+    $pThrew = $true
+}
+${function:Get-HeadlessCmd} = $origHeadless
+Assert-Equal $false $pThrew 'p: real InvokeCli (stderr+nonzero) does NOT throw under EAP=Stop'
+Assert-Equal 3 $pCode 'p: real InvokeCli returns the child exit code (3)'
+Assert-Equal 'Stop' $ErrorActionPreference 'p: ErrorActionPreference restored to Stop after the call'
+
+# -- (q) Test-ClaimBlocks: foreign-host claim past the staleness window -> reclaim --
+#     pid probe says "alive", but the host differs so the pid is untrusted; the ts
+#     is older than ProjectClaimStaleMinutes -> stale -> do not block.
+$script:TestPidAlive = { param([int]$ProcessId) return $true }
+$claimP = Get-ClaimPath -ProjectDir $work -CliName 'claude'
+$foreignClaim = [ordered]@{
+    project = (Split-Path -Leaf $work)
+    cli     = 'claude'
+    pid     = 999999
+    host    = 'some-other-host'
+    ts      = (Get-Date).ToUniversalTime().AddMinutes(-30).ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
+$foreignClaim | ConvertTo-Json -Compress | Set-Content -Path $claimP -Encoding utf8 -NoNewline
+Assert-Equal $false (Test-ClaimBlocks -ProjectDir $work -CliName 'claude' -MyPid $PID) 'q: foreign-host claim past window -> Test-ClaimBlocks false (reclaim)'
+
+# -- (r) Test-ClaimBlocks: same-host, live pid, fresh ts -> block (legit worker) --
+$freshClaim = [ordered]@{
+    project = (Split-Path -Leaf $work)
+    cli     = 'claude'
+    pid     = 999999
+    host    = [System.Net.Dns]::GetHostName()
+    ts      = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
+$freshClaim | ConvertTo-Json -Compress | Set-Content -Path $claimP -Encoding utf8 -NoNewline
+Assert-Equal $true (Test-ClaimBlocks -ProjectDir $work -CliName 'claude' -MyPid $PID) 'r: same-host live-pid fresh claim -> Test-ClaimBlocks true (block)'
+Remove-Claim -ProjectDir $work -CliName 'claude'
+
+# -- (s) Test-HandoffQuarantined: an EXPIRED quarantine ages out -> false (one retry) --
+$hexp = New-KimiHandoff -Slug 's-expired'
+$sPath = Get-HandoffQuarantinePath -Recipient 'kimi' -HandoffPath $hexp
+$expiredRec = [ordered]@{
+    handoff        = Get-HandoffBasename -HandoffPath $hexp
+    recipient      = 'kimi'
+    attempts       = 3
+    quarantined    = $true
+    quarantined_at = (Get-Date).ToUniversalTime().AddMinutes(-120).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    first_attempt  = (Get-Date).ToUniversalTime().AddMinutes(-200).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    last_attempt   = (Get-Date).ToUniversalTime().AddMinutes(-120).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    last_error     = 'transient'
+}
+$expiredRec | ConvertTo-Json -Compress | Set-Content -Path $sPath -Encoding utf8 -NoNewline
+Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hexp) 's: expired quarantine (old quarantined_at) -> Test-HandoffQuarantined false'
+
+# -- (t) a FRESH quarantine (quarantined_at = now) is still active -> true --
+$freshRec = [ordered]@{
+    handoff        = Get-HandoffBasename -HandoffPath $hexp
+    recipient      = 'kimi'
+    attempts       = 3
+    quarantined    = $true
+    quarantined_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    first_attempt  = (Get-Date).ToUniversalTime().AddMinutes(-200).ToString('yyyy-MM-ddTHH:mm:ssZ')
+    last_attempt   = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    last_error     = 'transient'
+}
+$freshRec | ConvertTo-Json -Compress | Set-Content -Path $sPath -Encoding utf8 -NoNewline
+Assert-Equal $true (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hexp) 't: fresh quarantine -> Test-HandoffQuarantined true'
+Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hexp
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
