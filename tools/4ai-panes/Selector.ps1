@@ -186,6 +186,30 @@ function Find-Bash {
     return $null
 }
 
+# Warn-only framework drift check. Compares the project's recorded framework
+# version (.ai/.framework-version) against the template SSOT
+# (tools/multi-cli-install/package.json). Emits a yellow WARNING with the adopt
+# command only when the project trails the template. NEVER throws, NEVER mutates:
+# any read/parse failure stays silent so a broken marker cannot break launch.
+function Test-FrameworkDrift {
+    param($ProjVersionFile, $TemplatePkgJson, $AdoptCmd)
+    try {
+        $projVer = ([version](Get-Content $ProjVersionFile -Raw |
+            ConvertFrom-Json).framework_version)
+        $tmplVer = ([version](Get-Content $TemplatePkgJson -Raw |
+            ConvertFrom-Json).version)
+    } catch { return }                      # unparseable / missing => silent
+    if ($null -eq $projVer -or $null -eq $tmplVer) { return }
+    if ($projVer -lt $tmplVer) {
+        Write-Host "Framework drift: project is v$projVer, template is v$tmplVer." `
+            -ForegroundColor Yellow
+        Write-Host "  To adopt updates: $AdoptCmd" -ForegroundColor Yellow
+        Write-Host "  (lands on an isolated 'ai-template-install' branch to review before merging)" `
+            -ForegroundColor Yellow
+    }
+    # projVer >= tmplVer, or equal, or any error => no output.
+}
+
 function Install-Framework($targetDir) {
     if ([string]::IsNullOrWhiteSpace($targetDir)) { return }
 
@@ -200,8 +224,21 @@ function Install-Framework($targetDir) {
     $fwMarker = Join-Path $targetDir ".ai\.framework-version"
     Write-InstallLog "framework marker exists: $(Test-Path $fwMarker)"
     if (Test-Path $fwMarker) {
-        Write-Host "Framework already installed, skipping" -ForegroundColor DarkGray
-        Write-InstallLog "Skipped: framework marker exists"
+        # Warn-only drift check: resolve the template source the same way the
+        # install path does, compare recorded version vs template SSOT, print an
+        # advisory adopt command if the project trails. Never auto-updates.
+        $src = if ((Test-Path $frameworkRepo) -and (Test-Path (Join-Path $frameworkRepo '.ai'))) {
+            $frameworkRepo
+        } elseif (Test-Path (Join-Path $scriptDir '.ai')) { $scriptDir } else { $null }
+
+        if ($src) {
+            $adopt = "bash $src/scripts/install-template.sh $targetDir"
+            Test-FrameworkDrift `
+                -ProjVersionFile $fwMarker `
+                -TemplatePkgJson (Join-Path $src 'tools/multi-cli-install/package.json') `
+                -AdoptCmd $adopt
+        }
+        Write-InstallLog "Framework marker exists; ran drift check (warn-only), skipping install"
         return
     }
 
@@ -294,12 +331,14 @@ function Install-Framework($targetDir) {
         '.archive',
         'CLAUDE.md',
         'AGENTS.md',
+        '.opencode',
         'opencode.json',
         '.mcp.json.example',
         'docs/architecture/0001-root-file-exceptions.md',
         'docs/architecture/0002-cli-role-topology.md',
         'docs/architecture/0003-code-graph-rationalization.md',
         '.github/workflows/framework-check.yml',
+        '.github/workflows/gates.yml',
         '.codegraph/config.json'
     )
     $missingItems = @($templateItems | Where-Object { -not (Test-Path (Join-Path $targetDir $_)) })
@@ -361,7 +400,7 @@ function Install-Framework($targetDir) {
         # framework repo's installer package.json at runtime; fall back to the
         # last-known literal only if it is unreadable.
         try {
-            $fwVersion = '0.0.3'
+            $fwVersion = '0.0.5'
             try {
                 $pkgPath = Join-Path $frameworkRepo 'tools/multi-cli-install/package.json'
                 $pkgVersion = (Get-Content $pkgPath -Raw -ErrorAction Stop | ConvertFrom-Json).version
