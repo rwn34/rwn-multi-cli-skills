@@ -9,6 +9,10 @@
 #   (d) claim held by a live pid                (Test-ClaimBlocks = true  -> skip)
 #   (e) claim by a dead pid                     (Test-ClaimBlocks = false -> reclaim)
 #   (f) IDLE poll gate                          (Risk A returned, Risk C skipped)
+#   (g) first per-handoff Claim-Handoff wins    (true + sidecar written)
+#   (h) 2nd claim, different owner, while live  (false - not double-processed)
+#   (i) stale per-handoff claim (old ts)        (reclaimable -> Claim-Handoff true)
+#   (j) Release-Handoff removes the sidecar     (Test-Path false)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -114,6 +118,38 @@ $cPath = New-TestHandoff -Slug '202607090001-riskc' -Risk 'C'
 $aPath = New-TestHandoff -Slug '202607090002-riska' -Risk 'A'
 $picked = Get-QualifyingHandoff -ProjectDir $work -CliName 'claude'
 Assert-Equal $aPath $picked 'f: IDLE poll returns the Risk A handoff, skips Risk C'
+
+# -- per-handoff claim-lock (ADR-0009 section 3) --
+Get-ChildItem -Path $openDir -Filter '*.md' | Remove-Item -Force
+
+# (g) first Claim-Handoff wins + sidecar exists
+$script:TestPidAlive = { param([int]$ProcessId) return $true }
+$hc = New-TestHandoff -Slug 'g-claim'
+$won = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-auto'
+Assert-Equal $true $won 'g: first Claim-Handoff wins -> true'
+$sidecar = Get-HandoffClaimPath -Recipient 'claude' -HandoffPath $hc
+Assert-Equal $true (Test-Path $sidecar) 'g: sidecar written on win'
+
+# (h) second Claim-Handoff by a DIFFERENT owner loses while the first is live
+$won2 = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-code'
+Assert-Equal $false $won2 'h: 2nd claim (different owner, live) loses -> false'
+
+# (i) a STALE claim (old claimed_at) is reclaimable
+$stale = [ordered]@{
+    handoff    = Get-HandoffBasename -HandoffPath $hc
+    recipient  = 'claude'
+    owner      = 'kiro-cli'
+    pid        = $PID
+    host       = [System.Net.Dns]::GetHostName()
+    claimed_at = (Get-Date).ToUniversalTime().AddMinutes(-30).ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
+$stale | ConvertTo-Json -Compress | Set-Content -Path $sidecar -Encoding utf8 -NoNewline
+$reclaimed = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-auto'
+Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable -> true'
+
+# (j) Release-Handoff removes the sidecar
+Release-Handoff -Recipient 'claude' -HandoffPath $hc
+Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue

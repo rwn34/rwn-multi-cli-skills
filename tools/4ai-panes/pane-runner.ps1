@@ -28,6 +28,11 @@ param(
 
     [int]$PollSeconds = 10,
 
+    # Claim-lock owner identity for this pane. Empty -> derived from the CLI
+    # (Get-DefaultOwner); pass 'claude-auto' explicitly for the headless Claude
+    # reviewer pane so it is distinct from app-Claude's 'claude-code'.
+    [string]$Owner = '',
+
     # Dot-source for tests: load functions, do not start the supervisor loop.
     [switch]$NoRun
 )
@@ -160,6 +165,134 @@ function Remove-Claim {
     if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
 }
 
+# -- Per-handoff claim-lock (cross-consumer contract, ADR-0009 section 3) --
+#
+# Finer-grained than the per-project claim above: a sidecar per handoff so two
+# consumers never process the SAME to-<recipient>/open/ item (fixes the observed
+# Kiro-vs-Kiro / coder race and lets app-Claude and claude-auto coordinate). The
+# per-project claim still gates whole-project pickup; this gates the individual
+# handoff. Format + acquire/check/release/stale semantics are documented for
+# other consumers in .ai/handoffs/.claims/README.md.
+
+$script:HandoffClaimStaleMinutes = 15
+
+# Map a handoff path to its project's .ai/handoffs/.claims dir by walking up:
+# .../.ai/handoffs/to-<recipient>/open/<file> -> .../.ai/handoffs/.claims
+function Get-HandoffClaimDir {
+    param([string]$HandoffPath)
+    $openDir  = Split-Path -Parent $HandoffPath
+    $toDir    = Split-Path -Parent $openDir
+    $handoffs = Split-Path -Parent $toDir
+    return (Join-Path $handoffs ".claims")
+}
+
+# Basename = handoff filename without extension (e.g. 202607101530-slug).
+function Get-HandoffBasename {
+    param([string]$HandoffPath)
+    return [System.IO.Path]::GetFileNameWithoutExtension($HandoffPath)
+}
+
+function Get-HandoffClaimPath {
+    param([string]$Recipient, [string]$HandoffPath)
+    $base = Get-HandoffBasename -HandoffPath $HandoffPath
+    $dir  = Get-HandoffClaimDir -HandoffPath $HandoffPath
+    return (Join-Path $dir "${Recipient}__${base}.claim.json")
+}
+
+# Return the claim object if a LIVE/FRESH claim exists, else $null. A claim is
+# stale (-> treat as unclaimed, reclaimable) when its pid is dead on this host OR
+# its claimed_at is older than HandoffClaimStaleMinutes. pid-liveness is only
+# trusted when the claim's host matches ours (a foreign-host pid is meaningless
+# locally, so cross-host staleness rests on the time window alone).
+function Test-HandoffClaimed {
+    param([string]$Recipient, [string]$HandoffPath)
+    $p = Get-HandoffClaimPath -Recipient $Recipient -HandoffPath $HandoffPath
+    if (-not (Test-Path $p)) { return $null }
+    $claim = $null
+    try { $claim = Get-Content -Path $p -Raw | ConvertFrom-Json } catch { return $null }
+    if ($null -eq $claim) { return $null }
+
+    $sameHost = (-not $claim.host) -or ($claim.host -eq [System.Net.Dns]::GetHostName())
+    if ($claim.pid -and $sameHost) {
+        if (-not (& $script:TestPidAlive ([int]$claim.pid))) { return $null }
+    }
+    if ($claim.claimed_at) {
+        $when = [datetime]::MinValue
+        if ([datetime]::TryParse([string]$claim.claimed_at, [ref]$when)) {
+            $ageMin = ((Get-Date).ToUniversalTime() - $when.ToUniversalTime()).TotalMinutes
+            if ($ageMin -gt $script:HandoffClaimStaleMinutes) { return $null }
+        }
+    }
+    return $claim
+}
+
+# Atomically acquire the per-handoff claim. Returns $true if we won, $false if a
+# live/fresh claim by someone else already holds it. The atomic guard is
+# [IO.File]::Open with CreateNew, which throws if the sidecar already exists -
+# two racing consumers cannot both create it. If the on-disk claim is STALE
+# (Test-HandoffClaimed returned $null but a file lingers), we reclaim by
+# overwriting under an exclusive (FileShare::None) handle so only one racer wins.
+function Claim-Handoff {
+    param([string]$Recipient, [string]$HandoffPath, [string]$Owner)
+    if ($null -ne (Test-HandoffClaimed -Recipient $Recipient -HandoffPath $HandoffPath)) {
+        return $false
+    }
+    $p = Get-HandoffClaimPath -Recipient $Recipient -HandoffPath $HandoffPath
+    $dir = Split-Path -Parent $p
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $obj = [ordered]@{
+        handoff    = Get-HandoffBasename -HandoffPath $HandoffPath
+        recipient  = $Recipient
+        owner      = $Owner
+        pid        = $PID
+        host       = [System.Net.Dns]::GetHostName()
+        claimed_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+    $json = $obj | ConvertTo-Json -Compress
+
+    $fs = $null
+    try {
+        $fs = [System.IO.File]::Open($p, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    } catch {
+        # File exists but was judged stale above -> reclaim by exclusive overwrite.
+        try {
+            $fs = [System.IO.File]::Open($p, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        } catch {
+            return $false
+        }
+    }
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $fs.Write($bytes, 0, $bytes.Length)
+    } finally {
+        $fs.Dispose()
+    }
+    return $true
+}
+
+# Release the per-handoff claim (delete the sidecar). Call when the handoff moves
+# to done/, and on graceful pause/stop for claims this owner holds.
+function Release-Handoff {
+    param([string]$Recipient, [string]$HandoffPath)
+    $p = Get-HandoffClaimPath -Recipient $Recipient -HandoffPath $HandoffPath
+    if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
+}
+
+# Claim owner identity for a pane's CLI. claude-auto (the headless reviewer pane,
+# ADR-0009) is a DISTINCT owner from claude-code (the interactive app-Claude), so
+# the two Claude instances never double-process a to-claude handoff.
+function Get-DefaultOwner {
+    param([string]$CliName)
+    switch ($CliName) {
+        'claude'   { return 'claude-auto' }
+        'kimi'     { return 'kimi-cli' }
+        'kiro'     { return 'kiro-cli' }
+        'opencode' { return 'opencode' }
+        default    { throw "Unknown CLI: $CliName" }
+    }
+}
+
 # -- Prompts --
 
 function Get-InitialPrompt {
@@ -225,9 +358,11 @@ function Start-PaneRunner {
         [string]$Cli,
         [string]$ProjectDir,
         [int]$MaxContinues,
-        [int]$PollSeconds
+        [int]$PollSeconds,
+        [string]$Owner = ''
     )
     $myPid = $PID
+    if ([string]::IsNullOrWhiteSpace($Owner)) { $Owner = Get-DefaultOwner -CliName $Cli }
     $proj = Split-Path -Leaf $ProjectDir
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "| pane-runner  project=$proj  cli=$Cli" -ForegroundColor Cyan
@@ -261,10 +396,22 @@ function Start-PaneRunner {
                 continue
             }
 
+            # Per-handoff claim (ADR-0009 section 3): if another consumer holds a
+            # live claim on THIS handoff, skip just this one and re-poll.
+            if (-not (Claim-Handoff -Recipient $Cli -HandoffPath $handoff -Owner $Owner)) {
+                $held = Test-HandoffClaimed -Recipient $Cli -HandoffPath $handoff
+                $by = if ($held -and $held.owner) { $held.owner } else { 'another consumer' }
+                Write-Host "-- skip $(Split-Path -Leaf $handoff) (claimed by $by) --" -ForegroundColor DarkGray
+                Start-Sleep -Seconds $PollSeconds
+                continue
+            }
+
             Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
             try {
                 Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues | Out-Null
             } finally {
+                # Done-signal (moved to done/) or crash/pause: release both claims.
+                Release-Handoff -Recipient $Cli -HandoffPath $handoff
                 Remove-Claim -ProjectDir $ProjectDir -CliName $Cli
             }
         }
@@ -276,5 +423,5 @@ function Start-PaneRunner {
 }
 
 if (-not $NoRun) {
-    Start-PaneRunner -Cli $Cli -ProjectDir $ProjectDir -MaxContinues $MaxContinues -PollSeconds $PollSeconds
+    Start-PaneRunner -Cli $Cli -ProjectDir $ProjectDir -MaxContinues $MaxContinues -PollSeconds $PollSeconds -Owner $Owner
 }

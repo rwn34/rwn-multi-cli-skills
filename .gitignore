@@ -91,3 +91,9 @@ id_ed25519*
 # ephemeral one-off scripts + probe artifacts — never committed
 /.scratch/*
 !/.scratch/README.md
+
+# ---- Per-handoff claim sidecars (ADR-0009 section 3; ephemeral runtime state) ----
+# ignore the sidecars but keep the contract README. Must ignore the dir CONTENTS
+# (dir/*) not the dir itself, else the README negation cannot take effect.
+.ai/handoffs/.claims/*
+!.ai/handoffs/.claims/README.md
