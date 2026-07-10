@@ -18,8 +18,16 @@ fi
 FILE_PATH=$(printf '%s' "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
 [ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$INPUT" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))" 2>/dev/null)
 [ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+# Kiro's fs_write / str_replace tool_input carries the target under "path", not
+# "file_path" — fall back to it so str_replace/fs_write edits are actually
+# path-evaluated (not blanket fail-CLOSED-blocked). python optional-first,
+# pure-sed fallback on EMPTY output; the sed pattern needs a literal quote
+# before "path" so it never mis-matches "file_path".
+[ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('path',''))" 2>/dev/null)
+[ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$INPUT" | python -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('path',''))" 2>/dev/null)
+[ -z "$FILE_PATH" ] && FILE_PATH=$(printf '%s' "$INPUT" | sed -n 's/.*"path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 if [ -z "$FILE_PATH" ]; then
-    echo "BLOCKED: could not parse tool input (no file_path found) — refusing to fail open." >&2
+    echo "BLOCKED: could not parse tool input (no file_path or path found) — refusing to fail open." >&2
     exit 2
 fi
 
