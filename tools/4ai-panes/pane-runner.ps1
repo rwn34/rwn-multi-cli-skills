@@ -380,6 +380,11 @@ function Start-PaneRunner {
     )
     $myPid = $PID
     if ([string]::IsNullOrWhiteSpace($Owner)) { $Owner = Get-DefaultOwner -CliName $Cli }
+    # Stamp this pane's CLI in the shell env. Because the pane runs
+    # 'powershell -NoExit -File pane-runner.ps1 ...', this persists in the pane's
+    # shell AFTER the runner exits (Ctrl-C / bare prompt), so restart-pane.ps1 run
+    # in the same pane can infer which CLI to relaunch with no -Cli argument.
+    $env:RWN_PANE_CLI = $Cli
     $proj = Split-Path -Leaf $ProjectDir
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "| pane-runner  project=$proj  cli=$Cli" -ForegroundColor Cyan
