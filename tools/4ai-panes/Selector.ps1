@@ -23,14 +23,14 @@ $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else {
 
 # ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
 # RWN_PANE_LAYOUT selects the WT tab layout built per project:
-#   '5pane' (default/unset) = TOP full-width ~20% strip running bare interactive
+#   '5pane' (default/unset) = TOP full-width ~35% strip running bare interactive
 #                             Claude (app-Claude, identity claude-code) + BOTTOM 4
 #                             self-driving pane-runner workers (incl. auto-Claude).
 #   '4grid'                 = legacy 4-pane grid (instant fallback if the new WT
 #                             split misbehaves on this machine).
 $paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '5pane' }
-# Top strip height as a fraction of the tab (~0.20 = 20%). Bottom region = 1 - this.
-$topStripFraction = 0.20
+# Top strip height as a fraction of the tab (~0.35 = 35%). Bottom region = 1 - this.
+$topStripFraction = 0.35
 
 # ── CLI Definitions ──
 # Each CLI: name, detection command, launch command
@@ -916,7 +916,7 @@ $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PA
 # ── 5-pane operator-over-fleet layout (ADR-0009 section 1) ──
 # Build ONE composite WT tab: new-tab = TOP pane (bare interactive Claude =
 # app-Claude, identity claude-code, NOT the pane-runner); split-pane -H sizes the
-# new bottom region to ~80% so the top strip is ~20%; then N-1 vertical splits cut
+# new bottom region to ~65% so the top strip is ~35%; then N-1 vertical splits cut
 # the bottom into equal columns, each running the self-driving pane-runner for one
 # CLI (the Claude column self-identifies as claude-auto via Get-DefaultOwner).
 # Use the legacy 4-grid path when RWN_PANE_LAYOUT=4grid, in bare mode, when there
