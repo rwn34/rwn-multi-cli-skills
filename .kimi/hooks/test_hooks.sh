@@ -146,6 +146,64 @@ run_test_cd "t38-worktree-in-tree-allowed"         "$T/.wt/projA/kimi" ".kimi/ho
 
 rm -rf "$T"
 
+# --- handoffs-remind.sh: lists only qualifying (Auto:yes + Status:OPEN + Risk A|B) ---
+T=$(mktemp -d)
+mkdir -p "$T/open"
+cat > "$T/open/202607101900-qualifying.md" <<'EOF'
+# qualifying
+Status: OPEN
+Auto: yes
+Risk: B
+EOF
+cat > "$T/open/202607101901-riskc.md" <<'EOF'
+# risk c
+Status: OPEN
+Auto: yes
+Risk: C
+EOF
+cat > "$T/open/202607101902-autono.md" <<'EOF'
+# auto no
+Status: OPEN
+Auto: no
+Risk: B
+EOF
+out=$(HANDOFFS_DIR="$T/open" bash .kimi/hooks/handoffs-remind.sh 2>/dev/null)
+if echo "$out" | grep -q '202607101900-qualifying.md' \
+   && ! echo "$out" | grep -q '202607101901-riskc.md' \
+   && ! echo "$out" | grep -q '202607101902-autono.md' \
+   && echo "$out" | grep -q -- '--exec --only kimi'; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t49-handoffs-remind-filters-qualifying")
+fi
+
+# --- handoffs-remind.sh: recursion guard no-ops under AI_HANDOFF_DISPATCH ---
+out_guard=$(AI_HANDOFF_DISPATCH=1 HANDOFFS_DIR="$T/open" bash .kimi/hooks/handoffs-remind.sh 2>/dev/null)
+if [ -z "$out_guard" ]; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t50-handoffs-remind-recursion-guard")
+fi
+
+# --- handoff-queue-count.sh: per-queue counts across to-*/open ---
+mkdir -p "$T/root/to-kimi/open" "$T/root/to-kiro/open" "$T/root/to-claude/open"
+: > "$T/root/to-kimi/open/a.md"
+: > "$T/root/to-kiro/open/b.md"
+: > "$T/root/to-kiro/open/c.md"
+out_q=$(HANDOFFS_ROOT="$T/root" bash .kimi/hooks/handoff-queue-count.sh 2>/dev/null)
+if echo "$out_q" | grep -q 'to-kimi: 1 open' \
+   && echo "$out_q" | grep -q 'to-kiro: 2 open' \
+   && ! echo "$out_q" | grep -q 'to-claude'; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t51-queue-count-per-queue")
+fi
+
+rm -rf "$T"
+
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"

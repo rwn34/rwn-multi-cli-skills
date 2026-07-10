@@ -3,7 +3,7 @@
 # =============================================================================
 # What:   Wires the project's 4 bash guard scripts into Kimi Code CLI so they
 #         fire automatically on every tool use (root agent + subagents).
-# How:    Append this entire block to your global ~/.kimi/config.toml, then
+# How:    Append this entire block to your global ~/.kimi-code/config.toml, then
 #         restart Kimi Code CLI (or start a fresh session).
 # Scope:  These guards enforce project policy — ADR-0001 root-file allowlist,
 #         framework-directory boundaries, sensitive-file protection, and
@@ -65,4 +65,21 @@ timeout = 10
 event = "PreToolUse"
 matcher = "Shell"
 command = "bash .kimi/hooks/destructive-guard.sh"
+timeout = 10
+
+# --- Handoff reminder (SessionStart) ---
+# Lists qualifying open handoffs (Status: OPEN, Auto: yes, Risk A|B) addressed
+# to kimi-cli at the start of each interactive session, so they are not silently
+# ignored. Non-blocking (exit 0); stdout is injected into context.
+[[hooks]]
+event = "SessionStart"
+command = "bash .kimi/hooks/handoffs-remind.sh"
+timeout = 10
+
+# --- Handoff queue-count reminder (Stop) ---
+# Prints per-queue open-handoff counts at each turn end (gap B4) so every Stop
+# is a poll point across all to-*/open queues. Non-blocking (exit 0).
+[[hooks]]
+event = "Stop"
+command = "bash .kimi/hooks/handoff-queue-count.sh"
 timeout = 10
