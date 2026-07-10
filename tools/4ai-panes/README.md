@@ -69,6 +69,18 @@ restart-pane.ps1 -Cli kimi    # or name the CLI explicitly (claude|kimi|kiro|ope
 
 `restart-pane.ps1` is **pane-local** — it restarts only this pane's CLI and never affects the other panes. Inside a pane launched by `pane-runner.ps1`, `RWN_PANE_CLI` is already stamped in the shell, so no `-Cli` argument is needed; pass `-Cli` only when starting a runner in a pane where that env var is not set.
 
+### Poison-pill quarantine
+
+Self-healing keeps the pane *alive*, but a single handoff that fails **every** time would otherwise be retried forever — re-claimed on each poll, ALERT-spamming the pane and burning tokens. To stop that, the runner counts consecutive failures **per handoff**. A handoff that keeps failing to reach `done/` — whether it MAXED (still `OPEN` after the `-MaxContinues` cap) or threw on every iteration — is **quarantined** after `MaxHandoffAttempts` (default `3`) consecutive failures.
+
+Once a handoff is quarantined, `Get-QualifyingHandoff` **skips it** and the runner keeps polling **other** handoffs. One bad handoff can neither stall the pane nor spam alerts — the loud `== QUARANTINE [cli] <file> after N failed attempts -- skipping ... ==` line is logged **once** at the threshold, then the handoff is silently ignored.
+
+The marker is a durable sidecar under `.ai/handoffs/.quarantine/`, named `<recipient>__<handoff-basename>.quarantine.json` (recipient = `claude|kimi|kiro|opencode`). It is gitignored exactly like the `.claims` sidecars — never commit one. The JSON tracks `attempts`, the `quarantined` flag, first/last attempt timestamps, and `last_error`. See [`.ai/handoffs/.quarantine/README.md`](../../.ai/handoffs/.quarantine/README.md) for the full contract.
+
+- **Clears automatically** when the handoff finally reaches `done/`.
+- **Clear manually** (un-quarantine) by **deleting** the sidecar after you fix or unblock the handoff — the runner re-attempts it on the next poll.
+- **Known limitation:** there is no automatic staleness expiry yet. A handoff you fix *in place* without clearing its sidecar stays skipped until you delete the sidecar (or it moves to `done/`).
+
 ---
 
 ## 2. Files
@@ -77,7 +89,7 @@ restart-pane.ps1 -Cli kimi    # or name the CLI explicitly (claude|kimi|kiro|ope
 |------|---------|
 | `Launch4Panes.ps1` | Entry point. Launches wt.exe with the selector as a single full-screen pane. Auto-closes after launch. |
 | `Selector.ps1` | Interactive box-drawing menu. Handles project selection, layout customization, and dynamic pane splitting. Also auto-installs the AI framework into the selected project (`Install-Framework`, see §6). After splitting, this pane becomes the first CLI in the layout. Each pane launches `pane-runner.ps1` unless `RWN_PANE_BARE` is set or no project dir is chosen. |
-| `pane-runner.ps1` | Per-pane self-driving supervisor loop (ADR-0008): polls this project's handoff inbox, runs the CLI headless on qualifying handoffs, auto-continues past step caps (MAX 5), and holds a per-project claim-lock. `-Cli`, `-ProjectDir`, `-MaxContinues`, `-PollSeconds`. |
+| `pane-runner.ps1` | Per-pane self-driving supervisor loop (ADR-0008): polls this project's handoff inbox, runs the CLI headless on qualifying handoffs, auto-continues past step caps (MAX 5), and holds a per-project claim-lock. Quarantines a handoff after repeated failures (default 3) so a poison pill can't stall the pane. `-Cli`, `-ProjectDir`, `-MaxContinues`, `-PollSeconds`. |
 | `restart-pane.ps1` | Manual respawn: re-enters **this** pane's `pane-runner.ps1` loop after a Ctrl-C or exit dropped it to a bare prompt. Pane-local — it relaunches only this pane's CLI and never touches the other panes (each pane is its own process + claim-lock). `-Cli` defaults to `$env:RWN_PANE_CLI` (stamped by `pane-runner.ps1`), so with no arguments it restarts the correct CLI in the current pane. Also `-ProjectDir`, `-Owner`, `-MaxContinues`, `-PollSeconds`. |
 | `test-pane-runner.ps1` | Pester-free harness for `pane-runner.ps1` decision logic (mock CLI, no real launch). Run: `powershell -File test-pane-runner.ps1`. |
 | `install-framework.log` | Generated at runtime next to the scripts by `Install-Framework` — an append-only trace of each framework install attempt (source, git state, installer exit codes, fallback copies). Not committed. |
