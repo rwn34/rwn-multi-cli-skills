@@ -1,5 +1,5 @@
 # Enforce framework version bump in gates.yml (gap D1) so the drift-check can't erode
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-11 (UTC filename 202607101910)
@@ -76,3 +76,79 @@ as its own named check). Behavior:
 ## Report
 The check design (step vs script), the trigger/exclusion logic, and the three
 verification outcomes above (no-bump→fail, bump→pass, excluded-only→pass).
+
+
+---
+
+## Completion report (kiro-cli, 2026-07-11)
+
+### Design: standalone script + one PR-only gate step
+Chose a dedicated `scripts/check-version-bump.sh` (legible, unit-testable in
+isolation) called by a new named step in the existing `gates` job, rather than
+inlining bash in the YAML. The step is guarded `if: github.event_name ==
+'pull_request'` (meaningless on push-to-master — no base to diff), and the
+`Checkout` step now uses `fetch-depth: 0` so `origin/<base>` is available for the
+diff. Full history fetch does not affect the other steps (they don't depend on
+shallow clone).
+
+### Trigger / exclusion logic
+`is_versioned()` uses a `case` classifier with the **denylist checked first** so
+runtime/generated paths win over the broader allowlist prefixes:
+- Denylist (never requires a bump): `.ai/activity/`, `.ai/reports/`,
+  `.ai/research/`, `.ai/.scratch/`, `.ai/.claim*`, `.ai/handoffs/.claim(s)`,
+  `.ai/handoffs/to-*` (queues), `docs/`, `.claude/settings.local.json`.
+- Allowlist (requires a bump): `.ai/instructions/`, `.ai/tools/`,
+  `.ai/config-snippets/`, `.ai/sync.md`, `.ai/known-limitations.md`,
+  `.ai/cli-map.md`, `.ai/handoffs/{README,template}.md`, `.claude/`, `.kimi/`,
+  `.kiro/`, `.opencode/`, `scripts/git-hooks/`, `scripts/install-template.sh`,
+  `CLAUDE.md`, `AGENTS.md`, `opencode.json`, `.codegraph/config.json`,
+  `.github/workflows/{framework-check,gates}.yml`.
+- Everything else (`src/`, `tests/`, `README.md`, `package.json` itself) → not
+  versioned framework content.
+
+Version comparison: `git show <base>:$PKG` version vs the working-tree `$PKG`
+version (`sed`-extracted). Equal + versioned change → FAIL; bumped → PASS.
+Dependency-light: bash + git + sed only.
+
+### Verification by execution
+Two harnesses, both against the REAL script (git fixture + sourced classifier):
+
+Git-fixture scenarios (temp repo, real `git diff`/`git show`):
+- **T1 no-bump → FAIL (exit 1):** changed `.kiro/hooks/foo.sh`, version stayed
+  `0.0.5` → exit 1, message "Framework content changed but ... version was not
+  bumped".
+- **T2 with-bump → PASS (exit 0):** same change + version `0.0.5 -> 0.0.6` → exit 0.
+- **T3 excluded-only → PASS (exit 0):** changed only `.ai/activity/log.md` +
+  `docs/x.md`, no bump → "no versioned framework content changed — PASS".
+- Result: `pass=4 fail=0`.
+
+Classifier unit test (sourced the real `is_versioned` via
+`sed -n '/^is_versioned()/,/^}/p'` — no duplicated logic): `pass=26 fail=0`,
+including denylist-wins-over-allowlist (`.claude/settings.local.json` → excluded
+despite `.claude/*` allowlist).
+
+YAML validity: `python -c "import yaml; yaml.safe_load(...)"` → `yaml OK`.
+
+### Grep-verified evidence
+
+    $ grep -n "pull_request'" .github/workflows/gates.yml
+    37:        if: github.event_name == 'pull_request'
+    $ grep -n "check-version-bump.sh" .github/workflows/gates.yml
+    38:        run: bash scripts/check-version-bump.sh "origin/${{ github.base_ref }}"
+    $ grep -n "fetch-depth" .github/workflows/gates.yml
+    29:          fetch-depth: 0
+    $ grep -n "was not bumped" scripts/check-version-bump.sh
+    94:  echo "FAIL: Framework content changed but $PKG version was not bumped"
+    $ grep -n "denylist" scripts/check-version-bump.sh
+    39:    # --- denylist: runtime / non-versioned state (never requires a bump) ---
+
+### Next step / what breaks first
+Changed files (`.github/workflows/gates.yml`, `scripts/check-version-bump.sh`)
+are UNCOMMITTED — they land via the normal infra-engineer commit path. NOTE:
+this same PR (which adds `gates.yml` + a `scripts/` framework file) will itself
+trip the new check once merged and re-run on a subsequent PR — the PR that adds
+this check should also bump `tools/multi-cli-install/package.json` `.version`
+(currently `0.0.5`) so it passes its own gate. What breaks first: if the
+versioned-path set in the installer's `sync-assets`/copy list diverges from this
+script's allowlist, the two can drift — keep the trigger set in step with what
+the installer actually ships.
