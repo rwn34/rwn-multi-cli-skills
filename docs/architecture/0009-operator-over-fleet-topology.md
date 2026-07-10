@@ -28,12 +28,16 @@ posture, and the transient "per-pane bare toggle" idea — both dropped.
 
 We adopt an **operator-over-fleet** topology: one interactive Claude on top
 driving four self-driving workers below, with the two Claude instances
-coordinated through shared files rather than any direct channel.
+coordinated through shared files rather than any direct channel. *(The single
+top operator is superseded — see Amendment (2026-07-10): the top row now carries
+**two** interactive operators, Claude + Kimi.)*
 
-### 1. Topology — a 5-pane Windows Terminal tab per project
+### 1. Topology — a 5-pane Windows Terminal tab per project *(superseded — see Amendment (2026-07-10): 2+4 dual-operator, 6 panes)*
 
 - **TOP pane:** a full-width horizontal strip, ~20% height (configurable),
-  running **app-Claude** = the interactive orchestrator. **No polling, no
+  running **app-Claude** = the interactive orchestrator. *(Superseded — see
+  Amendment (2026-07-10): the top strip is now 50% height and split into two
+  side-by-side cockpits, Claude + Kimi.)* **No polling, no
   pane-runner** — the owner's remote app attaches here. Identity: `claude-code`.
 - **BOTTOM 4 panes:** `auto-Claude`, Kimi, Kiro, OpenCode — each running the
   self-driving pane-runner (ADR-0008), and each **independently pausable**
@@ -76,7 +80,10 @@ coordinated through shared files rather than any direct channel.
   surface.
 - **Launcher change.** `Selector.ps1` / the launch script must build a 5-pane WT
   layout (1 top split + 4 bottom) instead of the current 4-pane grid; the
-  installed `~/.rwn-auto` copy is updated in lockstep.
+  installed `~/.rwn-auto` copy is updated in lockstep. *(Superseded — see
+  Amendment (2026-07-10): the default build is now a 6-pane 2+4 layout with
+  `$topStripFraction = 0.50`; the 1+4 layout is retained as the `5pane`
+  fallback.)*
 - **Supersedes the "per-pane bare toggle" idea** — unnecessary now, since the top
   pane is bare by construction and the bottom four always self-drive.
 
@@ -100,3 +107,37 @@ coordinated through shared files rather than any direct channel.
   pane-runner this ADR extends (poll → claim → run → auto-continue, MAX cap).
 - `.ai/research/framework-improvement-backlog.md` — #1/#32 (claim-lock),
   #7 (concurrency safety), #6 (cost observability).
+
+## Amendment (2026-07-10): dual-operator 2+4 topology
+
+Owner-approved: the topology evolves from **1+4 "operator-over-fleet"** to
+**2+4 "dual-operator-over-fleet"** — six panes per tab instead of five. The
+**top row is now 50% height and split into two side-by-side interactive,
+non-polling cockpits**: app-Claude (identity `claude-code`, no pane-runner) on
+the left and **Kimi** (bare `kimi --yolo`, no pane-runner, no polling, no
+handoff claims) on the right — both are human-driven operator seats. By owner
+intent, the two seats have distinct roles: **top-left Claude** is the owner's
+app-paired / remote-control session (a session-sharing seat with the Claude
+app), not a fleet executor, while **top-right Kimi** is the owner's
+general-purpose operator for asides and ad-hoc "btw" questions, not an executor
+lane. Useful consequence: because top-Kimi handles Q&A and asides rather than
+repo edits, it rarely contends with the `kimi-auto` bottom worker over `.kimi/`,
+so the two-Kimi write-race risk is lower than the raw "Kimi runs twice" framing
+implies. The **bottom row is unchanged from the original decision**: four side-by-side
+auto-polling self-driving pane-runner workers — `claude-auto`, Kiro, Kimi,
+OpenCode. Consequently **Kimi now runs in two roles simultaneously, exactly
+mirroring Claude's existing split**: an interactive top cockpit and a
+`kimi-auto` bottom worker that polls `to-kimi/`; two Kimi processes touch
+`.kimi/`, but the ADR-0008 claim-lock keeps the auto worker from double-grabbing
+handoffs while the interactive one is human-paced. The **read-side claim race**
+previously flagged only for app-Claude (the "#42 half-closed race" — an
+interactive operator may act on a handoff a worker also grabs, because the
+operator does not yet check `Test-HandoffClaimed` before acting) **now extends
+to the second operator, Kimi**; it is an **open follow-up of the same severity
+as the Claude case** and must be closed for both operators before either is
+relied on for unattended dispatch. On layout selection, the **new default build
+is the 2+4 six-pane layout**; the prior **1+4 (`5pane`)** and flat **4-pane
+(`4grid`)** layouts are retained as `RWN_PANE_LAYOUT` fallbacks for rollback.
+`tools/4ai-panes/Selector.ps1` implements this as the `6pane` default build
+(`$topStripFraction = 0.50`), with `5pane` (1+4) and `4grid` retained as
+`RWN_PANE_LAYOUT` fallbacks.

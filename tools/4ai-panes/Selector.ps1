@@ -23,14 +23,18 @@ $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else {
 
 # ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
 # RWN_PANE_LAYOUT selects the WT tab layout built per project:
-#   '5pane' (default/unset) = TOP full-width ~35% strip running bare interactive
-#                             Claude (app-Claude, identity claude-code) + BOTTOM 4
-#                             self-driving pane-runner workers (incl. auto-Claude).
+#   '6pane' (default/unset) = TOP row (~50% tall) holding 2 side-by-side NON-polling
+#                             interactive cockpits (top-left app-Claude/claude-code,
+#                             top-right bare Kimi) OVER a BOTTOM row of 4 self-driving
+#                             pane-runner workers (incl. auto-Claude). 2-over-4 fleet.
+#   '5pane'                 = fallback: TOP full-width ~50% strip running bare
+#                             interactive Claude only + BOTTOM 4 self-driving workers.
 #   '4grid'                 = legacy 4-pane grid (instant fallback if the new WT
 #                             split misbehaves on this machine).
-$paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '5pane' }
-# Top strip height as a fraction of the tab (~0.35 = 35%). Bottom region = 1 - this.
-$topStripFraction = 0.35
+$paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '6pane' }
+# Top ROW height as a fraction of the tab (0.50 = 50%, now holding 2 operators).
+# Bottom region (the 4-column fleet) = 1 - this.
+$topStripFraction = 0.50
 
 # ── CLI Definitions ──
 # Each CLI: name, detection command, launch command
@@ -913,17 +917,89 @@ $cliLower = @{ Claude = 'claude'; Kiro = 'kiro'; Kimi = 'kimi'; OpenCode = 'open
 $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
 $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
 
-# ── 5-pane operator-over-fleet layout (ADR-0009 section 1) ──
+# ── Layout gating ──
+# 6pane/5pane both need a project dir (the runner watches its .ai/), an available
+# Claude, the runner script, and non-bare mode. Anything else (4grid, bare, nodir,
+# unknown RWN_PANE_LAYOUT value, missing Claude/runner) falls through to the legacy
+# 4-grid path below — the instant, always-safe fallback.
+$layoutSupported = $targetDir -and $cliAvailable['Claude'] `
+                   -and (Test-Path $paneRunner) -and (-not $bareMode)
+$use6pane = ($paneLayoutMode -eq '6pane') -and $layoutSupported
+$use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
+
+# ── 6-pane dual-operator-over-fleet layout (ADR-0009 / owner-directed 2026-07-10) ──
+# Build ONE composite WT tab as a 2-over-4 grid:
+#   TOP row  (topStripFraction = 50% tall) = 2 side-by-side NON-polling interactive
+#            cockpits: top-LEFT = app-Claude (identity claude-code), top-RIGHT = bare
+#            Kimi. Neither runs the pane-runner (no auto-continue, no claim, no poll).
+#            ROLE INTENT: top-LEFT Claude is the owner's app-paired / remote-control
+#            session (session-sharing with the Claude app) -- NOT a fleet executor.
+#            top-RIGHT Kimi is the owner's general operator for asides / ad-hoc
+#            questions -- NOT an executor lane.
+#   BOTTOM row (50% tall) = up to N equal columns, each running the self-driving
+#            pane-runner worker (the Claude column self-IDs as claude-auto). Same
+#            fleet behavior as the 5pane bottom.
+#
+# WT split sequence (each split acts on the FOCUSED pane; -s sizes the NEW pane):
+#   1. new-tab               -> P0 : top pane, full width (top-LEFT interactive Claude).
+#   2. split-pane -H -s 0.5  -> B0 : bottom pane, full width, 50% tall (runner CLI[0]);
+#                                    focus moves to B0.
+#   3. split-pane -V (xN-1)  -> cut the bottom into N equal columns (pane-runners); the
+#                                    k-th split gives the new pane (N-k)/(N-k+1) of the
+#                                    focused region, leaving 1/N per column overall.
+#   4. move-focus up         -> return focus to the still-single full-width top pane P0.
+#   5. split-pane -V -s 0.5  -> split P0 into top-LEFT (Claude, kept) + top-RIGHT (Kimi).
+# The top-RIGHT Kimi split is only emitted when Kimi is available; otherwise the top
+# row stays one full-width interactive Claude (graceful degrade, never a broken split).
+if ($use6pane) {
+    $dq = '"'
+    $bottomCLIs = $activeCLIs                      # available CLIs, layout order
+    $n = $bottomCLIs.Count
+
+    # TOP-LEFT pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
+    $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
+    $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
+
+    # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction) = 0.5.
+    $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
+    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
+    $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
+
+    # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split operates
+    # on the focused (rightmost) region; the k-th split (k = 1..N-1) gives the new pane
+    # (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
+    for ($i = 1; $i -lt $n; $i++) {
+        $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
+        $runner = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
+        $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
+    }
+
+    # TOP-RIGHT operator: move focus back up to the full-width top pane, then split it
+    # 50/50 to place bare interactive Kimi on the right. Skip when Kimi is unavailable
+    # so we never emit a broken split (top stays a single full-width Claude).
+    if ($cliAvailable['Kimi']) {
+        $topRightCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Kimi'].cmd)$dq"
+        $wtCmd += " ; move-focus up ; split-pane -V -s 0.5 -d $dq$targetDir$dq $topRightCmd"
+    }
+
+    $topDesc = if ($cliAvailable['Kimi']) { 'app-Claude | Kimi' } else { 'app-Claude' }
+    Write-Host "6-pane layout (top=$topDesc, bottom=$($bottomCLIs -join ', ')):" -ForegroundColor Cyan
+    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
+    try {
+        & cmd.exe /c "`"$wtExe`" $wtCmd"
+        Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to launch 6-pane layout: $_" -ForegroundColor Red
+    }
+    return
+}
+
+# ── 5-pane operator-over-fleet layout (retained fallback: RWN_PANE_LAYOUT=5pane) ──
 # Build ONE composite WT tab: new-tab = TOP pane (bare interactive Claude =
 # app-Claude, identity claude-code, NOT the pane-runner); split-pane -H sizes the
-# new bottom region to ~65% so the top strip is ~35%; then N-1 vertical splits cut
-# the bottom into equal columns, each running the self-driving pane-runner for one
-# CLI (the Claude column self-identifies as claude-auto via Get-DefaultOwner).
-# Use the legacy 4-grid path when RWN_PANE_LAYOUT=4grid, in bare mode, when there
-# is no project dir, or when Claude / the runner is unavailable.
-$use5pane = ($paneLayoutMode -ne '4grid') -and $targetDir -and $cliAvailable['Claude'] `
-            -and (Test-Path $paneRunner) -and (-not $bareMode)
-
+# new bottom region to (1 - topStripFraction) so the top strip is topStripFraction;
+# then N-1 vertical splits cut the bottom into equal columns, each running the
+# self-driving pane-runner (the Claude column self-IDs as claude-auto).
 if ($use5pane) {
     $dq = '"'
     $bottomCLIs = $activeCLIs                      # available CLIs, layout order
