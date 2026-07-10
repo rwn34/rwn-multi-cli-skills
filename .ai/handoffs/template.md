@@ -6,7 +6,9 @@ Created: YYYY-MM-DD HH:MM
 Auto: yes
 Risk: <A | B | C>
 
-<!-- Protocol v2 (2026-07-08):
+<!-- Protocol v3 (2026-07-09; supersedes v2 2026-07-08):
+     Recipient self-retires the handoff to done/ on completion; sender validates
+     post-hoc. See README.md "Protocol v3" for the full lifecycle.
      Auto: yes  = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh.
                   DEFAULT is yes — the human is a gate, not a relay.
      Risk:      = autonomy tier per operating-prompt §8.
@@ -66,8 +68,11 @@ if the surrounding system changes. 1-2 sentences.>
 - (c) <e.g. "pipe-test / validation results — pasted output, not a summary">
 - (d) <e.g. "fresh-session verification results">
 
-## When complete
-Sender validates by reading the touched files AND checking the pasted execution
-evidence. On success, move this file to `.ai/handoffs/to-<recipient>/done/`. On
-failure, leave it in `open/`, change Status to `BLOCKED`, and append a `## Blocker`
-section explaining what's missing — verbatim error messages, not paraphrase.
+## When complete (protocol v3)
+Recipient self-retires: set Status to `DONE`, then move this file to
+`.ai/handoffs/to-<recipient>/done/` yourself once the steps are executed and the
+report is posted. The sender validates post-hoc by reading the touched files AND
+the pasted execution evidence. If blocked, leave the file in `open/`, change
+Status to `BLOCKED`, and append a `## Blocker` section with verbatim error
+messages (not paraphrase). If the sender finds completed work wrong, it moves the
+file back to `open/` with `BLOCKED` + notes.

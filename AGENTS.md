@@ -56,13 +56,18 @@ Never rewrite prior entries. Do not log trivial reads. Use your CLI's identity n
 When you need another CLI to execute a change in its own folder, write a
 paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (see
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
-be addressed to any CLI, including Claude.
+be addressed to any CLI, including Claude. The `YYYYMMDDHHMM` filename prefix is
+**UTC** (`date -u +%Y%m%d%H%M`) even though your `Created:` line and activity-log
+entries use local wall-clock — do not put local time in the filename.
 
-**Protocol v2 (2026-07-08):** every handoff carries `Auto:` (default `yes`) and
+**Protocol v3 (2026-07-09):** every handoff carries `Auto:` (default `yes`) and
 `Risk:` (`A`/`B`/`C` per the autonomy tiers in the operating-prompt SSOT §8).
 `Auto: yes` + Risk A/B dispatch headless via
 `bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
-Check your own inbox between tasks — poll, don't wait to be told.
+When you are the **recipient**, self-retire on completion: set the handoff Status
+to `DONE` and move the file from `open/` to `done/` yourself — the sender
+validates post-hoc. If blocked, leave it in `open/` as `BLOCKED` with a verbatim
+`## Blocker`. Check your own inbox between tasks — poll, don't wait to be told.
 
 ## Delivery integrity (what counts as "done")
 

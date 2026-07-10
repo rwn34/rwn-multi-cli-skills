@@ -48,13 +48,18 @@ Never rewrite prior entries. Do not log trivial reads.
 
 When you need Kimi or Kiro to execute a change in their own folder, write a
 paste-ready file to `.ai/handoffs/to-<kimi|kiro>/open/YYYYMMDDHHMM-slug.md`. See
-`.ai/handoffs/README.md` + `template.md` for the protocol. Before starting new
+`.ai/handoffs/README.md` + `template.md` for the protocol. The `YYYYMMDDHHMM`
+prefix is **UTC** (`date -u +%Y%m%d%H%M`) — the `Created:` line and activity-log
+entries use local wall-clock, but the filename does not. Before starting new
 non-trivial work, glance at `.ai/handoffs/to-claude/open/` — anything there is a
 task addressed to you. Re-check between tasks — poll, don't wait to be told.
 
-**Protocol v2 (2026-07-08):** handoffs carry `Auto:` (default `yes`) and
+**Protocol v3 (2026-07-09):** handoffs carry `Auto:` (default `yes`) and
 `Risk:` (A/B/C). Auto+Risk-A/B dispatch headless via
 `bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
+When you are the **recipient**, self-retire on completion: set Status `DONE` and
+move the handoff from `open/` to `done/` yourself; the sender validates post-hoc.
+Blocked → leave in `open/` as `BLOCKED` with a verbatim `## Blocker`.
 
 ## Root file policy
 
