@@ -39,6 +39,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# UTF-8 console so streamed CLI output (e.g. kimi's bullet glyphs) is not
+# mojibake'd. Guarded: never throw in a redirected / no-console context.
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
 # -- Single source of headless launch flags (mirrors dispatch-handoffs.sh) --
 # This is the ONLY place per-CLI launch flags live. If dispatch-handoffs.sh
 # headless_cmd changes, change it here too (and vice versa).
@@ -78,7 +82,20 @@ $script:InvokeCli = {
     param([string]$CliName, [string]$Prompt)
     $cmd = Get-HeadlessCmd -CliName $CliName -Prompt $Prompt
     Write-Host "  > $cmd" -ForegroundColor DarkGray
-    Invoke-Expression $cmd 2>&1 | Out-Host
+    # A native CLI's stderr is normal progress streaming, not a fatal error. Under
+    # $ErrorActionPreference='Stop' the 2>&1-merged stderr record is promoted to a
+    # terminating NativeCommandError, which would unwind the whole supervisor loop
+    # on the CLI's first stderr line. Force 'Continue' around ONLY the native call
+    # (restored in finally). This loses no failure signal: Invoke-HandoffRun decides
+    # continue/done by whether the handoff moved to done/ (Test-HandoffDone), not by
+    # exit code or stderr.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        Invoke-Expression $cmd 2>&1 | Out-Host
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     return $LASTEXITCODE
 }
 
