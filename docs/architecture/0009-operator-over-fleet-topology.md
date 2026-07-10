@@ -80,7 +80,12 @@ top operator is superseded — see Amendment (2026-07-10): the top row now carri
   surface.
 - **Launcher change.** `Selector.ps1` / the launch script must build a 5-pane WT
   layout (1 top split + 4 bottom) instead of the current 4-pane grid; the
-  installed `~/.rwn-auto` copy is updated in lockstep. *(Superseded — see
+  installed `~/.rwn-auto` copy is updated in lockstep. That lockstep is now
+  **mechanical, not aspirational** — enforced by the `post-merge` /
+  `post-checkout` git hooks + sync script specified in
+  `docs/specs/4ai-panes-install-sync.md`, which byte-sync the allowlisted tool
+  files into the install whenever a merge/checkout touches `tools/4ai-panes/**`.
+  *(Superseded — see
   Amendment (2026-07-10): the default build is now a 6-pane 2+4 layout with
   `$topStripFraction = 0.50`; the 1+4 layout is retained as the `5pane`
   fallback.)*

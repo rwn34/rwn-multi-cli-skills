@@ -71,6 +71,8 @@ Each pane launches **`pane-runner.ps1`** — a per-pane supervisor loop — rath
 | `icon.ico` | Custom icon for the Start Menu shortcut (dark theme, 4 colored bars). |
 | `.gitignore` | Ignores `.4pane-history`, `.4pane-layout`, and `*.tmp`. |
 
+> **Not in this dir:** `scripts/sync-4ai-panes-install.ps1` lives in the repo's top-level `scripts/`, **not** in `tools/4ai-panes/`. It is the install-sync engine (see [§3.2](#32-install)) and is **not** one of the eight allowlisted tool files it copies — it is never installed into `~/.rwn-auto/rwn-4AI-panes`.
+
 ---
 
 ## 3. Setup
@@ -87,11 +89,19 @@ Each pane launches **`pane-runner.ps1`** — a per-pane supervisor loop — rath
 
 ### 3.2 Install
 
-1. Copy the tool from `tools/4ai-panes/` in this repo (the canonical source — see [Provenance & Canonical Source](#provenance--canonical-source)):
+1. **First install only (bootstrap)** — copy the tool from `tools/4ai-panes/` in this repo (the canonical source — see [Provenance & Canonical Source](#provenance--canonical-source)):
 ```powershell
 Copy-Item -Recurse <path-to>\rwn-multi-cli-skills\tools\4ai-panes C:\Users\<you>\.rwn-auto\rwn-4AI-panes
 ```
    The old standalone [rwn-4AI-panes](https://github.com/rwn34/rwn-4AI-panes) GitHub repo is a read-only mirror pending archive — do not clone or install from it.
+
+   **After first install, the executable copy is kept in lockstep automatically** — do **not** re-run this recursive copy to update. Any `git merge` / `git pull` / branch checkout that touches `tools/4ai-panes/**` fires `scripts/git-hooks/post-merge` (and `post-checkout`), which runs `scripts/sync-4ai-panes-install.ps1` to byte-sync **only** the eight allowlisted tool files. The embedded framework (`.ai/`, `.claude/`, `.git/`, …) and runtime state (`.4pane-history`, `install-framework.log`, …) inside the install are never touched. See [`docs/specs/4ai-panes-install-sync.md`](../../docs/specs/4ai-panes-install-sync.md).
+
+   **Manual escape hatch** — to force a sync (or preview drift) yourself:
+```powershell
+powershell -NoProfile -File scripts/sync-4ai-panes-install.ps1 [-DryRun]
+```
+   Set `RWN_AUTO_INSTALL_DIR` to point the sync at a non-default install location (otherwise it targets `~/.rwn-auto/rwn-4AI-panes`).
 
 2. **Configure your projects folder** — edit `$projectsDir` in `Selector.ps1`:
 ```powershell
