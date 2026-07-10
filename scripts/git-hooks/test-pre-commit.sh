@@ -7,6 +7,9 @@
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Point the SSOT-replica lookup at the repo's real registry (HERE = scripts/git-hooks).
+SYNC_MD="$(cd "$HERE/../.." && pwd)/.ai/sync.md"
+export SYNC_MD
 # shellcheck source=/dev/null
 PRECOMMIT_LIB=1 . "$HERE/pre-commit"
 
@@ -74,6 +77,23 @@ assert_allow "claude -> source"          _territory_violation claude-code "src/m
 assert_allow "claude -> .claude"         _territory_violation claude-code ".claude/agents/coder.md"
 assert_allow "kimi -> .kimi"             _territory_violation kimi-cli ".kimi/steering/x.md"
 assert_allow "kimi -> source"            _territory_violation kimi-cli "backend/main.rs"
+
+echo "== SSOT replica-steering exception (claude-code only, ADR-0005 2026-07-10) =="
+# sync.md replicas -> claude-code may fleet-commit them.
+assert_allow "claude -> .kimi replica"   _territory_violation claude-code ".kimi/steering/operating-prompt.md"
+assert_allow "claude -> .kiro replica"   _territory_violation claude-code ".kiro/steering/agent-catalog.md"
+assert_allow "claude -> .kimi replica 2" _territory_violation claude-code ".kimi/steering/karpathy-guidelines.md"
+# Hand-authored, NOT a sync.md replica -> stays blocked.
+assert_block "claude -> .kimi 00-contract" _territory_violation claude-code ".kimi/steering/00-ai-contract.md"
+assert_block "claude -> .kiro 00-contract" _territory_violation claude-code ".kiro/steering/00-ai-contract.md"
+# Non-steering path under another CLI's dir -> exception does not apply, blocked.
+assert_block "claude -> .kimi hooks"     _territory_violation claude-code ".kimi/hooks/foo.sh"
+assert_block "claude -> .kiro resource"  _territory_violation claude-code ".kiro/skills/x/SKILL.md"
+# Exception is claude-code ONLY: other committers still blocked on the same replica path.
+assert_block "kiro -> .kimi replica"     _territory_violation kiro-cli ".kimi/steering/operating-prompt.md"
+assert_block "kimi -> .kiro replica"     _territory_violation kimi-cli ".kiro/steering/agent-catalog.md"
+# Fail-closed: if the registry is unreadable, even a real replica path is blocked.
+assert_block "claude replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kimi/steering/operating-prompt.md"'
 
 echo "== unknown committer (strictest) =="
 assert_block "unknown -> .claude"        _territory_violation unknown ".claude/x.md"

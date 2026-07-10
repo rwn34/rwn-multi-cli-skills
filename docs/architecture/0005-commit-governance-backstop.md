@@ -4,6 +4,30 @@
 
 Accepted (2026-07-09)
 
+## Amendment (2026-07-10): Claude fleet-commit of SSOT replica steering
+
+The cross-CLI guard (Decision item 4) blocks committer `claude-code` from
+committing paths inside another CLI's config dir. That is correct for genuine
+wrong-CLI writes, but it also blocks the routine case where an SSOT source under
+`.ai/instructions/**` changes and its generated replicas under `.kimi/steering/`
+and `.kiro/steering/` must be committed to stay in sync. Kimi and Kiro CAN
+self-commit their own steering when running interactively with a shell-capable
+subagent — both did so on 2026-07-10 (Kimi committed `.kimi/steering/*` as
+committer `kimi-cli`; Kiro committed `.kiro/steering/00-ai-contract.md` as commit
+`052abd0`, hook passing without `--no-verify`). But that lane is NOT proven
+reliable on the **headless self-driving pane-runner path** (the autonomous mode
+ADR-0008/0009 describe), where a shell or hooks may be unavailable. On that
+autonomous fleet path Claude is the fleet's git operator and should commit SSOT
+replica syncs directly rather than block on a per-CLI handoff round-trip — yet the
+guard blocked it from committing those replicas. This amendment carves a narrow exception: `claude-code` may
+commit `.kimi/steering/` and `.kiro/steering/` paths **only** when they are
+SSOT replicas listed in the replica registry `.ai/sync.md` (source → destination
+map, generated from `.ai/instructions/**`). All non-replica paths in another
+CLI's dir stay blocked. This section is the enforcement contract that the
+`scripts/git-hooks/pre-commit` implementation must match. **Follow-up (separate
+task):** `scripts/git-hooks/pre-commit` and `scripts/git-hooks/test-pre-commit.sh`
+MUST be updated to implement and cover this exception.
+
 ## Context
 
 The framework advertised a "hard block" enforcement layer: per-CLI hooks
@@ -63,6 +87,17 @@ rejects (exit 1, listing offending paths) when any staged path violates:
    whitelist). Source writes by claude/kimi/kiro are fine — this catches
    wrong-CLI writes to config dirs, not every source file.
 
+   **Exception — SSOT replica steering *[added 2026-07-10]*:** committer
+   `claude-code` MAY commit files under `.kimi/steering/` and `.kiro/steering/`
+   **when and only when** those paths are SSOT-tracked replicas enumerated in
+   `.ai/sync.md` (i.e. generated from `.ai/instructions/**`). Non-replica paths
+   in another CLI's config dir remain blocked for `claude-code`. Rationale:
+   Kimi/Kiro can self-commit their steering interactively (Kimi as `kimi-cli`;
+   Kiro as commit `052abd0`, both on 2026-07-10), but not reliably on the headless
+   self-driving pane-runner path — where Claude is the fleet's git operator and
+   the replicas' upstream is shared `.ai/` state Claude already owns. This
+   **narrows** the cross-CLI guard to the replica set — it does not remove it.
+
 The hook **fails CLOSED**: if it cannot enumerate staged files it exits 1.
 
 Wiring is per-clone (`core.hooksPath` is never inherited), so the installers set
@@ -97,4 +132,5 @@ The owner may bypass in a pinch with git's standard `git commit --no-verify`.
 - `docs/architecture/0001-root-file-exceptions.md` — root-file allowlist (reused verbatim)
 - `docs/architecture/0002-*` / `0003-*` / `0004-*` — CLI lanes, graph removal, worktree topology
 - `.claude/hooks/pretool-write-edit.sh` — the python-independent extraction pattern this hook mirrors
-- `scripts/git-hooks/pre-commit`, `scripts/git-hooks/test-pre-commit.sh` — the implementation + tests
+- `scripts/git-hooks/pre-commit`, `scripts/git-hooks/test-pre-commit.sh` — the implementation + tests. *[2026-07-10] These MUST be updated to implement the SSOT-replica-steering exception (see Amendment above) — separate follow-up task.*
+- `.ai/sync.md` — the SSOT source → replica registry that scopes the 2026-07-10 exception

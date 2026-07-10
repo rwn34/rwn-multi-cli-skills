@@ -46,6 +46,19 @@ _is_tombstone() {
     return 1
 }
 
+# Path to the SSOT source→replica registry. Overridable for tests; the hook body
+# runs from the repo root, so the relative default resolves there.
+: "${SYNC_MD:=.ai/sync.md}"
+
+# _is_sync_replica <path> — 0 if <path> is enumerated as a replica destination in
+# the SSOT registry .ai/sync.md (fixed-string match, no regex). Fails CLOSED
+# (returns 1 = not a replica) if the registry is missing or unreadable, so a
+# vanished registry can never widen the exception below.
+_is_sync_replica() {
+    [ -r "$SYNC_MD" ] || return 1
+    grep -qF "$1" "$SYNC_MD"
+}
+
 # _territory_violation <committer> <path> — 0 if <committer> may NOT commit <path>
 # because it lives in ANOTHER CLI's config dir. Shared .ai/ is writable by all
 # (except OpenCode, whose lane is a strict whitelist). Source writes by
@@ -54,7 +67,16 @@ _territory_violation() {
     committer="$1"; p="$2"
     case "$committer" in
         claude-code)
-            case "$p" in .kimi/*|.kiro/*) return 0 ;; esac ;;
+            case "$p" in
+                # SSOT replica-steering exception (ADR-0005 amendment 2026-07-10):
+                # claude-code MAY commit a .kimi/steering/ or .kiro/steering/ path
+                # ONLY when that exact path is a replica listed in .ai/sync.md.
+                # Hand-authored non-replicas (e.g. 00-ai-contract.md) stay blocked.
+                .kimi/steering/*|.kiro/steering/*)
+                    _is_sync_replica "$p" && return 1
+                    return 0 ;;
+                .kimi/*|.kiro/*) return 0 ;;
+            esac ;;
         kimi-cli)
             case "$p" in .claude/*|.kiro/*|.opencode/*|opencode.json) return 0 ;; esac ;;
         kiro-cli)
