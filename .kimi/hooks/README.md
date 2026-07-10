@@ -1,7 +1,7 @@
 # Kimi CLI Hooks
 
 Lifecycle hooks for the Kimi CLI in this project. All hooks are bash scripts
-invoked by `~/.kimi/config.toml`.
+invoked by `~/.kimi-code/config.toml`.
 
 ## Hook inventory
 
@@ -13,7 +13,8 @@ invoked by `~/.kimi/config.toml`.
 | Destructive cmd guard | `PreToolUse` | `Shell` | `destructive-guard.sh` | ✅ **WIRED** | Block `rm -rf /`, `git push --force`, `git reset --hard`, `DROP TABLE/DATABASE` |
 | safety-check.ps1 | `PreToolUse` | `Shell` | `safety-check.ps1` | ✅ **WIRED** | Broad PowerShell safety net (blocks dangerous patterns) |
 | Git status at start | `SessionStart` | — | `git-status.sh` | ⚠️ **NOT WIRED** | Inject `git status --short` into context at session start |
-| Open handoffs reminder | `SessionStart` | — | `handoffs-remind.sh` | ⚠️ **NOT WIRED** | List `.ai/handoffs/to-kimi/open/*.md` if any |
+| Open handoffs reminder | `SessionStart` | — | `handoffs-remind.sh` | ✅ **WIRED** | List qualifying (Status: OPEN, Auto: yes, Risk A\|B) handoffs in `.ai/handoffs/to-kimi/open/` at session start |
+| Open handoff queue-counts | `Stop` | — | `handoff-queue-count.sh` | ✅ **WIRED** | Print per-queue open counts across all `to-*/open` queues at each turn end (gap B4 poll point) |
 | Activity log inject | `UserPromptSubmit` | — | `activity-log-inject.sh` | ⚠️ **NOT WIRED** | Inject top 40 lines of `.ai/activity/log.md` into context |
 | Activity log remind | `Stop` | — | `activity-log-remind.sh` | ⚠️ **NOT WIRED** | Remind to update activity log if not touched in 60 min |
 | Git dirty reminder | `Stop` | — | `git-dirty-remind.sh` | ⚠️ **NOT WIRED** | Remind about uncommitted changes beyond activity log |
@@ -64,23 +65,29 @@ echo '{"tool_input": {"command": "rm -rf /"}}' | bash .kimi/hooks/destructive-gu
 
 1. Write a script in this directory following the stdin-JSON → exit-code
    pattern.
-2. Add a `[[hooks]]` entry in `~/.kimi/config.toml`.
+2. Add a `[[hooks]]` entry in `~/.kimi-code/config.toml`.
 3. Test manually with piped JSON before relying on it.
-4. Run the standing regression suite: `bash test_hooks.sh` (expects `PASS: 18/18`).
+4. Run the standing regression suite: `bash test_hooks.sh` (expect `PASS: N/N`
+   — all green; the exact count grows as hooks are added).
 5. Update the table above.
 
 ## Wiring status
 
 The 4 guard scripts (`root-guard.sh`, `framework-guard.sh`, `sensitive-guard.sh`,
-`destructive-guard.sh`) were wired into `~/.kimi/config.toml` on 2026-04-20.
+`destructive-guard.sh`) were wired into `~/.kimi-code/config.toml` on 2026-04-20.
 They are now active alongside the existing `safety-check.ps1` hook.
+
+The handoff-delivery hooks were wired on 2026-07-11 (handoff
+`.ai/handoffs/to-kimi/open/202607101900-wire-kimi-handoff-reminder.md`):
+`handoffs-remind.sh` (SessionStart — lists qualifying to-kimi handoffs) and
+`handoff-queue-count.sh` (Stop — per-queue open counts, gap B4).
 
 **To finish activation:** restart Kimi Code CLI or start a fresh session.
 
-The 5 convenience hooks (`git-status.sh`, `handoffs-remind.sh`,
-`activity-log-inject.sh`, `activity-log-remind.sh`, `git-dirty-remind.sh`)
-remain on disk but are **not yet wired**. Add `[[hooks]]` entries to
-`~/.kimi/config.toml` manually if you want them.
+The remaining convenience hooks (`git-status.sh`, `activity-log-inject.sh`,
+`activity-log-remind.sh`, `git-dirty-remind.sh`) remain on disk but are
+**not yet wired**. Add `[[hooks]]` entries to `~/.kimi-code/config.toml`
+manually if you want them.
 
 ## Windows note
 

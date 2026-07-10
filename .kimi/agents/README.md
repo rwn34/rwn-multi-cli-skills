@@ -146,6 +146,6 @@ orchestrator must sequence subagents directly.
 
 ## Restart requirement
 
-Any change to `.kimi/agents/*.yaml`, `~/.kimi/config.toml`, or hook scripts
+Any change to `.kimi/agents/*.yaml`, `~/.kimi-code/config.toml`, or hook scripts
 requires a **fresh Kimi session** to take effect. Steering files
 (`.kimi/steering/*.md`) are read dynamically and do not require restart.
