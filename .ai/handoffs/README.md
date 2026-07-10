@@ -46,11 +46,24 @@ Claude to update something in `.claude/` or in Claude's portion of the shared do
 
     YYYYMMDDHHMM-short-task-slug.md
 
-- `YYYYMMDDHHMM` — UTC timestamp of handoff creation, minute precision. Example:
+- `YYYYMMDDHHMM` — **UTC** timestamp of handoff creation, minute precision. Example:
   `202604201530-wave5-cleanup.md` (2026-04-20 15:30 UTC). Collisions across CLIs
   at the same minute are vanishingly rare; if one happens, the second writer
   appends a `-a` / `-b` suffix.
 - `short-task-slug` — kebab-case, ≤ 5 words, describes the change.
+
+**⚠️ Filename basis = UTC, `Created:`/log basis = local — do not mix them.**
+This trips up CLIs on a non-UTC clock. A CLI in UTC+7 that finishes at 22:17
+local writes the filename with the **UTC** time (15:17), but the `Created:` line
+and its activity-log entry with the **local** time (22:17):
+
+    Filename:  202607091517-test-count-reply.md      ← 15:17 UTC
+    Created:   2026-07-09 22:17                        ← 22:17 local (UTC+7)
+
+Both refer to the same instant. Using local time in the filename (e.g.
+`202607092217-…`) is the common mistake — it desynchronizes sort order across
+CLIs on different clocks. When in doubt, derive the filename from UTC (`date -u
++%Y%m%d%H%M`).
 
 **Why timestamp-based (not `NNN-slug`):** the old `NNN` scheme required each
 CLI to compute `max(existing) + 1`, creating a race condition when two CLIs
@@ -64,7 +77,7 @@ Do not rename — they are grandfathered. New handoffs use the timestamp format.
 Sorting `ls .ai/handoffs/to-<cli>/open/` still shows oldest-first with both
 formats present.
 
-## Protocol v2 (lifecycle of a single handoff) — 2026-07-08
+## Protocol v3 (lifecycle of a single handoff) — 2026-07-09
 
 Every handoff carries two routing fields in its status block:
 `Auto:` (default **yes**) and `Risk:` (**A**/**B**/**C** per the autonomy tiers
@@ -87,12 +100,24 @@ line is treated as C — conservative by default.
    it." Risk-C handoffs are NEVER auto-dispatched, regardless of `Auto:`.
 3. **Review + execute** — recipient reads the handoff, asks clarifying questions if
    needed, performs the steps, prepends an entry to `.ai/activity/log.md`.
-4. **Report** — recipient reports back in chat with the "Report back with" section
-   filled in. Optionally updates the handoff file's status to `DONE` inline, listing
-   what was actually touched.
-5. **Validate** — sender reads the recipient's touched files and confirms they match
-   spec. If OK, sender (or user) moves the file from `open/` to `done/`. If not, the
-   file stays in `open/` with a `BLOCKED` status + notes explaining what's wrong.
+4. **Report + self-retire (v3)** — recipient reports back in chat with the "Report
+   back with" section filled in, sets the handoff file's status to `DONE` inline
+   (listing what was actually touched), **and moves the file from `open/` to
+   `done/` itself.** The recipient closing its own loop is now the standard —
+   it keeps the `open/` queue an accurate picture of outstanding work without
+   waiting on a sender round-trip, and it matches the ADR-0008 auto-continuation
+   directive that the self-driving pane-runner already follows. Exception: if the
+   recipient is **blocked**, it leaves the file in `open/`, sets status `BLOCKED`,
+   and appends a `## Blocker` section with the verbatim error — never a paraphrase.
+5. **Validate (post-hoc)** — sender reads the recipient's touched files and confirms
+   they match spec. Validation now happens *after* the file is already in `done/`.
+   If the work is wrong, the sender moves it back to `open/`, sets status `BLOCKED`
+   with notes, and (for Auto handoffs) it re-dispatches on the next poll.
+
+> **v2 → v3 change (2026-07-09):** in v2 the *sender* moved the file to `done/`
+> after validating. In v3 the *recipient* self-retires on completion and the
+> sender validates post-hoc. This removes the sender round-trip that left
+> correctly-completed handoffs lingering in `open/`. Applies to all four CLIs.
 
 ## Polling — who watches the queues (P4, 2026-07-09)
 

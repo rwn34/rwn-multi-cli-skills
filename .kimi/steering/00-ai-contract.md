@@ -38,14 +38,17 @@ Never rewrite prior entries. Do not log trivial reads.
 When another CLI needs you to execute a change in `.kimi/` or in Kimi's portion of
 the shared docs, it writes a paste-ready instruction file to
 `.ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session
-starts or when the user references a handoff. Follow the protocol in
+starts or when the user references a handoff. Follow protocol v3 in
 `.ai/handoffs/README.md`: review, execute the steps, prepend an activity-log entry,
-report back. The sender validates and moves the file to
-`.ai/handoffs/to-kimi/done/` on success.
+report back, then self-retire — set the handoff's Status to `DONE` and move it from
+`open/` to `done/` yourself. The sender validates post-hoc. If blocked, leave the
+file in `open/`, set Status to `BLOCKED`, and append a `## Blocker` section with
+the verbatim blocker.
 
 You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
 `.ai/handoffs/to-kiro/open/` when you need those CLIs to change files in their
-folders.
+folders. Outbound handoffs follow the same protocol v3 lifecycle; the recipient
+self-retires on completion.
 
 ## Root file policy
 

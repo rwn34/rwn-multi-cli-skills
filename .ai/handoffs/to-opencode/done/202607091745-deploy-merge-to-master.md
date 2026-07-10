@@ -1,5 +1,5 @@
 # DEPLOY BRIEF — run pre-merge gates + no-ff merge to master
-Status: OPEN
+Status: OPEN — DONE (superseded by master merge b5024c2 2026-07-09)
 Sender: claude-code
 Recipient: opencode
 Created: 2026-07-09 17:45

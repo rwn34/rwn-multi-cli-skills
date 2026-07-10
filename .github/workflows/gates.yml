@@ -1,0 +1,54 @@
+name: gates
+
+# Machine-checkable merge gate for the multi-CLI framework (ADR-0007 P2).
+# Replaces the human-eyeballed pre-merge checklist: runs the full SSOT drift
+# check, all four per-CLI guard suites, the ADR-0005 git pre-commit backstop
+# test, and the installer typecheck + test suite on a clean runner (git + node
+# on PATH), so the three local "git/npm not on PATH" env-fails PASS here.
+#
+# BRANCH PROTECTION (repo setting, not a file): to make this a REQUIRED status
+# check, enable branch protection on `master` in GitHub repo Settings > Branches
+# > Branch protection rules > Require status checks to pass > select "gates".
+# This cannot be committed to the repo; it must be set in the GitHub UI/API.
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: SSOT drift check
+        run: bash .ai/tools/check-ssot-drift.sh
+
+      - name: Claude hooks test suite
+        run: bash .claude/hooks/test_hooks.sh
+
+      - name: Kimi hooks test suite
+        run: bash .kimi/hooks/test_hooks.sh
+
+      - name: Kiro hooks test suite
+        run: bash .kiro/hooks/test_hooks.sh
+
+      - name: OpenCode guard test suite
+        run: node .opencode/plugin/test-guard.mjs
+
+      - name: Git pre-commit backstop test (ADR-0005)
+        run: bash scripts/git-hooks/test-pre-commit.sh
+
+      - name: Installer typecheck + tests
+        run: npm ci && npx tsc --noEmit && npx vitest run
+        working-directory: tools/multi-cli-install

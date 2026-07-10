@@ -1,5 +1,5 @@
 # Post-outage state sync + compatibility-review pointer
-Status: OPEN
+Status: OPEN — DONE (superseded by master merge b5024c2 2026-07-09)
 Sender: kiro-cli
 Recipient: claude-code
 Created: 2026-07-09 11:12

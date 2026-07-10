@@ -1,3 +1,78 @@
+## 2026-07-10 13:00 — claude-code
+- Action: Owner ACCEPTANCE: launched the new 6pane build — confirmed the 50% split + 2-over-4 tiling render correctly. This closes the standing "WT visual render is owner's acceptance test" caveat that rode ADR-0009 and every pane commit since the 5pane build — the dual-operator 2+4 topology is now visually validated, not just parse-verified. Pushing branch to carry Kiro's guard-fix commit 36ce4c7 (committed by kiro-cli, was unpushed) to origin.
+- Files: — (acceptance note + push; code already committed in bd2f7ef / 36ce4c7)
+- Decisions: Render acceptance retires the visual-test follow-up for the current topology; the #42 read-side claim race (now covering both top operators, Claude + Kimi) remains the one open follow-up before either cockpit is trusted for unattended dispatch.
+
+## 2026-07-10 12:56 — kiro-cli
+- Action: Processed handoff 202607100550-commit-guard-pathkey-fix (Auto:yes Risk B). Committed the 6 already-fixed/already-tested PreToolUse guard files that were sitting uncommitted after handoff 202607100320 — claude-code couldn't commit them (ADR-0005 hook blocks committer claude-code from .kiro/ non-replica paths). Delegated git ops to infra-engineer (orchestrator has no shell): staged ONLY the 6 explicit paths, committed as 36ce4c7 under committer identity kiro-cli via inline `-c user.name=kiro-cli -c user.email=kiro-cli@local` (no permanent repo config change) — pre-commit hook RAN and PASSED without --no-verify. Post-commit `bash .kiro/hooks/test_hooks.sh` = PASS 60/60, exit 0. Not pushed (out of handoff scope). Self-retired handoff → done/ (protocol v3).
+- Files: committed 36ce4c7 (.kiro/hooks/{root-file,framework-dir,sensitive-file,worktree-confinement,fleet-whitelist}-guard.sh, test_hooks.sh); .ai/handoffs/to-kiro/{open→done}/202607100550-commit-guard-pathkey-fix.md
+- Decisions: Inline committer override rather than mutating repo git config (repo user.name is claude-code); same approach as prior commit 052abd0. Only the 6 files staged (no `git add -A`), so no unrelated working-tree changes swept in.
+
+## 2026-07-10 12:48 — claude-code
+- Action: Built dual-operator (2+4) pane topology per owner direction. Selector.ps1 (coder): new '6pane' default = TOP row 50% split into 2 side-by-side NON-polling interactive cockpits (top-left app-Claude/claude-code = owner's app remote-control/session-share seat; top-right bare Kimi --yolo = owner's general operator for asides) OVER a BOTTOM row of 4 self-driving pane-runner columns (claude-auto, Kiro, Kimi, OpenCode — so Kimi runs twice, mirroring Claude). $topStripFraction 0.35→0.50; '5pane'(1+4) and '4grid' retained as RWN_PANE_LAYOUT fallbacks; Kimi-absent gracefully degrades to single top Claude; repo + installed mirror both parse-OK. ADR-0009 amended (doc-writer) with the 2+4 topology, operator role intents, and extended #42 read-side claim-race note (now covers top-Kimi). Committed together + pushed.
+- Files: docs/architecture/0009-operator-over-fleet-topology.md, tools/4ai-panes/Selector.ps1 (+ out-of-tree mirror ~/.rwn-auto/rwn-4AI-panes/Selector.ps1)
+- Decisions: WT single composite command — invariant "build+subdivide bottom fully, THEN split top last" (move-focus up assumes top still single full-width pane); flagged for any future 3rd-operator change. Visual render is owner's acceptance test (WT can't launch headless). Kiro's guard-fix files (.kiro/hooks/*) remain uncommitted in Kiro's territory — Kiro must self-commit (separate from this).
+
+## 2026-07-10 12:22 — kiro-cli
+- Action: Processed handoff 202607100320-fix-pretooluse-guard-pathkey (Auto:yes Risk B). Confirmed the path key: Kiro's fs_write/str_replace tool_input carries the target under `path`, not `file_path`. Fixed all 5 PreToolUse file-guards (root-file, framework-dir, sensitive-file, worktree-confinement, fleet-whitelist) to extract from BOTH keys — added a `path` fallback (python3/python optional-first, pure-sed fallback on EMPTY output) after the existing file_path chain, keeping fail-CLOSED for genuine no-target. Chose Option B (fix extraction, guards stay comprehensive) over Option A (narrow matcher, would leave str_replace unguarded). Added test_hooks.sh cases t43–t50 (path→.claude BLOCK, path→.ai ALLOW, no-target BLOCK, root+sensitive path cases, 2 pyless sed-fallback cases). Delegated suite execution to tester subagent (orchestrator has no shell): `bash .kiro/hooks/test_hooks.sh` → PASS 60/60, exit 0. Self-retired handoff → done/ (protocol v3).
+- Files: .kiro/hooks/{root-file-guard,framework-dir-guard,sensitive-file-guard,worktree-confinement-guard,fleet-whitelist-guard}.sh (+path fallback), .kiro/hooks/test_hooks.sh (t43–t50); .ai/handoffs/to-kiro/{open→done}/202607100320-fix-pretooluse-guard-pathkey.md
+- Decisions: sed pattern `"path"[[:space:]]*:` requires a literal quote before `path`, so it never mis-matches `"file_path"` — verified by t44 (path→.ai ALLOW) and the retained t37–t40 fail-closed cases. Guard edits made directly by orchestrator (`.kiro/` is my framework dir); only shell-dependent test execution + the file move were delegated (coder/tester deny fs_write to `.kiro/**`).
+
+## 2026-07-10 12:22 — claude-code
+- Action: Two owner-directed items. (1) Widened 5-pane operator top strip 20%→35%: coder set $topStripFraction 0.20→0.35 + refreshed layout comments (lines 26/32/919) in BOTH tools/4ai-panes/Selector.ps1 and the out-of-tree mirror ~/.rwn-auto/rwn-4AI-panes/Selector.ps1 (parse OK); committed repo copy 78f365a and pushed (2a9758c..78f365a). Mirror already synced so next pane launch renders 35%. (2) Diagnosed the wall of Kiro PreToolUse guard errors ("no file_path found — refusing to fail open"): guards.json matches the 5 file-guards on `fs_write|str_replace|write` but the guards extract only `file_path`, while Kiro's str_replace/edit tools carry the target under `path` — so they fail-closed and false-block every such edit (run still completes). Wrote fix handoff to-kiro/open/202607100320-fix-pretooluse-guard-pathkey.md (Auto:yes Risk B) recommending extended path extraction (read `path` too) so guards evaluate the target instead of blanket-blocking, with test_hooks.sh cases.
+- Files: committed 78f365a (tools/4ai-panes/Selector.ps1); new handoff .ai/handoffs/to-kiro/open/202607100320-fix-pretooluse-guard-pathkey.md
+- Decisions: 35% visual render remains owner's acceptance test (WT can't launch headless). Kiro guard fix routed via handoff (their territory) not edited directly; recommended Option B (fix extraction, keep fail-closed) over Option A (narrow matcher) since A would leave str_replace edits unguarded. Noted stray .ai/.claim-kiro.json untracked (older claim-lock location vs ADR-0008 .ai/handoffs/.claims/) — flagged for later, not touched.
+
+## 2026-07-10 10:08 — claude-code
+- Action: Closed out the ADR-0005 "SSOT replica steering" exception. After both Kimi (kimi-cli, 8163372) and Kiro (kiro-cli, 052abd0) self-committed their v3 steering interactively — contradicting the amendment's original "no git lane" premise — owner chose to KEEP the exception for the headless pane-runner path. Delegated: doc-writer corrected the ADR rationale (interactive self-commit works; exception is for the autonomous/headless mode); coder implemented the pre-commit hook exception + tests. Hook allows claude-code to commit ONLY .kimi/steering + .kiro/steering paths listed as replicas in .ai/sync.md (fixed-string match, fail-closed if registry missing); 00-ai-contract.md and non-steering cross-CLI paths stay blocked; claude-code-only. test-pre-commit.sh 50/50 pass. Committed 872a139 and pushed (6814a87..872a139) along with the Kimi+Kiro steering commits.
+- Files: committed 872a139 (docs/architecture/0005-commit-governance-backstop.md, scripts/git-hooks/pre-commit, scripts/git-hooks/test-pre-commit.sh)
+- Decisions: Surfaced the flipped premise to owner before building rather than proceeding on a stale justification. Hook keys on grep -qF against .ai/sync.md — flagged substring-prefix risk + sync.md-relocation fail-closed as future watch items. Both v3 self-commit handoffs already self-retired to done/ by Kimi/Kiro.
+
+## 2026-07-10 08:31 — kiro-cli
+- Action: Processed handoff 202607100115-self-commit-v3-steering. Committed my already-made protocol-v3 steering edit `.kiro/steering/00-ai-contract.md` (UTC-filename rule + recipient self-retire) that claude-code could not commit — the ADR-0005 pre-commit hook blocks committer `claude-code` from `.kiro/` paths. Delegated the git ops to the `infra-engineer` subagent (orchestrator has no shell): committed as `052abd0` under committer identity `kiro-cli` via inline `-c user.name/user.email` (no permanent config change), pre-commit hook RAN and PASSED without `--no-verify`. Only the one file staged; not pushed. Self-retired handoff → done/ (protocol v3).
+- Files: committed 052abd0 (.kiro/steering/00-ai-contract.md, 18+/3-); .ai/handoffs/to-kiro/{open→done}/202607100115-self-commit-v3-steering.md
+- Decisions: Used inline committer override rather than mutating repo git config (repo user.name was `claude-code`). Did not push (out of handoff scope). This is the kiro-cli half of the pending v3 self-commit pair; the parallel ADR-0005 amendment (let claude-code fleet-commit SSOT replicas) is now moot for this file since I committed it directly.
+
+## 2026-07-10 08:31 — claude-code
+- Action: Landed + pushed handoff protocol v3 (commit 6814a87 on claude/project-overview-pn5l4e): UTC handoff filenames (worked example) + recipient self-retire, sender validates post-hoc. ADR-0005 pre-commit hook correctly BLOCKED claude-code from committing the 3 Kimi/Kiro steering replica edits (cross-CLI territory) — infra-engineer refused --no-verify. Owner decisions: (1) handoffs sent to Kimi + Kiro to self-commit their own steering — Kimi already did (committer kimi-cli, its 08:29 entry), proving Kimi has a git lane; Kiro pending; (2) amend ADR-0005 to let claude-code fleet-commit SSOT-tracked steering replicas (doc-writer running) with a follow-up pre-commit hook change (task #9, blocked on the ADR).
+- Files: committed 6814a87 (.ai/handoffs/README.md, template.md, CLAUDE.md, AGENTS.md, activity log, 2 retired handoffs); new handoffs .ai/handoffs/to-kimi/open/202607100115-self-commit-v3-steering.md + to-kiro/open/202607100115-self-commit-v3-steering.md
+- Decisions: v3 rules housed in .ai/handoffs/README.md (no SSOT-replica cascade). ADR-0005 exception will be narrow — claude-code may commit ONLY .kimi/steering + .kiro/steering paths that are replicas listed in .ai/sync.md; non-replica cross-CLI writes stay blocked. NOTE: top of this log currently sits ABOVE the "# Activity Log" header (a prior prepend landed above the header) — flagged for later cleanup, not touched here.
+
+## 2026-07-10 08:29 — kimi-cli
+- Action: Committed v3 handoff-protocol steering edits for Kimi steering.
+- Files: .kimi/steering/00-ai-contract.md, .kimi/steering/operating-prompt.md
+- Decisions: Committer identity overridden to `kimi-cli` so the ADR-0005 pre-commit hook passes; staged only the two Kimi steering files.
+
+## 2026-07-10 07:52 — claude-code
+- Action: Built the 5-pane operator-over-fleet layout (coder, commit 7c34307) — Selector.ps1 now builds one composite `wt` tab: TOP full-width ~20% strip = bare interactive claude (app-Claude, claude-code, NO pane-runner) + BOTTOM 4 equal columns each running the self-driving pane-runner (Claude column = claude-auto via Get-DefaultOwner). `RWN_PANE_LAYOUT=4grid` env keeps the legacy 4-pane path as instant fallback; `$topStripFraction` (0.20) + layout mode are owner-tweakable at the top of the script. Repo + installed ~/.rwn-auto copy both parse 0 errors. Verified layout logic (top 20%/bottom 80%, equal quarters, fallback guards); WT VISUAL RENDER is owner's acceptance test (can't launch WT headless).
+- Files: tools/4ai-panes/Selector.ps1 (+ installed mirror)
+- Decisions: Single `;`-chained composite wt command (new construct vs legacy per-split calls) — flagged for owner visual check (top-strip-not-inverted, split focus-chaining, cmd quoting). Top pane reuses existing `claude --dangerously-skip-permissions`. Prereq chain satisfied: claim-lock (a8e04c6) already present before auto-Claude rollout. Remaining before auto-Claude is truly safe: #42 app-Claude read-side claim check (race still half-closed). ADR-0009 "current 4-pane grid" wording now mildly stale (4grid is fallback) — later doc pass.
+
+## 2026-07-10 07:40 — claude-code
+- Action: Owner-directed 4+1 / 5-pane "operator-over-fleet" design → ADR-0009 written (doc-writer) + committed d9a05c6; then built the per-handoff CLAIM-LOCK it requires (coder, commit a8e04c6). Claim sidecars at `.ai/handoffs/.claims/<recipient>__<basename>.claim.json` (owner+pid+host+utc), atomic CreateNew acquire, dead-pid + 15-min-stale reclaim; `claude-auto` is a distinct owner from `claude-code`. Wired into pane-runner pickup (claim→skip-if-claimed→release-on-done); 12→17 tests pass; gitignored the claims dir with correct `dir/*`+`!README` negation.
+- Files: docs/architecture/0009-operator-over-fleet-topology.md, docs/architecture/0008-…(forward-ref), tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, .gitignore, .ai/handoffs/.claims/README.md
+- Decisions: Claim-lock native PowerShell (no bash dep in pane context). Follow-ups queued: app-Claude read-side (must Test-HandoffClaimed before acting — race only HALF-closed until then), bash dispatcher honoring the same sidecar, and a claim HEARTBEAT (re-stamp claimed_at) for runs >15min. Next: #41 5-pane Selector layout + auto-Claude wiring. PAT rotation still owner-pending (backlog §8).
+
+## 2026-07-10 07:18 — kiro-cli
+- Action: RESOLVED handoff 202607101530-clean-global-mcp-and-agent-noise (owner directed completion). Task 1 (kirograph MCP): re-confirmed already clean — `~/.kiro/settings/mcp.json` holds only the `github` server, zero kirograph/kimigraph refs; no action. Task 2 (13 agent-conflict warnings): reclassified from gated to Tier-B reversible cleanup — delegated coder subagent to MOVE (not delete) the 13 stale Apr-20 global framework agents (coder…ui-engineer) from `~/.kiro/agents/` into `~/.kiro/agents-backup-20260710/`. Verified: global agents dir now 8 files (agent_config.json.example, kiro_default, backend, devops, frontend, product, security-tester, uiux-tester), backup dir holds the 13. With no name collisions left, the 13 "Agent conflict — using workspace version" lines can no longer be emitted (root-cause proof; live TTY banner unverifiable headless). Self-retired handoff → done/.
+- Files: `~/.kiro/agents/` (13 moved out, global — outside repo tree), `~/.kiro/agents-backup-20260710/` (created, 13 files); `.ai/handoffs/to-kiro/{open→done}/202607101530-clean-global-mcp-and-agent-noise.md`; this log.
+- Decisions: MOVE-to-backup over hard delete for reversibility (`Move-Item ...backup-20260710\* ...\agents\` restores prior state). Kept the 7 Apr-16 globals + kiro_default (no workspace counterpart → don't conflict). Did NOT touch `github` MCP — its "did not load" failure (npx not on PATH) is out of this handoff's kirograph scope and needs a separate owner decision; the plaintext GitHub PAT in `~/.kiro/settings/mcp.json` remains flagged for rotation. Prepended log directly (no shell for the atomic append script).
+
+## 2026-07-10 07:12 — claude-code
+- Action: Pane-runner visibility fix landed (coder, commit 771b978) — every CLI's stdout+stderr now streams live to its pane via `Invoke-Expression $cmd 2>&1 | Out-Host` inside `$script:InvokeCli` (was bare Invoke-Expression whose capturable stdout got swallowed by the call-site `| Out-Null` — Kiro/OpenCode went dark while console-writing Kimi stayed visible), plus a `-- launching <cli> (streaming output below) --` heartbeat per run. Return hashtable stays clean (Out-Host emits nothing to the pipeline). 12/12 tests pass; reinstalled to ~/.rwn-auto/rwn-4AI-panes/pane-runner.ps1 (IDENTICAL diff, parse OK). Kiro investigated my noise-cleanup handoff 202607101530 and correctly refuted its premise (see below) — left it BLOCKED for owner decisions.
+- Files: tools/4ai-panes/pane-runner.ps1
+- Decisions: Stream via Out-Host inside InvokeCli (not removing the call-site Out-Null) so heartbeat+RUN/DONE banners stay clean AND stdout shows. My kirograph-MCP premise was WRONG — no kirograph MCP exists; Kiro's real startup noise = github MCP failing (npx not on PATH) + 13 duplicate global agents in ~/.kiro/agents/. Surfacing to owner: (a) remove 13 dup global agents? (b) github MCP handling; (c) SECURITY: plaintext GitHub PAT in ~/.kiro/settings/mcp.json — recommend rotation.
+
+## 2026-07-10 06:57 — kiro-cli
+- Action: investigated handoff 202607101530-clean-global-mcp-and-agent-noise (global startup noise). Findings correct the handoff's premise: (1) NO kirograph/kimigraph MCP entry exists anywhere in global Kiro config — grep of `~/.kiro/settings`, `~/.kiro/agents`, `~/.kiro/logs` returned 0 matches; `~/.kiro/settings/mcp.json` holds only a `github` server. The real "mcp server did not load correctly" is the `github` server: latest `~/.kiro/logs/20260709T092053888/mcp.log` shows `'npx' is not recognized ... Failed to connect`. (2) The 13 agent-conflict warnings come from `~/.kiro/agents/*.json` (coder…ui-engineer, dated Apr 20) duplicating the workspace `.kiro/agents/`. Left handoff OPEN as BLOCKED: task-1 needs no action (already clean); tasks 2–3 need file-deletion capability I lack (fs_write has no delete), an owner decision on cross-project blast radius, and a headless `kiro-cli` run I can't perform (no shell).
+- Files: — (read-only investigation; no config edits made). SECURITY FLAG: `~/.kiro/settings/mcp.json` stores a plaintext GitHub PAT under the `github` server env.
+- Decisions: Did NOT touch the `github` MCP (credentialed, out of the kirograph scope). Did NOT delete the 13 global agent duplicates — cross-project blast radius (other repos without workspace agents rely on the global roster) is a gated decision, and I have no delete tool. Recommend option (b) removing the redundant global framework agents once the owner confirms.
+
+## 2026-07-09 22:34 — kimi-cli
+- Action: processed handoff 202607091540-self-retire-protocol-v3 — adopted protocol-v3 recipient-self-retire rule in Kimi steering by updating `.kimi/steering/00-ai-contract.md` and bumping `.kimi/steering/operating-prompt.md` from v2 to v3.
+- Files: .kimi/steering/00-ai-contract.md, .kimi/steering/operating-prompt.md
+- Decisions: kept wording in Kimi steering conventions; self-retire rule now explicit alongside existing UTC-filename rule.
+
 # Activity Log
 
 Newest entries at the top. Each CLI prepends an entry after completing substantive work.
@@ -16,6 +91,91 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 `.kimi/steering/00-ai-contract.md`, `.kiro/steering/00-ai-contract.md`) for format and rules.
 
 ---
+
+## 2026-07-09 22:42 — claude-code
+- Action: Handoff protocol v2→v3 (owner-approved). Two clarifications: (1) handoff FILENAMES use UTC (`date -u`), Created/log lines stay local wall-clock — Kimi was the only compliant CLI; Claude/Kiro/OpenCode had used local in filenames; added a worked UTC-vs-local example to the handoff README. (2) Recipient SELF-RETIRES completed handoffs open→done; sender validates post-hoc (was: sender moves). Updated shared SSOT + Claude/OpenCode contracts directly; dispatched handoffs to Kiro + Kimi for their steering; delegated doc-writer to note v3 in ADR-0008.
+- Files: .ai/handoffs/README.md, .ai/handoffs/template.md, CLAUDE.md, AGENTS.md, .ai/handoffs/to-kiro/open/202607091540-utc-filenames-and-self-retire.md, .ai/handoffs/to-kimi/open/202607091540-self-retire-protocol-v3.md
+- Decisions: Housed the authoritative v3 rules in .ai/handoffs/README.md (protocol's home, no SSOT-replica cascade) rather than bloating operating-prompt/principles.md. Kiro/Kimi steering updates go via handoff (their territory); ADR-0008 note via doc-writer (docs/ is project source).
+
+## 2026-07-09 22:33 — kiro-cli
+- Action: processed handoff 202607091540-utc-filenames-and-self-retire — updated `.kiro/steering/00-ai-contract.md` Cross-CLI handoffs section with (1) UTC filename basis vs local `Created:`/log-time rule + worked UTC+7 example, and (2) recipient-self-retire protocol v3 (set Status DONE, move open/→done/ yourself; blocked → leave OPEN as BLOCKED). Both verification greps pass (UTC line + self-retire/v3 line). Self-retired this handoff to done/.
+- Files: .kiro/steering/00-ai-contract.md; .ai/handoffs/to-kiro/{open→done}/202607091540-utc-filenames-and-self-retire.md
+- Decisions: Deliberately did NOT edit `.kiro/steering/operating-prompt.md` (handoff step 3, "Handoff protocol v2" line at :119). It is a drift-checked SSOT replica of `.ai/instructions/operating-prompt/principles.md`; a Kiro-only v2→v3 bump would (a) fail check-ssot-drift.sh and (b) require propagating to `.claude/`/`.kimi/` replicas I cannot write. Flagged for a proper SSOT sync (edit SSOT, regenerate all replicas) — the same later-sync path ADR-0006/0007 already flag for operating-prompt.
+
+## 2026-07-09 22:36 — claude-code
+- Action: processed kiro's reply handoff 202607092216-test-count-reply-kiro (round-trip liveness test) — confirmed 1+3 = 4; outbound handoff 202607092220-test-count-roundtrip.md was already retired to to-kiro/done/ by kiro-cli itself (absent from to-kiro/open/), so no move needed there. Marked reply Status DONE with validation note, delegated infra-engineer to retire the reply to to-claude/done/; verified present in done/, absent from open/.
+- Files: .ai/handoffs/to-claude/done/202607092216-test-count-reply-kiro.md (Status DONE, moved from open/)
+- Decisions: Recipient (kiro) had already moved the outbound handoff per auto-continuation directive; my remaining work was validation + retiring the reply. File untracked, so move lands as fresh untracked path (no open/→done/ rename history until first commit) — same as prior reply retirements.
+
+## 2026-07-09 22:32 — claude-code
+- Action: validated kimi's reply handoff 202607091517-test-count-reply-kimi (round-trip liveness test) — confirmed 1+3 = 4; original to-kimi handoff already in to-kimi/done/. Marked reply Status DONE with validation note, delegated infra-engineer to retire it to to-claude/done/. Verified move (present in done/, absent from open/).
+- Files: .ai/handoffs/to-claude/done/202607091517-test-count-reply-kimi.md (Status DONE, moved from open/)
+- Decisions: File untracked, so move lands as fresh untracked path — no open/→done/ rename history until first commit (same as the opencode/kiro reply retirements).
+
+## 2026-07-09 22:27 — claude-code
+- Action: resumed and closed out handoff 202607092221-test-count-reply-opencode — validation (1+3=4) and Status DONE were already in place from the 22:24 run; remaining step was retiring the reply handoff itself. Delegated infra-engineer to move it to to-claude/done/; verified destination exists and open/ no longer holds it.
+- Files: .ai/handoffs/to-claude/done/202607092221-test-count-reply-opencode.md (moved from open/)
+- Decisions: File was untracked so the move lands as a fresh untracked path in git rather than a recorded rename — no open/→done/ rename history until first commit.
+
+## 2026-07-09 22:18 — kiro-cli
+- Action: closed out round-trip liveness test handoff 202607092220-test-count-roundtrip — retired the completed handoff (Status already DONE, 1+3=4 reply written at 22:16) to to-kiro/done/ via infra-engineer move; verified destination exists and open/ is empty.
+- Files: .ai/handoffs/to-kiro/done/202607092220-test-count-roundtrip.md (moved from open/)
+- Decisions: Moved myself per explicit continuation instruction; protocol default is sender (claude-code) retires, but auto-continuation directed the recipient to finish.
+
+## 2026-07-09 22:24 — claude-code
+- Action: per handoff 202607092221-test-count-reply-opencode — validated OpenCode's return value 1+3 = 4; completed round-trip. Marked reply handoff DONE, delegated infra-engineer to move original test handoff to done/.
+- Files: .ai/handoffs/to-claude/open/202607092221-test-count-reply-opencode.md (Status DONE), .ai/handoffs/to-opencode/done/202607092220-test-count-roundtrip.md (moved from open/)
+- Decisions: —
+
+## 2026-07-09 22:18 — kimi-cli
+- Action: per handoff 202607092220-test-count-roundtrip — completed reply handoff, logged, marked DONE, moved to done/
+- Files: .ai/handoffs/to-kimi/done/202607092220-test-count-roundtrip.md
+- Decisions: —
+
+## 2026-07-09 22:17 — kimi-cli
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3, wrote reply handoff
+- Files: .ai/handoffs/to-claude/open/202607091517-test-count-reply-kimi.md
+- Decisions: —
+
+## 2026-07-09 22:16 — kiro-cli
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3=4, wrote reply handoff, marked outbound handoff DONE (awaiting claude-code move to done/)
+- Files: .ai/handoffs/to-claude/open/202607092216-test-count-reply-kiro.md, .ai/handoffs/to-kiro/open/202607092220-test-count-roundtrip.md
+- Decisions: —
+
+## 2026-07-09 22:21 — opencode
+- Action: per handoff 202607092220-test-count-roundtrip — computed 1+3, wrote reply handoff
+- Files: .ai/handoffs/to-claude/open/202607092221-test-count-reply-opencode.md
+- Decisions: —
+
+## 2026-07-09 21:56 — kiro-cli
+- Action: Built ADR-0007 P2 CI gate. New .github/workflows/gates.yml — runs on pull_request->master + push->master, ubuntu-latest, Node 20. Seven named steps (fail-on-red, GitHub default): SSOT drift, Claude/Kimi/Kiro hook suites, OpenCode guard (node .opencode/plugin/test-guard.mjs), git pre-commit backstop test (ADR-0005), installer npm ci + npx tsc --noEmit + npx vitest run (working-dir tools/multi-cli-install). Header comment documents the branch-protection repo setting needed to make "gates" REQUIRED. YAML validated (parses clean). Handoff 202607092200-p2-ci-gate moved to done/, Status: DONE. Git commit left to claude-code (no Kiro git lane).
+- Files: .github/workflows/gates.yml, .ai/handoffs/to-kiro/done/202607092200-p2-ci-gate.md
+- Decisions: New workflow rather than extending framework-check.yml (keeps the fast bash-only self-test separate from the heavier Node build/test gate). Branch protection is a GitHub repo setting, not committable — documented in the workflow header.
+
+## 2026-07-09 22:10 — opencode
+- Action: Cost/usage observability design (backlog #6). Wrote `.ai/reports/opencode-2026-07-09-cost-observability-design.md` — a concise design for per-CLI + per-project token/credit tracker. Recommended v1: pane-runner appends JSONL lines to `.ai/usage/<project>.logl` (timestamp, cli, project, model, tokens, auto_continue_count, handoff_ref), simple rollup script `.ai/tools/usage-report.ps1` aggregates into spend table. Pairs with auto-continue MAX cap (ADR-0008) as dual cost controls. Append-only flat files, no backend, smallest viable.
+- Files: .ai/reports/opencode-2026-07-09-cost-observability-design.md
+- Decisions: Kept it a DESIGN (no code build) per handoff rules. Implementation requires source changes (pane-runner modification + usage-report.ps1), so that's a later executor task.
+
+## 2026-07-09 21:54 — kimi-cli
+- Action: Implemented P2 sanctioned scratch dir. Added /.scratch/ + !/.scratch/README.md to root .gitignore; created .scratch/README.md documenting the gitignored ephemeral home for one-off scripts/probes; appended a dated NOTE to ADR-0001 documenting .scratch/ as the sanctioned scratch location.
+- Files: .gitignore, .scratch/README.md, docs/architecture/0001-root-file-exceptions.md
+- Decisions: Chose to track only .scratch/README.md via negation so documentation is preserved while all other scratch contents stay local and uncommitted.
+
+## 2026-07-09 21:22 — claude-code
+- Action: Built ADR-0008 P1 keystone — self-driving pane-runner. New `tools/4ai-panes/pane-runner.ps1` (IDLE→CLAIM→RUN→DECIDE state machine, auto-continue MAX 5, per-project claim-lock, Get-HeadlessCmd single-source flags matching dispatch-handoffs.sh, 'p'-pause escape hatch). Atomic prepend helper `.ai/tools/activity-append.sh` (mkdir-lock + temp+rename, this entry written by it). Rewired Selector.ps1 pane launch to run the runner (RWN_PANE_BARE=1 falls back to bare CLI). Tests: test-pane-runner.ps1 12/12 pass, .ai/tests/test-activity-append.sh 6/6 pass (8 concurrent writers, zero clobber).
+- Files: tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, tools/4ai-panes/Selector.ps1, tools/4ai-panes/README.md, .ai/tools/activity-append.sh, .ai/tests/test-activity-append.sh, docs/architecture/0008-self-driving-fleet-pane-runner.md
+- Decisions: ASCII-only in .ps1 (PS 5.1 misparses UTF-8 em-dash in non-BOM files). Done-signal = handoff left open/ (no output scraping). Claim liveness by pid (dead-pid=reclaim), overridable scriptblock so tests mock the CLI + pid probe.
+
+## 2026-07-09 21:08 — claude-code
+- Action: Post-merge handoff cleanup. Moved 3 resolved handoffs open→done via `git mv` now that master merge `b5024c2` landed: `to-opencode/202607091745-deploy-merge-to-master` (merge done via release-engineer lane), `to-claude/202607091112-post-outage-state-and-compat-review` (state resolved), `to-claude/202607091202-validation-campaign-dispatch` (campaign complete, rollup written). Appended " — DONE (superseded by master merge b5024c2 2026-07-09)" to each Status line.
+- Files: `.ai/handoffs/to-opencode/done/202607091745-deploy-merge-to-master.md`, `.ai/handoffs/to-claude/done/202607091112-post-outage-state-and-compat-review.md`, `.ai/handoffs/to-claude/done/202607091202-validation-campaign-dispatch.md`, `.ai/activity/log.md`
+- Decisions: Left `docs/architecture/0008-*.md` (parallel doc-writer owns it) and `.claude/settings.local.json` uncommitted per instruction.
+
+## 2026-07-09 21:04 — claude-code
+- Action: Executed owner-approved no-ff merge of `claude/project-overview-pn5l4e` → `master` (fallback deploy lane, Tier C, no tag/no publish). All gates green pre-merge: SSOT drift 0/24, Claude hooks 54/54, Kimi 48/48, Kiro 52/52, OpenCode 45/45, tsc exit 0, vitest 80 pass / 3 env-fails + pack (KNOWN profile — git/npm not on PATH in execSync subshells). Merge `b5024c2`, pushed; remote==local verified. Returned to feature branch, tree clean (only settings.local.json).
+- Files: master branch (127 files, +6519/-1277); .ai/activity/log.md
+- Decisions: Treated the 3 vitest failures + pack.test.ts setup fail as the sanctioned KNOWN env profile (all `git`/`npm` not recognized in subshell PATH), not regressions — gate green. Rollback on record: `git revert -m 1 b5024c2`.
 
 ## 2026-07-09 18:52 — claude-code
 - Action: Captured owner 3-month lived-experience feedback as a durable improvement backlog + tracked tasks (recall-later request). Four items: (1) handoff state model too coarse (open/done) — proposed claim-marker + Status enum vs owner's open/ongoing/review/done dirs, shares the P1 pane-watcher claim-lock; (2) no sanctioned home for one-off scripts → gitignored `.scratch/` (root-guard exempt, ADR-0001 note) — trivial, do first; (3) crash recovery painful for ~7 projects → launcher multi-select + `.4pane-session` "restore last session"; (4) heavyweight cross-CLI live context-share → separate `.ai/context/` note channel surfaced by the pane-watcher. Sequenced into ADR-0007 roadmap (P2/P3).

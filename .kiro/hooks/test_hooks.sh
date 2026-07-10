@@ -157,6 +157,25 @@ run_test "t40 destructive unparseable → block" "$HOOKS_DIR/destructive-cmd-gua
 run_test "t41 framework empty stdin → allow"  "$HOOKS_DIR/framework-dir-guard.sh"  '' 0
 run_test "t42 destructive empty stdin → allow" "$HOOKS_DIR/destructive-cmd-guard.sh" '' 0
 
+# --- str_replace "path"-key extraction regression (2026-07-10) ---
+# Kiro's fs_write/str_replace tool_input carries the target under "path", not
+# "file_path". The guards' matcher (fs_write|str_replace|write) caught these
+# edits but the extraction only read file_path → every str_replace edit hit the
+# fail-CLOSED exit-2 and was blanket-blocked as noise. These assert the guards
+# now path-evaluate the "path" key: forbidden → BLOCK, legit → ALLOW, and a
+# genuine no-target input → still BLOCK (fail-closed preserved).
+echo "str_replace \"path\"-key extraction:"
+run_test "t43 path .claude blocked (framework)"  "$HOOKS_DIR/framework-dir-guard.sh"  '{"tool_input":{"path":".claude/agents/x.md"}}'  2
+run_test "t44 path .ai allowed (framework)"      "$HOOKS_DIR/framework-dir-guard.sh"  '{"tool_input":{"path":".ai/activity/log.md"}}'  0
+run_test "t45 path no-target block (framework)"  "$HOOKS_DIR/framework-dir-guard.sh"  '{"tool_input":{"command":"str_replace"}}'       2
+run_test "t46 path evil.txt blocked (root)"      "$HOOKS_DIR/root-file-guard.sh"      '{"tool_input":{"path":"evil.txt"}}'             2
+run_test "t47 path src/main.rs allowed (root)"   "$HOOKS_DIR/root-file-guard.sh"      '{"tool_input":{"path":"src/main.rs"}}'          0
+run_test "t48 path .env blocked (sensitive)"     "$HOOKS_DIR/sensitive-file-guard.sh" '{"tool_input":{"path":".env"}}'                 2
+# pyless: force the pure-sed "path" fallback (python is a Windows Store stub) —
+# the sed path pattern must extract without any python present.
+run_test_pyless "t49 pyless path .claude blocked" "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"path":".claude/agents/x.md"}}' 2
+run_test_pyless "t50 pyless path .ai allowed"      "$HOOKS_DIR/framework-dir-guard.sh" '{"tool_input":{"path":".ai/handoffs/x.md"}}'   0
+
 # --- Summary ---
 echo ""
 total=$((pass+fail))

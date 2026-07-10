@@ -110,6 +110,12 @@ Framework dirs (`.`-prefixed directories under E) are exempt from the "loose fil
 3. User approves → orchestrator amends this ADR (new subsection under the appropriate category, or new category).
 4. Once amended, the file is approved for creation.
 
+NOTE (2026-07-09): `.scratch/` is the sanctioned ephemeral scratch location
+for one-off scripts and probe artifacts. As a dot-directory it is exempt from
+the loose-file-at-root question by nature; its contents are gitignored and
+must never be committed. Throwaway work goes there, not at repo root or in
+`scripts/`.
+
 ## Consequences
 
 - **Positive:** every root-level file has a documented reason; template stays scannable; new contributors and new CLIs can tell at a glance what's there and why.

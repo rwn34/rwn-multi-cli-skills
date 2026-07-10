@@ -123,10 +123,13 @@ If another CLI must continue, write a handoff to
 `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp
 filename).
 
-**Handoff protocol v2:** every handoff carries `Auto:` (default **yes**) and
+**Handoff protocol v3:** every handoff carries `Auto:` (default **yes**) and
 `Risk:` (A/B/C per §8). `Auto: yes` + Risk A/B handoffs are dispatched
 headless via `bash .ai/tools/dispatch-handoffs.sh --exec` without asking.
-Risk C handoffs are never auto-dispatched — a human relays them.
+Risk C handoffs are never auto-dispatched — a human relays them. On completion,
+the recipient self-retires: set Status `DONE` and move the file from `open/` to
+`done/` yourself; the sender validates post-hoc. If blocked, leave it in `open/`
+as `BLOCKED` with a verbatim `## Blocker` section.
 
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.

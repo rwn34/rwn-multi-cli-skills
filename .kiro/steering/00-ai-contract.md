@@ -39,11 +39,26 @@ shared docs, it writes a paste-ready instruction file to
 `.ai/handoffs/to-kiro/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session starts
 or when the user references a handoff. Follow the protocol in
 `.ai/handoffs/README.md`: review, execute the steps, prepend an activity-log entry,
-report back. The sender validates and moves the file to `.ai/handoffs/to-kiro/done/` on
-success.
+report back.
+
+**Filename basis = UTC.** The `YYYYMMDDHHMM` prefix is a **UTC** timestamp
+(`date -u +%Y%m%d%H%M`), while the `Created:` line inside the file and your
+activity-log entries use **local wall-clock** time. Both refer to the same
+instant — do NOT put local time in the filename. A CLI in UTC+7 finishing at
+`22:17` local writes the filename with `1517` (UTC) but `Created: 22:17`
+(local). Mixing them desynchronizes sort order across CLIs on different clocks.
+
+**Recipient self-retires (protocol v3).** When you complete a handoff addressed
+to you, set its Status to `DONE` inline (listing what you actually touched) and
+move the file from `.ai/handoffs/to-kiro/open/` to `.ai/handoffs/to-kiro/done/`
+yourself — do not wait for the sender. The sender validates post-hoc. If you are
+**blocked**, leave the file in `open/`, set Status `BLOCKED`, and append a
+`## Blocker` section with the verbatim error (never a paraphrase).
 
 You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
-`.ai/handoffs/to-kimi/open/` when you need those CLIs to change files in their folders.
+`.ai/handoffs/to-kimi/open/` (UTC filename) when you need those CLIs to change
+files in their folders. As sender under v3 you validate post-hoc rather than
+moving the file yourself.
 
 ## Archive folders (skip during routine reads)
 
