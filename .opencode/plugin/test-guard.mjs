@@ -1,10 +1,26 @@
 // Standalone test harness for framework-guard's decision function.
 // Run: node .opencode/plugin/test-guard.mjs
 import { decide } from "./framework-guard.js";
+import path from "node:path";
 
-const ROOT = "C:\\proj";
-const WT_ROOT = "C:\\parent\\.wt\\projX\\kimi";
-const FLEET_ROOT = "C:\\fleet\\projA";
+// Sandbox roots derived via path.resolve so they are genuinely absolute on the
+// running OS (POSIX on CI + Windows locally). Hardcoded `C:\...` literals are
+// NOT absolute on Linux — path.resolve treats them as relative segments, which
+// broke the in-lane absolute case (rel computed wrong -> guard blocked it).
+const ROOT = path.resolve("proj");
+const WT_ROOT = path.resolve("parent", ".wt", "projX", "kimi");
+const FLEET_ROOT = path.resolve("fleet", "projA");
+
+// Absolute test inputs built from the roots above so they resolve to real
+// absolutes under the OS root on every platform. norm() in the guard converts
+// backslashes, so on Windows these normalize identically.
+const ABS_INLANE = path.join(ROOT, ".ai", "reports", "r.md"); // absolute, inside ROOT lane
+const ABS_OUTSIDE = path.resolve("elsewhere", "evil.txt"); // absolute, sibling of ROOT
+const ABS_OUTSIDE_READ = path.resolve("elsewhere", "notes.md"); // absolute, outside project root
+const WT_ABS_ESCAPE = path.resolve("parent", "other.md"); // absolute, outside WT_ROOT
+const FLEET_HANDOFFS = path.resolve("fleet", ".fleet", "handoffs");
+const fleetWrite = (target, name = "202607091200-x.md") =>
+  path.join(FLEET_HANDOFFS, `to-${target}`, name); // .fleet/handoffs/to-<target>/<name>
 
 const registryOk = () => ({ projects: { projA: { talks_to: ["projB"] } } });
 const registryMissing = () => null;
@@ -31,11 +47,11 @@ const bash = (command, root = ROOT) => decide({ tool: "bash", args: { command },
 check("allow .ai/reports write", write(".ai/reports/opencode-test.md"), true);
 check("allow .ai/activity/log.md", write(".ai/activity/log.md"), true);
 check("allow .ai/handoffs write", write(".ai/handoffs/to-claude/open/202607091200-x.md"), true);
-check("allow absolute in-lane write", write("C:\\proj\\.ai\\reports\\r.md"), true);
+check("allow absolute in-lane write", write(ABS_INLANE), true);
 check("block .ai/activity sibling", write(".ai/activity/other.md"), false);
 check("block src/ write", write("src/evil.txt"), false);
 check("block CRUSH.md write", write("CRUSH.md"), false);
-check("block absolute outside root", write("C:\\elsewhere\\evil.txt"), false);
+check("block absolute outside root", write(ABS_OUTSIDE), false);
 
 // --- traversal / backslash normalization ---
 check("block ../ traversal", write("../outside.md"), false);
@@ -47,22 +63,22 @@ check("allow backslash in-lane", write(".ai\\reports\\ok.md"), true);
 // --- fleet whitelist (ADR-0004) ---
 check(
   "allow fleet whitelisted",
-  write("C:\\fleet\\.fleet\\handoffs\\to-projB\\202607091200-x.md", FLEET_ROOT, registryOk),
+  write(fleetWrite("projB"), FLEET_ROOT, registryOk),
   true
 );
 check(
   "block fleet non-whitelisted",
-  write("C:\\fleet\\.fleet\\handoffs\\to-projC\\202607091200-x.md", FLEET_ROOT, registryOk),
+  write(fleetWrite("projC"), FLEET_ROOT, registryOk),
   false
 );
 check(
   "block fleet missing registry (fail-closed)",
-  write("C:\\fleet\\.fleet\\handoffs\\to-projB\\x.md", FLEET_ROOT, registryMissing),
+  write(fleetWrite("projB", "x.md"), FLEET_ROOT, registryMissing),
   false
 );
 
 // --- worktree confinement (ADR-0004) ---
-check("block worktree absolute escape", write("C:\\parent\\other.md", WT_ROOT), false);
+check("block worktree absolute escape", write(WT_ABS_ESCAPE, WT_ROOT), false);
 check("block worktree ../ escape", write("..\\..\\..\\other.md", WT_ROOT), false);
 check("allow worktree in-lane write", write(".ai/reports/wt-report.md", WT_ROOT), true);
 check("block worktree out-of-lane write", write("src/evil.txt", WT_ROOT), false);
@@ -93,8 +109,8 @@ check("allow stderr redirect to /dev/null", bash("git fetch 2> /dev/null"), true
 // --- reads allowed everywhere (read-fix 2026-07-09) ---
 check("allow read outside lane (src/)", read("src/main.rs"), true);
 check("allow read of .opencode/contract.md (regression)", read(".opencode/contract.md"), true);
-check("allow read outside project root", read("C:\\elsewhere\\notes.md"), true);
-check("allow read escaping worktree", read("C:\\parent\\other.md", WT_ROOT), true);
+check("allow read outside project root", read(ABS_OUTSIDE_READ), true);
+check("allow read escaping worktree", read(WT_ABS_ESCAPE, WT_ROOT), true);
 check("allow edit-tool alias 'patch' still lane-restricted", decide({ tool: "patch", args: { filePath: "src/evil.txt" }, root: ROOT }), false);
 
 // --- non-write tools pass through ---
