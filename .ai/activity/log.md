@@ -207,6 +207,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-11 03:30 — kiro-cli
+- Action: Executed handoff 202607101910 — added framework version-bump CI gate (gap D1). New scripts/check-version-bump.sh (denylist-first path classifier; fails a PR that changes versioned framework content without bumping tools/multi-cli-install/package.json .version) + PR-only step in .github/workflows/gates.yml with fetch-depth:0.
+- Files: scripts/check-version-bump.sh, .github/workflows/gates.yml, .ai/handoffs/to-kiro/{open->done}/202607101910-gates-version-bump-check.md
+- Decisions: Standalone script over inline YAML for testability. Verified by execution: git-fixture T1 no-bump->FAIL, T2 bump->PASS, T3 excluded-only->PASS; 26/26 classifier unit cases; gates.yml valid YAML. Flag: the PR adding this check must itself bump .version (0.0.5) to pass its own gate.
+
 ## 2026-07-11 02:08 — kimi-cli
 - Action: Executed handoff 202607101900 (wire Kimi handoff-delivery hooks, gaps B1+B4). Added identical SessionStart (handoffs-remind.sh) + Stop (handoff-queue-count.sh) [[hooks]] blocks to both .kimi/config.toml and .ai/config-snippets/kimi-hooks.toml (byte-identical, diff-verified). Enhanced handoffs-remind.sh to list only qualifying items (Status:OPEN + Auto:yes + Risk A|B — mirrors dispatch-handoffs.sh filter) with a `--exec --only kimi` hint, plus AI_HANDOFF_DISPATCH recursion guard + HANDOFFS_DIR override. New handoff-queue-count.sh mirrors Claude's per-queue Stop counts (HANDOFFS_ROOT override). Marked both WIRED in .kimi/hooks/README.md; corrected doc refs ~/.kimi/config.toml -> ~/.kimi-code/config.toml (config.toml comment, hooks README, agents README); extended test_hooks.sh t49-t51. Verified: PASS 51/51; manual run lists the 1 qualifying to-kimi handoff; dispatcher dry-run `--only kimi` shows the SAME handoff WOULD DISPATCH (filter parity); recursion guard silent.
 - Files: .kimi/hooks/handoffs-remind.sh, .kimi/hooks/handoff-queue-count.sh (new), .kimi/config.toml, .ai/config-snippets/kimi-hooks.toml, .kimi/hooks/README.md, .kimi/agents/README.md, .kimi/hooks/test_hooks.sh

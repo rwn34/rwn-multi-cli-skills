@@ -25,11 +25,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Framework version-bump check
+        if: github.event_name == 'pull_request'
+        run: bash scripts/check-version-bump.sh "origin/${{ github.base_ref }}"
 
       - name: SSOT drift check
         run: bash .ai/tools/check-ssot-drift.sh
