@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# =============================================================================
+# post-checkout — auto-sync the 4AI-panes install when a branch switch changes
+#                 tools/4ai-panes/**
+# =============================================================================
+# Runs under Git-Bash on Windows via core.hooksPath=scripts/git-hooks (ADR-0005).
+# Args: $1=prev-HEAD  $2=new-HEAD  $3=branch-flag (1=branch checkout, 0=file).
+# post-checkout is a post-event hook: it CANNOT and MUST NOT block. Every path
+# exits 0. Same detection + sync as post-merge; only the change range differs.
+# See docs/specs/4ai-panes-install-sync.md.
+# =============================================================================
+
+prev_head="$1"
+new_head="$2"
+branch_flag="$3"
+
+# Only act on branch checkouts; skip file checkouts (`git checkout -- <path>`).
+[ "$branch_flag" = "1" ] || exit 0
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+SYNC_SCRIPT="$REPO_ROOT/scripts/sync-4ai-panes-install.ps1"
+
+# 1. Change range = prev-HEAD..new-HEAD.
+if [ -z "$prev_head" ] || [ -z "$new_head" ]; then
+    exit 0
+fi
+
+changed="$(git diff --name-only "$prev_head" "$new_head" 2>/dev/null)"
+
+# 2. Path filter — cheap: bail silently unless a tool file moved.
+if ! printf '%s\n' "$changed" | grep -q '^tools/4ai-panes/'; then
+    exit 0
+fi
+
+# 3. Locate PowerShell; if absent, warn to stderr and exit 0 (never fail git op).
+PS_BIN="$(command -v powershell || command -v pwsh)"
+if [ -z "$PS_BIN" ]; then
+    echo "post-checkout: tools/4ai-panes/ changed but neither 'powershell' nor 'pwsh' is on PATH — 4AI-panes install NOT synced. Run scripts/sync-4ai-panes-install.ps1 manually." >&2
+    exit 0
+fi
+
+# 4. Invoke the sync. On non-zero, print a LOUD stderr warning but STILL exit 0.
+if ! "$PS_BIN" -NoProfile -File "$SYNC_SCRIPT"; then
+    {
+        echo "=============================================================================="
+        echo "post-checkout: 4AI-panes install sync REPORTED ERRORS (checkout itself is fine)."
+        echo "  A tool file may have failed post-copy hash verification, or an allowlisted"
+        echo "  source file is missing. The running install may be STALE or PARTIAL."
+        echo "  Install path: \${RWN_AUTO_INSTALL_DIR:-~/.rwn-auto/rwn-4AI-panes}"
+        echo "  Re-run manually to inspect:"
+        echo "    powershell -NoProfile -File scripts/sync-4ai-panes-install.ps1 -DryRun"
+        echo "=============================================================================="
+    } >&2
+fi
+
+exit 0
