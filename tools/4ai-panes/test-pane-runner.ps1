@@ -13,6 +13,11 @@
 #   (h) 2nd claim, different owner, while live  (false - not double-processed)
 #   (i) stale per-handoff claim (old ts)        (reclaimable -> Claim-Handoff true)
 #   (j) Release-Handoff removes the sidecar     (Test-Path false)
+#   (k) first Add-HandoffAttempt                (attempts=1, not quarantined)
+#   (l) attempts reach MaxHandoffAttempts       (quarantined=true)
+#   (m) fresh handoff / no sidecar              (Test-HandoffQuarantined false)
+#   (n) Get-QualifyingHandoff skips quarantined (returns next candidate)
+#   (o) Clear-HandoffAttempts removes sidecar   (Test-HandoffQuarantined false)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -150,6 +155,62 @@ Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable ->
 # (j) Release-Handoff removes the sidecar
 Release-Handoff -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
+
+# -- poison-pill quarantine (ADR-0008 self-healing safety valve) --
+$kimiOpen = Join-Path $work ".ai/handoffs/to-kimi/open"
+New-Item -ItemType Directory -Path $kimiOpen -Force | Out-Null
+
+function New-KimiHandoff {
+    param([string]$Slug, [string]$Risk = 'B')
+    $p = Join-Path $kimiOpen "$Slug.md"
+    @(
+        "# Test handoff $Slug",
+        "Status: OPEN",
+        "Sender: claude-code",
+        "Recipient: kimi-cli",
+        "Created: 2026-07-09 00:00",
+        "Auto: yes",
+        "Risk: $Risk",
+        "",
+        "## Goal",
+        "test"
+    ) -join "`n" | Set-Content -Path $p -Encoding utf8
+    return $p
+}
+
+# (k) first Add-HandoffAttempt -> sidecar exists, attempts=1, not quarantined
+$hk = New-KimiHandoff -Slug 'k-attempt'
+$qPath = Get-HandoffQuarantinePath -Recipient 'kimi' -HandoffPath $hk
+$q1 = Add-HandoffAttempt -Recipient 'kimi' -HandoffPath $hk -ErrorText 'first fail'
+Assert-Equal $true (Test-Path $qPath) 'k: Add-HandoffAttempt writes the sidecar'
+Assert-Equal 1 $q1.attempts 'k: first attempt -> attempts=1'
+Assert-Equal $false $q1.quarantined 'k: first attempt -> not quarantined'
+Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk) 'k: below threshold -> Test-HandoffQuarantined false'
+
+# (l) reaching MaxHandoffAttempts flips quarantined true (lower the threshold to 2)
+$origMax = $script:MaxHandoffAttempts
+$script:MaxHandoffAttempts = 2
+$q2 = Add-HandoffAttempt -Recipient 'kimi' -HandoffPath $hk -ErrorText 'second fail'
+Assert-Equal 2 $q2.attempts 'l: second attempt -> attempts=2'
+Assert-Equal $true $q2.quarantined 'l: attempts >= threshold -> quarantined true'
+Assert-Equal $true (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk) 'l: quarantined -> Test-HandoffQuarantined true'
+
+# (m) a fresh (unattempted) handoff is not quarantined; no sidecar -> false
+$hfresh = New-KimiHandoff -Slug 'm-fresh'
+Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hfresh) 'm: no sidecar -> Test-HandoffQuarantined false'
+
+# (n) Get-QualifyingHandoff SKIPS the quarantined handoff, returns the next candidate
+#     k-attempt sorts before m-fresh, so without quarantine it would be picked first.
+$picked = Get-QualifyingHandoff -ProjectDir $work -CliName 'kimi'
+Assert-Equal $hfresh $picked 'n: Get-QualifyingHandoff skips the quarantined handoff'
+
+# (o) Clear-HandoffAttempts removes the sidecar -> Test-HandoffQuarantined false again
+Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hk
+Assert-Equal $false (Test-Path $qPath) 'o: Clear-HandoffAttempts removes the sidecar'
+Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk) 'o: after clear -> Test-HandoffQuarantined false'
+
+# restore the real threshold
+$script:MaxHandoffAttempts = $origMax
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue

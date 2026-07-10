@@ -121,6 +121,7 @@ function Get-QualifyingHandoff {
         if (-not ($head -match '^\s*Auto:\s*yes')) { continue }
         if (-not ($head -match '^\s*Status:\s*OPEN')) { continue }
         if (-not ($head -match '^\s*Risk:\s*[AB]\s*$')) { continue }
+        if (Test-HandoffQuarantined -Recipient $CliName -HandoffPath $f.FullName) { continue }
         return $f.FullName
     }
     return $null
@@ -296,6 +297,94 @@ function Release-Handoff {
     if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
 }
 
+# -- Per-handoff poison-pill quarantine (ADR-0008 self-healing safety valve) --
+#
+# A handoff that MAXES (still OPEN after the continue cap) or throws every
+# iteration would otherwise be re-claimed and re-run on every poll cycle forever,
+# ALERT-spamming the pane. This mirrors the per-handoff claim sidecars: a counter
+# sidecar under .quarantine (beside .claims) tracks consecutive failed supervisor
+# attempts and flips 'quarantined' once the count reaches MaxHandoffAttempts, at
+# which point Get-QualifyingHandoff skips it until a human clears the sidecar.
+
+$script:MaxHandoffAttempts = 3   # consecutive failed supervisor attempts before a handoff is quarantined
+
+# Map a handoff path to its project's .ai/handoffs/.quarantine dir by walking up:
+# .../.ai/handoffs/to-<recipient>/open/<file> -> .../.ai/handoffs/.quarantine
+function Get-HandoffQuarantineDir {
+    param([string]$HandoffPath)
+    $openDir  = Split-Path -Parent $HandoffPath
+    $toDir    = Split-Path -Parent $openDir
+    $handoffs = Split-Path -Parent $toDir
+    return (Join-Path $handoffs ".quarantine")
+}
+
+function Get-HandoffQuarantinePath {
+    param([string]$Recipient, [string]$HandoffPath)
+    $base = Get-HandoffBasename -HandoffPath $HandoffPath
+    $dir  = Get-HandoffQuarantineDir -HandoffPath $HandoffPath
+    return (Join-Path $dir "${Recipient}__${base}.quarantine.json")
+}
+
+# Read the attempt record sidecar, or $null if missing / unparseable.
+function Get-HandoffAttemptRecord {
+    param([string]$Recipient, [string]$HandoffPath)
+    $p = Get-HandoffQuarantinePath -Recipient $Recipient -HandoffPath $HandoffPath
+    if (-not (Test-Path $p)) { return $null }
+    try { return (Get-Content -Path $p -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+# $true iff a record exists AND is flagged quarantined.
+function Test-HandoffQuarantined {
+    param([string]$Recipient, [string]$HandoffPath)
+    $rec = Get-HandoffAttemptRecord -Recipient $Recipient -HandoffPath $HandoffPath
+    if ($null -eq $rec) { return $false }
+    return [bool]$rec.quarantined
+}
+
+# Record one failed supervisor attempt: increment the counter, flip quarantined
+# once it reaches MaxHandoffAttempts, write the sidecar atomically (temp + rename,
+# like Write-Claim). Returns a pscustomobject exposing .attempts and .quarantined.
+function Add-HandoffAttempt {
+    param([string]$Recipient, [string]$HandoffPath, [string]$ErrorText = '')
+    $existing = Get-HandoffAttemptRecord -Recipient $Recipient -HandoffPath $HandoffPath
+    $prev = 0
+    $firstAttempt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    if ($null -ne $existing) {
+        if ($existing.attempts) { $prev = [int]$existing.attempts }
+        if ($existing.first_attempt) { $firstAttempt = [string]$existing.first_attempt }
+    }
+    $attempts = $prev + 1
+    $quarantined = ($attempts -ge $script:MaxHandoffAttempts)
+
+    $p = Get-HandoffQuarantinePath -Recipient $Recipient -HandoffPath $HandoffPath
+    $dir = Split-Path -Parent $p
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $obj = [ordered]@{
+        handoff       = Get-HandoffBasename -HandoffPath $HandoffPath
+        recipient     = $Recipient
+        attempts      = $attempts
+        quarantined   = $quarantined
+        first_attempt = $firstAttempt
+        last_attempt  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        last_error    = $ErrorText
+    }
+    $json = $obj | ConvertTo-Json -Compress
+    $tmp = "$p.tmp.$PID"
+    $json | Set-Content -Path $tmp -Encoding utf8 -NoNewline
+    Move-Item -Path $tmp -Destination $p -Force
+
+    return [pscustomobject]@{ attempts = $attempts; quarantined = $quarantined }
+}
+
+# Clear the attempt counter (delete the sidecar). Call on a successful DONE run,
+# or manually by a human to un-quarantine.
+function Clear-HandoffAttempts {
+    param([string]$Recipient, [string]$HandoffPath)
+    $p = Get-HandoffQuarantinePath -Recipient $Recipient -HandoffPath $HandoffPath
+    if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
+}
+
 # Claim owner identity for a pane's CLI. claude-auto (the headless reviewer pane,
 # ADR-0009) is a DISTINCT owner from claude-code (the interactive app-Claude), so
 # the two Claude instances never double-process a to-claude handoff.
@@ -434,7 +523,20 @@ function Start-PaneRunner {
 
                 Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
                 try {
-                    Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues | Out-Null
+                    $runResult = Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues
+                    # Defensive: if the run leaked extra pipeline objects, the decision
+                    # record is the last one.
+                    $runResult = @($runResult)[-1]
+                    if ($runResult -and $runResult.Result -eq 'DONE') {
+                        Clear-HandoffAttempts -Recipient $Cli -HandoffPath $handoff
+                    } else {
+                        # MAXED (still OPEN after the continue cap) counts as a failed
+                        # attempt; quarantine once the threshold is reached.
+                        $q = Add-HandoffAttempt -Recipient $Cli -HandoffPath $handoff -ErrorText 'MAXED (still OPEN after continue cap)'
+                        if ($q.quarantined) {
+                            Write-Host "== QUARANTINE [$Cli] $(Split-Path -Leaf $handoff) after $($q.attempts) failed attempts -- skipping until a human clears .ai/handoffs/.quarantine/ ==" -ForegroundColor Red
+                        }
+                    }
                 } finally {
                     # Done-signal (moved to done/) or crash/pause: release both claims.
                     Release-Handoff -Recipient $Cli -HandoffPath $handoff
@@ -453,8 +555,16 @@ function Start-PaneRunner {
             catch {
                 # Any OTHER error in this iteration must NOT take the pane offline.
                 Write-Host "== ALERT [$Cli] pane-runner iteration error: $($_.Exception.Message) -- recovering, still polling ==" -ForegroundColor Red
-                # Best-effort release so a mid-iteration failure never leaves a claim stuck.
-                try { if ($handoff) { Release-Handoff -Recipient $Cli -HandoffPath $handoff } } catch {}
+                # An exception during a run is also a failed attempt -> count it so a
+                # handoff that throws every cycle gets quarantined instead of spamming.
+                if ($handoff) {
+                    try {
+                        $q = Add-HandoffAttempt -Recipient $Cli -HandoffPath $handoff -ErrorText $_.Exception.Message
+                        if ($q.quarantined) { Write-Host "== QUARANTINE [$Cli] $(Split-Path -Leaf $handoff) after $($q.attempts) failed attempts -- skipping until a human clears .ai/handoffs/.quarantine/ ==" -ForegroundColor Red }
+                    } catch {}
+                    # Best-effort release so a mid-iteration failure never leaves a claim stuck.
+                    try { Release-Handoff -Recipient $Cli -HandoffPath $handoff } catch {}
+                }
                 try { Remove-Claim -ProjectDir $ProjectDir -CliName $Cli } catch {}
                 Start-Sleep -Seconds $PollSeconds
             }

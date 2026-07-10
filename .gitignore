@@ -97,3 +97,8 @@ id_ed25519*
 # (dir/*) not the dir itself, else the README negation cannot take effect.
 .ai/handoffs/.claims/*
 !.ai/handoffs/.claims/README.md
+
+# ---- Per-handoff quarantine sidecars (poison-pill guard; ephemeral runtime state) ----
+# Same pattern as .claims: ignore the sidecars, keep the contract README.
+.ai/handoffs/.quarantine/*
+!.ai/handoffs/.quarantine/README.md
