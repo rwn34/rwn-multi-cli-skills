@@ -1,17 +1,34 @@
 name: release
 
-# Triggered when a vX.Y.Z (or vX.Y.Z-pre.N) tag is pushed. Builds the
-# multi-cli-install Node package, packages the bash installers, and creates
-# a GitHub Release with auto-generated notes (rules in .github/release.yml)
-# and downloadable assets attached. Pre-release detection is purely
-# tag-shape based — any tag containing "-" (e.g. v0.0.1-pre.1, v0.1.0-rc.1)
-# is marked pre-release.
+# Fires on two paths, both funneling into ONE build+publish-with-assets run:
+#
+#   1. A vX.Y.Z (or vX.Y.Z-pre.N) tag push — the original path. Builds the
+#      multi-cli-install Node package, packages the bash installers, and creates
+#      a GitHub Release for that tag.
+#
+#   2. A push to master — the auto-cut path. Reads .version from
+#      tools/multi-cli-install/package.json (the version SSOT) and, if tag
+#      v<version> does NOT yet exist, creates + pushes it and then runs the
+#      SAME build+publish steps for it. This exists because the version SSOT
+#      advanced (e.g. 0.0.4 -> 0.0.8) without anyone cutting tags, and a tag
+#      pushed by GITHUB_TOKEN does NOT cascade to re-trigger the tag-push path
+#      above — so the tag-create and the release must happen in one run.
+#
+# The "decide" step centralizes tag resolution + the skip/proceed gate so both
+# paths share every build/package/publish step below (parameterized on the
+# decided tag, never on github.ref directly). Most master pushes carry no
+# version bump, so v<version> already exists and the job cleanly no-ops.
+#
+# Pre-release detection is purely tag-shape based — any tag containing "-"
+# (e.g. v0.0.1-pre.1, v0.1.0-rc.1) is marked pre-release.
 #
 # This workflow does NOT publish to npm — that gate is owned by
 # release-engineer and is held until real-project validation.
 
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
 
@@ -25,11 +42,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # Full history is required so the auto-notes generator can diff
-          # this tag against the previous one.
+          # Full history + tags: the auto-notes generator diffs this tag against
+          # the previous one, and the decide step needs the tag list to know
+          # whether v<version> already exists.
           fetch-depth: 0
 
+      - name: Decide target tag + whether to release
+        id: decide
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Tag-push path: release exactly the pushed tag.
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "Tag push detected — releasing $TAG"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Master-push path: derive the tag from the version SSOT.
+          VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' tools/multi-cli-install/package.json | head -1)
+          if [[ -z "$VERSION" ]]; then
+            echo "Could not read .version from tools/multi-cli-install/package.json" >&2
+            exit 1
+          fi
+          TAG="v$VERSION"
+
+          if [[ -n "$(git tag -l "$TAG")" ]]; then
+            echo "Tag $TAG already exists — no version bump, skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Tag $TAG does not exist — creating + pushing it, then releasing."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
+        if: steps.decide.outputs.should_release == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '20'
@@ -37,37 +93,49 @@ jobs:
           cache-dependency-path: tools/multi-cli-install/package-lock.json
 
       - name: Install + build multi-cli-install
+        if: steps.decide.outputs.should_release == 'true'
         working-directory: tools/multi-cli-install
         run: |
           npm ci
           npm run build
 
       - name: Package multi-cli-install tarball
+        if: steps.decide.outputs.should_release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
         run: |
           mkdir -p dist-release
-          tar -czf "dist-release/multi-cli-install-${GITHUB_REF_NAME}.tar.gz" \
+          tar -czf "dist-release/multi-cli-install-${TAG}.tar.gz" \
             --exclude='multi-cli-install/node_modules' \
             --exclude='multi-cli-install/test' \
             --exclude='multi-cli-install/.turbo' \
             -C tools multi-cli-install
 
       - name: Package bash installers tarball
+        if: steps.decide.outputs.should_release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
         run: |
-          tar -czf "dist-release/bash-installers-${GITHUB_REF_NAME}.tar.gz" \
+          tar -czf "dist-release/bash-installers-${TAG}.tar.gz" \
             -C scripts new-project.sh install-template.sh
 
       - name: Stage raw installer scripts for direct curl
+        if: steps.decide.outputs.should_release == 'true'
         run: |
           cp scripts/new-project.sh dist-release/new-project.sh
           cp scripts/install-template.sh dist-release/install-template.sh
 
       - name: Create GitHub Release
+        if: steps.decide.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
+          # Explicit tag: on the master-push path github.ref is a branch, so the
+          # action cannot infer the tag and must be told the decided one.
+          tag_name: ${{ steps.decide.outputs.tag }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.decide.outputs.tag, '-') }}
           files: |
-            dist-release/multi-cli-install-${{ github.ref_name }}.tar.gz
-            dist-release/bash-installers-${{ github.ref_name }}.tar.gz
+            dist-release/multi-cli-install-${{ steps.decide.outputs.tag }}.tar.gz
+            dist-release/bash-installers-${{ steps.decide.outputs.tag }}.tar.gz
             dist-release/new-project.sh
             dist-release/install-template.sh
