@@ -26,8 +26,14 @@
 #     -> SEND (never suppress-on-error).
 #   - 5s curl timeout so a slow network can't stall a dispatch.
 #
-# ASCII-only source: the Telegram emoji are built at runtime from Unicode code
-# points via printf '\U....', never embedded as literal non-ASCII bytes.
+# ASCII-only source AND ASCII-only wire format. The request is sent as a JSON
+# body (Content-Type: application/json, --data-binary @-) and the emoji are
+# JSON \uXXXX escapes, so no non-ASCII byte ever leaves this script. An earlier
+# version emitted raw UTF-8 emoji bytes through --data-urlencode; the shell /
+# locale / urlencode chain mangled them and the owner received "??" instead of
+# the robot. \uXXXX escapes are locale-independent and deterministic.
+#
+# Telegram renders the escapes; nothing here needs a UTF-8 locale to be correct.
 
 # Resolve the notify script's own directory (works sourced or executed) so the
 # throttle path is stable regardless of the caller's cwd.
@@ -57,6 +63,21 @@ PY
         grep -oE "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$file" 2>/dev/null \
             | head -1 | sed -E 's/.*"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/' || true
     fi
+}
+
+# JSON-escape one string for embedding inside a JSON string literal. Handles the
+# structural characters (backslash, double quote) plus the control characters a
+# project name / handoff slug could plausibly carry. Pure bash parameter
+# expansion: no subprocess, no locale dependency. Any non-ASCII byte in the
+# input is already valid UTF-8 JSON and passes through untouched.
+_fleet_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
 }
 
 # Resolve config into FN_BOT_TOKEN / FN_CHAT_ID / FN_THREAD_ID (env wins; the
@@ -168,43 +189,56 @@ fleet_notify() {
         return 0
     fi
 
-    # Emoji built at runtime from their UTF-8 byte sequences (printf '\xHH') so
-    # this source stays ASCII-only. MSYS bash printf lacks the '\U' code-point
-    # escape, so the bytes are spelled out directly:
-    #   picked = robot   U+1F916 -> F0 9F A4 96
-    #   done   = check   U+2705  -> E2 9C 85
-    #   alert  = warning U+26A0  -> E2 9A A0
-    # Two-line Markdown: *bold* project leads line 1; owner + `code` handoff line 2.
-    local emoji text nl
-    nl=$'\n'
+    # Emoji as JSON \uXXXX escapes: pure ASCII on the wire, so nothing in the
+    # shell/locale/HTTP chain can mangle them (the old raw-UTF-8-bytes +
+    # --data-urlencode approach arrived as "??" / "?"):
+    #   picked = robot   U+1F916 -> non-BMP: needs a UTF-16 surrogate pair
+    #   done   = check   U+2705  -> BMP: one \u escape
+    #   alert  = warning U+26A0  -> BMP: one \u escape
+    # (the exact escapes are in the printf formats below)
+    # Every interpolated value is JSON-escaped first, so a quote or backslash in
+    # a project name / handoff slug cannot break out of the JSON string.
+    # Layout: *bold* project on line 1, owner + `code` handoff on line 2, local
+    # HH:MM:SS in _italics_ on line 3 (identical to notify.ps1). The "\\n" in the
+    # printf formats below emits a literal backslash-n, i.e. the JSON newline
+    # escape, not a real newline byte.
+    local p o h ts text_json body
+    p="$(_fleet_json_escape "$project")"
+    o="$(_fleet_json_escape "$owner")"
+    h="$(_fleet_json_escape "$handoff")"
+    ts="$(date +%H:%M:%S 2>/dev/null)"
+
     case "$kind" in
         picked)
-            emoji="$(printf '\xf0\x9f\xa4\x96')"
-            text="$emoji *$project*$nl$owner picked up \`$handoff\`" ;;
+            text_json="$(printf '\\ud83e\\udd16 *%s*\\n%s picked up `%s`\\n_%s_' "$p" "$o" "$h" "$ts")" ;;
         done)
-            emoji="$(printf '\xe2\x9c\x85')"
-            text="$emoji *$project*$nl$owner finished \`$handoff\`" ;;
+            text_json="$(printf '\\u2705 *%s*\\n%s finished `%s`\\n_%s_' "$p" "$o" "$h" "$ts")" ;;
         alert)
-            emoji="$(printf '\xe2\x9a\xa0')"
-            text="$emoji *$project* -- needs a human$nl$owner ALERT on \`$handoff\`" ;;
+            text_json="$(printf '\\u26a0 *%s* -- needs a human\\n%s ALERT on `%s`\\n_%s_' "$p" "$o" "$h" "$ts")" ;;
         *)
-            emoji=""
-            text="*$project*$nl$owner \`$handoff\`" ;;
+            text_json="$(printf '*%s*\\n%s `%s`\\n_%s_' "$p" "$o" "$h" "$ts")" ;;
     esac
 
-    # Build curl argv as an array so newlines/special chars in the payload are
-    # never re-split. --data-urlencode form-encodes each field (Telegram accepts
-    # application/x-www-form-urlencoded on sendMessage).
-    local -a curl_args
-    curl_args=(-s --max-time 5
-        --data-urlencode "chat_id=$FN_CHAT_ID"
-        --data-urlencode "text=$text"
-        --data-urlencode "parse_mode=Markdown")
-    [ -n "$FN_THREAD_ID" ] && curl_args+=(--data-urlencode "message_thread_id=$FN_THREAD_ID")
-    curl_args+=("https://api.telegram.org/bot$FN_BOT_TOKEN/sendMessage")
+    # JSON request body. chat_id goes as a string (Telegram accepts Integer or
+    # String); message_thread_id is an Integer per the Bot API, so emit it bare
+    # when numeric and fall back to a quoted string otherwise.
+    body="$(printf '{"chat_id":"%s","text":"%s","parse_mode":"Markdown"' \
+        "$(_fleet_json_escape "$FN_CHAT_ID")" "$text_json")"
+    if [ -n "$FN_THREAD_ID" ]; then
+        case "$FN_THREAD_ID" in
+            *[!0-9]*) body="$body$(printf ',"message_thread_id":"%s"' "$(_fleet_json_escape "$FN_THREAD_ID")")" ;;
+            *)        body="$body$(printf ',"message_thread_id":%s' "$FN_THREAD_ID")" ;;
+        esac
+    fi
+    body="$body}"
 
     # Any curl failure (incl. curl missing) -> return 0 silently. Fail-open.
-    curl "${curl_args[@]}" >/dev/null 2>&1 || true
+    printf '%s' "$body" \
+        | curl -s --max-time 5 \
+            -H 'Content-Type: application/json' \
+            --data-binary @- \
+            "https://api.telegram.org/bot$FN_BOT_TOKEN/sendMessage" \
+            >/dev/null 2>&1 || true
     return 0
 }
 

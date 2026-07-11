@@ -30,6 +30,30 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.16] - 2026-07-11
+
+### Fixed
+
+- Telegram emoji arrived as mojibake (`??` / `?`) from the headless bash notify path.
+  `.ai/tools/notify.sh` built the robot/check/warning emoji as raw UTF-8 byte
+  sequences (`printf '\xf0\x9f\xa4\x96'`) and shipped them through curl
+  `--data-urlencode`; the shell/locale/urlencode chain mangled the bytes before they
+  reached Telegram. The request is now sent as a JSON body
+  (`Content-Type: application/json`, `--data-binary @-`) with the emoji encoded as
+  JSON `\uXXXX` escapes (U+1F916 as a UTF-16 surrogate pair, U+2705 and U+26A0 as
+  single escapes), so the payload is pure ASCII on the wire and no locale or
+  encoding step can corrupt it. Interpolated values (project, handoff, owner,
+  chat_id, thread_id) are JSON-escaped, so a quote or backslash in a name can no
+  longer break the request body. The PowerShell path was already correct and is
+  unchanged in this respect.
+
+### Added
+
+- Notifications now carry a local wall-clock `HH:MM:SS` timestamp on a third line
+  (`_HH:MM:SS_`), so the owner can see when a pick-up / finish / alert actually
+  happened. Applied identically to both notify paths (`.ai/tools/notify.sh` and
+  `tools/4ai-panes/notify.ps1`) so the bash and PowerShell messages stay in lockstep.
+
 ## [0.0.15] - 2026-07-11
 
 ### Changed
