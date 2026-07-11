@@ -30,6 +30,34 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.13] - 2026-07-11
+
+### Security
+
+- pre-commit guards failed OPEN on case-insensitive filesystems (latent-issue
+  audit #4): the sensitive-file, removed-graph-tombstone, and cross-CLI territory
+  checks in `scripts/git-hooks/pre-commit` matched staged paths case-SENSITIVELY,
+  so on Windows/macOS a file committed as `.ENV`, `ID_RSA`, or `.Kimi/x` — the SAME
+  file — slipped past the backstop. `_is_sensitive`, `_is_tombstone`, and
+  `_territory_violation` now match on the lowercased path (new `_lc` helper),
+  restoring fail-CLOSED behavior without changing which patterns/territories are
+  blocked.
+
+### Fixed
+
+- `install-template.sh` update mode wiped gitignored local state (latent-issue
+  audit #6): `.ai/research/` and `.claude/settings.local.json` were destroyed by the
+  `rm -rf`+copy path on a framework update of an onboarded project. `.ai/research/`
+  is now stashed/restored alongside `.ai/activity` and `.ai/reports`, and a new
+  `preserve_local_state`/`restore_local_state` pair carries `.claude/settings.local.json`
+  across the destructive `.claude` copy.
+- `check-version-bump.sh` version-gate allowlist omitted two shipped scripts
+  (latent-issue audit #5): `scripts/fleet-init.sh` and
+  `scripts/sync-4ai-panes-install.ps1` are copied into every adopter by the
+  installer but changes to them required no version bump, so drift shipped silently.
+  Both are now in the `is_versioned` allowlist (`tools/4ai-panes/**` stays excluded —
+  it is intentionally not shipped that way).
+
 ## [0.0.12] - 2026-07-11
 
 ### Security
