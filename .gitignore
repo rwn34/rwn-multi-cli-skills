@@ -92,6 +92,9 @@ id_ed25519*
 /.scratch/*
 !/.scratch/README.md
 
+# ---- Per-project claim sidecars (pane-runner; ephemeral runtime state) ----
+.ai/.claim-*.json
+
 # ---- Per-handoff claim sidecars (ADR-0009 section 3; ephemeral runtime state) ----
 # ignore the sidecars but keep the contract README. Must ignore the dir CONTENTS
 # (dir/*) not the dir itself, else the README negation cannot take effect.
