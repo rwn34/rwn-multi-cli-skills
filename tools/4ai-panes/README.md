@@ -12,12 +12,15 @@ Two per-project **Selector badges** were added at import (`Get-ProjectBadges` in
 
 | Badge | Meaning |
 |-------|---------|
+| `[v SRC]` | This dir **is** the framework source repo (`$frameworkRepo`, override with `RWN_FRAMEWORK_REPO`). |
 | `[v OK]` | `.ai/.framework-version` marker present — current framework install. |
 | `[! OLD]` | `.ai/` exists but no version marker — pre-marker install. |
 | `[- none]` | No `.ai/` folder — framework not installed in that project. |
 | `[H:<n>]` | *n* open cross-CLI handoffs (count of `*.md` files under `.ai/handoffs/to-*/open/`). Hidden when *n* = 0. |
 
-Exactly one of the three framework-version badges appears per project; `[H:<n>]` is appended only when open handoffs exist. Badge checks are deliberately cheap (two `Test-Path` calls + one shallow glob per project) — any error in a broken project dir yields an empty/partial badge, never a crash.
+Exactly one of the four framework-version badges appears per project; `[H:<n>]` is appended only when open handoffs exist (including on `[v SRC]`). Badge checks are deliberately cheap (two `Test-Path` calls + one shallow glob per project) — any error in a broken project dir yields an empty/partial badge, never a crash.
+
+**Why `[v SRC]` exists:** the `.ai/.framework-version` marker is written *by* the installer *into* target projects. The framework source repo never carries one — its own version is `tools/multi-cli-install/package.json` `.version` — so it used to badge itself `[! OLD]`, i.e. the framework reported itself stale against itself. The selector now canonicalizes both paths (absolute, trailing-slash- and case-insensitive) and badges the source repo `[v SRC]` instead.
 
 Role policy for the four panes (who does what across Claude/Kiro/Kimi/OpenCode) is owned by [`docs/architecture/0002-cli-role-topology.md`](../../docs/architecture/0002-cli-role-topology.md) in this repo (amended 2026-07-08; OpenCode replaces Crush 2026-07-09).
 
@@ -81,6 +84,36 @@ The marker is a durable sidecar under `.ai/handoffs/.quarantine/`, named `<recip
 - **Clear manually** (un-quarantine) by **deleting** the sidecar after you fix or unblock the handoff — the runner re-attempts it on the next poll.
 - **Known limitation:** there is no automatic staleness expiry yet. A handoff you fix *in place* without clearing its sidecar stays skipped until you delete the sidecar (or it moves to `done/`).
 
+### Launch pacing (why launches no longer land scrambled)
+
+Windows Terminal applies a chained `wt` command (`new-tab … ; split-pane … ; split-pane …`) against **whatever pane is focused when it gets there**. Firing one invocation with dozens of subcommands — which is what marking ~7 projects used to do — makes WT race itself and the layout comes out shuffled.
+
+The selector now **paces** every fleet launch:
+
+- **One `wt` invocation per project tab** in a batch (never one packed invocation), fired sequentially.
+- **One `wt` invocation per pane stage** inside a tab (`new-tab`, then each `split-pane` / `move-focus` separately).
+
+Every stage still targets the same `-w rwn4ai` window and acts on the same active pane the chained form would have acted on, so **the layout is identical — only the timing changes**. Titles (`--title`), working dirs (`-d`) and window (`-w rwn4ai`) are byte-identical to the chained form.
+
+Two env knobs tune the pacing:
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `RWN_4AI_PANE_DELAY_MS` | `250` | Milliseconds between pane stages **within** one project's tab. |
+| `RWN_4AI_TAB_DELAY_MS` | `1200` | Milliseconds between project tabs in a **batch** launch. |
+
+Setting a knob to **`0` restores the legacy atomic single-invocation behavior for that dimension** — the escape hatch if staging ever misbehaves on a machine:
+
+- `RWN_4AI_PANE_DELAY_MS=0` — each project's whole tab ships as one chained `wt` call.
+- `RWN_4AI_TAB_DELAY_MS=0` — the **whole batch** ships as one chained `wt` call (a single invocation cannot be pane-staged, so this makes the panes atomic too). This is exactly the old behavior, including its ~8191-char Windows command-line ceiling; the selector warns if an invocation exceeds the 7000-char safe limit.
+
+Non-numeric, negative or empty values fall back to the default — a bad env var never crashes the launcher.
+
+```powershell
+$env:RWN_4AI_PANE_DELAY_MS = 400    # slower machine: give WT more time per split
+$env:RWN_4AI_TAB_DELAY_MS  = 0      # opt back into the legacy one-shot batch
+```
+
 ---
 
 ## 2. Files
@@ -92,6 +125,7 @@ The marker is a durable sidecar under `.ai/handoffs/.quarantine/`, named `<recip
 | `pane-runner.ps1` | Per-pane self-driving supervisor loop (ADR-0008): polls this project's handoff inbox, runs the CLI headless on qualifying handoffs, auto-continues past step caps (MAX 5), and holds a per-project claim-lock. Quarantines a handoff after repeated failures (default 3) so a poison pill can't stall the pane. `-Cli`, `-ProjectDir`, `-MaxContinues`, `-PollSeconds`. |
 | `restart-pane.ps1` | Manual respawn: re-enters **this** pane's `pane-runner.ps1` loop after a Ctrl-C or exit dropped it to a bare prompt. Pane-local — it relaunches only this pane's CLI and never touches the other panes (each pane is its own process + claim-lock). `-Cli` defaults to `$env:RWN_PANE_CLI` (stamped by `pane-runner.ps1`), so with no arguments it restarts the correct CLI in the current pane. Also `-ProjectDir`, `-Owner`, `-MaxContinues`, `-PollSeconds`. |
 | `test-pane-runner.ps1` | Pester-free harness for `pane-runner.ps1` decision logic (mock CLI, no real launch). Run: `powershell -File test-pane-runner.ps1`. |
+| `test-selector-e2e.ps1` | Pester-free harness for `Selector.ps1`: real `Install-Framework` runs into a temp sandbox, plus badge resolution (`[v SRC]`/`[v OK]`/`[! OLD]`/`[- none]`) and the launch plan (staged emission == legacy atomic chain, N projects -> N tab launches, delay knobs). Asserts on the constructed `wt` command/stage arrays — never launches Windows Terminal. Run: `powershell -File test-selector-e2e.ps1`. |
 | `install-framework.log` | Generated at runtime next to the scripts by `Install-Framework` — an append-only trace of each framework install attempt (source, git state, installer exit codes, fallback copies). Not committed. |
 | `Launch4Panes.vbs` | VBS wrapper. Opens the PS1 from Start Menu without leaving a lingering window. |
 | `icon.ico` | Custom icon for the Start Menu shortcut (dark theme, 4 colored bars). |

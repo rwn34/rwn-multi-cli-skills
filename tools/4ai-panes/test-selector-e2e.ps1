@@ -33,6 +33,20 @@
     Test 2  -- Fallback path: template = a temp copy WITHOUT scripts/ ->
                installer cannot run -> Install-Framework's direct-copy fallback
                must still produce a complete framework + version marker.
+    Test 3  -- Badges: [v SRC] for the framework source repo, [v OK] / [! OLD] /
+               [- none] for target dirs, and the [H:n] badge still applies to the
+               source repo. Plus the <=70-char legend budget.
+    Test 4  -- Staged emission: Build-FleetTabStages yields the SAME ordered wt
+               subcommands as the legacy atomic chain (stage-by-stage equality),
+               and no stage can be corrupted by an embedded ' ; '.
+    Test 5  -- Batch pacing: N marked projects -> exactly N `new-tab` launches
+               (one wt invocation per tab), never one packed invocation.
+    Test 6  -- Delay knobs: defaults when unset, honored when set, defaults on
+               garbage/negative input, and 0 restores the atomic behavior.
+
+  Tests 3-6 never invoke Windows Terminal: the launch plan is built by PURE
+  production functions (Build-FleetTabStages / Get-FleetLaunchPlan) and asserted
+  as data. Only Invoke-FleetLaunchPlan touches wt.exe, and it is never called here.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -389,6 +403,362 @@ function Test-FallbackCopyPath {
 }
 
 # ---------------------------------------------------------------------------
+# Test 3: project badges -- [v SRC] / [v OK] / [! OLD] / [- none] + legend budget
+#
+# Drives the REAL Get-ProjectBadges (+ Get-CanonicalDir / Test-IsFrameworkSource)
+# lifted from Selector.ps1, with the framework source pointed at a temp dir via
+# RWN_FRAMEWORK_REPO -- the same env var Selector.ps1's own $frameworkRepo line reads.
+# ---------------------------------------------------------------------------
+function Invoke-GetProjectBadges {
+    param(
+        [Parameter(Mandatory = $true)][string]$Dir,
+        [Parameter(Mandatory = $true)][string]$FrameworkSrc
+    )
+    $ast = Get-SelectorAst
+    $assignText = Get-SelectorAssignmentText -Ast $ast -VarName 'frameworkRepo'
+    $funcNames = @('Get-CanonicalDir', 'Test-IsFrameworkSource', 'Get-ProjectBadges')
+    $funcs = Get-SelectorFunctionText -Ast $ast -Names $funcNames
+
+    $prev = $env:RWN_FRAMEWORK_REPO
+    try {
+        $env:RWN_FRAMEWORK_REPO = $FrameworkSrc
+        $ErrorActionPreference = 'SilentlyContinue'   # production condition
+
+        # Scope Get-ProjectBadges reads: $frameworkRepo (production line), plus the
+        # fleet CLI maps it uses for the stranded-handoff marker.
+        . ([scriptblock]::Create($assignText))
+        . (Join-Path $launcherDir 'fleet-clis.ps1')
+        $cliKey = @{}
+        $cliAvailable = @{}
+        foreach ($c in $FleetClis) {
+            $cliKey[$c] = $FleetCliProper[$c]
+            $cliAvailable[$FleetCliProper[$c]] = $true      # every CLI present -> nothing stranded
+        }
+        $projectsDir = Split-Path -Parent $Dir              # -Path is used, so this is inert
+        foreach ($n in $funcNames) { . ([scriptblock]::Create($funcs[$n])) }
+
+        return (Get-ProjectBadges -Path $Dir)
+    } finally {
+        if ($null -eq $prev) { Remove-Item Env:RWN_FRAMEWORK_REPO -ErrorAction SilentlyContinue }
+        else { $env:RWN_FRAMEWORK_REPO = $prev }
+    }
+}
+
+function Test-Badges {
+    Write-Log "===== Test 3: project badges (framework source vs targets) ====="
+    $root = Join-Path $sandboxRoot 'badges'
+
+    # The stand-in framework SOURCE repo: has .ai/ but NO .ai/.framework-version --
+    # exactly like the real repo, which is what used to make it badge [! OLD].
+    $fwSrc = Join-Path $root 'framework-repo'
+    New-Item -ItemType Directory -Path (Join-Path $fwSrc '.ai') -Force | Out-Null
+    Assert-That (-not (Test-Path (Join-Path $fwSrc '.ai\.framework-version'))) `
+        'framework source repo carries no .framework-version marker (the premise of the bug)'
+
+    $installed = Join-Path $root 'installed'
+    New-Item -ItemType Directory -Path (Join-Path $installed '.ai') -Force | Out-Null
+    '{"framework_version":"0.0.1"}' | Set-Content -Path (Join-Path $installed '.ai\.framework-version')
+
+    $stale = Join-Path $root 'stale'
+    New-Item -ItemType Directory -Path (Join-Path $stale '.ai') -Force | Out-Null
+
+    $bare = Join-Path $root 'bare'
+    New-Item -ItemType Directory -Path $bare -Force | Out-Null
+
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC]') 'framework source repo badges [v SRC] (not [! OLD])' "got '$b'"
+
+    $b = Invoke-GetProjectBadges -Dir $installed -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v OK]') 'dir with .ai/.framework-version badges [v OK]' "got '$b'"
+
+    $b = Invoke-GetProjectBadges -Dir $stale -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[! OLD]') 'dir with .ai/ but no marker badges [! OLD]' "got '$b'"
+
+    $b = Invoke-GetProjectBadges -Dir $bare -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[- none]') 'bare dir badges [- none]' "got '$b'"
+
+    # Path-shape tolerance: trailing separator, forward slashes, and case must all
+    # still resolve to the same source repo (canonicalized comparison).
+    $b = Invoke-GetProjectBadges -Dir ($fwSrc + '\') -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC]') '[v SRC] survives a trailing separator on the dir' "got '$b'"
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc (($fwSrc -replace '\\', '/') + '/')
+    Assert-That ($b -eq '[v SRC]') '[v SRC] survives forward slashes + trailing slash on $frameworkRepo' "got '$b'"
+    $b = Invoke-GetProjectBadges -Dir $fwSrc.ToUpper() -FrameworkSrc $fwSrc.ToLower()
+    Assert-That ($b -eq '[v SRC]') '[v SRC] is case-insensitive' "got '$b'"
+
+    # A non-existent path must NOT crash the badge builder (GetFullPath on a path
+    # that does not exist is fine; this guards the "do not crash" requirement).
+    $ghost = Join-Path $root 'does-not-exist'
+    $b = Invoke-GetProjectBadges -Dir $ghost -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[- none]') 'non-existent dir badges [- none] without throwing' "got '$b'"
+
+    # The handoff badge is UNCHANGED for the source repo: [v SRC] + [H:n].
+    New-Item -ItemType Directory -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open') -Force | Out-Null
+    'x' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\a.md')
+    'y' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\b.md')
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC] [H:2]') 'source repo still gets the [H:n] handoff badge' "got '$b'"
+
+    # Legend: documents the new badge and fits the narrowest box (<= 70 chars).
+    $legend = & ([scriptblock]::Create((Get-SelectorAssignmentText -Ast (Get-SelectorAst) -VarName 'badgeLegend') + "`r`n" + '$badgeLegend'))
+    Write-Log "  legend ($($legend.Length) chars): $legend"
+    Assert-That ($legend -match '\[v SRC\]') 'badge legend documents [v SRC]' "legend='$legend'"
+    Assert-That ($legend.Length -le 70) 'badge legend fits the narrowest box (<= 70 chars)' "length=$($legend.Length)"
+}
+
+# ---------------------------------------------------------------------------
+# Tests 4-6 harness: lift the PURE launch-plan production functions.
+# ---------------------------------------------------------------------------
+
+# Every `$cliDefs[...] = ...` assignment, verbatim -- the launch strings under test
+# are production text, not a test reimplementation.
+function Get-SelectorCliDefsText {
+    param($Ast)
+    $nodes = @($Ast.FindAll({
+        $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $args[0].Left.Extent.Text -like '$cliDefs*'
+    }, $true))
+    if ($nodes.Count -lt 2) {
+        throw "CONTRACT BROKEN: Selector.ps1 no longer builds `$cliDefs by assignment. " +
+              "This suite executes those lines verbatim to build fleet-tab stages."
+    }
+    return (($nodes | ForEach-Object { $_.Extent.Text }) -join "`r`n")
+}
+
+function Invoke-BuildFleetTabStages {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetDir,
+        [string]$LayoutMode = '6pane',
+        [string[]]$ActiveCLIs = @('Claude', 'Kiro', 'Kimi', 'OpenCode')
+    )
+    $ast = Get-SelectorAst
+    $funcs = Get-SelectorFunctionText -Ast $ast -Names @('Build-FleetTabStages')
+
+    $prevBare = $env:RWN_PANE_BARE
+    try {
+        Remove-Item Env:RWN_PANE_BARE -ErrorAction SilentlyContinue   # bare mode would skip the composite build
+        $ErrorActionPreference = 'SilentlyContinue'
+
+        . ([scriptblock]::Create((Get-SelectorCliDefsText -Ast $ast)))
+        . (Join-Path $launcherDir 'fleet-clis.ps1')
+        $cliLower = @{}
+        $cliAvailable = @{}
+        foreach ($c in $FleetClis) {
+            $cliLower[$FleetCliProper[$c]] = $c
+            $cliAvailable[$FleetCliProper[$c]] = $true
+        }
+        $activeCLIs = $ActiveCLIs
+        $paneLayoutMode = $LayoutMode
+        $topStripFraction = & ([scriptblock]::Create(
+            (Get-SelectorAssignmentText -Ast $ast -VarName 'topStripFraction') + "`r`n" + '$topStripFraction'))
+        # Real launcher dir: pane-runner.ps1 + run-pane-supervised.ps1 must exist for the
+        # composite (6pane/5pane) build. Build-FleetTabStages is pure -- it only reads.
+        $scriptDir = $launcherDir
+
+        . ([scriptblock]::Create($funcs['Build-FleetTabStages']))
+        return @(Build-FleetTabStages -TargetDir $TargetDir)
+    } finally {
+        if ($null -ne $prevBare) { $env:RWN_PANE_BARE = $prevBare }
+    }
+}
+
+function Invoke-GetFleetLaunchPlan {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$TabStages,
+        [int]$PaneDelayMs,
+        [int]$TabDelayMs
+    )
+    $ast = Get-SelectorAst
+    $funcs = Get-SelectorFunctionText -Ast $ast -Names @('Get-FleetLaunchPlan')
+    . ([scriptblock]::Create($funcs['Get-FleetLaunchPlan']))
+    return @(Get-FleetLaunchPlan -TabStages $TabStages -PaneDelayMs $PaneDelayMs -TabDelayMs $TabDelayMs)
+}
+
+function Invoke-GetDelayMs {
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][int]$Default)
+    $ast = Get-SelectorAst
+    $funcs = Get-SelectorFunctionText -Ast $ast -Names @('Get-DelayMs')
+    . ([scriptblock]::Create($funcs['Get-DelayMs']))
+    return (Get-DelayMs -Name $Name -Default $Default)
+}
+
+# ---------------------------------------------------------------------------
+# Test 4: staged emission == the legacy atomic chain, stage for stage
+# ---------------------------------------------------------------------------
+function Test-StagedEmission {
+    Write-Log "===== Test 4: staged emission of a 6-pane group ====="
+    $proj = Join-Path $sandboxRoot 'stage-proj'
+    New-Item -ItemType Directory -Path $proj -Force | Out-Null
+
+    $stages = Invoke-BuildFleetTabStages -TargetDir $proj
+    Write-Log "  stages ($($stages.Count)):"
+    foreach ($s in $stages) { Write-Log "    | $s" }
+
+    # 6 panes: new-tab (1) + split -H (2) + 3x split -V (5) + move-focus/split (6).
+    Assert-That ($stages.Count -eq 7) '6-pane group emits 7 stages (6 panes + move-focus)' "got $($stages.Count)"
+    Assert-That ($stages[0] -like 'new-tab *') 'stage 0 is the new-tab' "got '$($stages[0])'"
+    Assert-That (@($stages | Where-Object { $_ -like 'new-tab *' }).Count -eq 1) 'exactly one new-tab per project group'
+    Assert-That ($stages[1] -like 'split-pane -H *') 'stage 1 is the horizontal split (top over bottom)' "got '$($stages[1])'"
+    Assert-That ($stages[2] -like 'split-pane -V *' -and $stages[3] -like 'split-pane -V *' -and $stages[4] -like 'split-pane -V *') `
+        'stages 2-4 are the bottom vertical splits'
+    Assert-That ($stages[5] -eq 'move-focus up') 'stage 5 returns focus to the top pane' "got '$($stages[5])'"
+    Assert-That ($stages[6] -like 'split-pane -V -s 0.5 *') 'stage 6 splits the top row (Kimi cockpit)' "got '$($stages[6])'"
+
+    # No stage may contain the ' ; ' chain separator: that is precisely what would
+    # make a string-split emission corrupt a command payload.
+    $dirty = @($stages | Where-Object { $_ -like '* ; *' })
+    Assert-That ($dirty.Count -eq 0) 'no stage contains a literal '' ; '' (chain separator cannot be corrupted)' `
+        "offending: $($dirty -join ' || ')"
+
+    # Every group's --title / -d / -w semantics preserved.
+    $leaf = Split-Path -Leaf $proj
+    Assert-That ($stages[0] -like "*--title `"$leaf`"*") 'new-tab keeps --title <project leaf>' "got '$($stages[0])'"
+    $withDir = @($stages | Where-Object { $_ -like "*-d `"$proj`"*" })
+    Assert-That ($withDir.Count -eq 6) 'every pane-creating stage keeps -d "<targetDir>"' "got $($withDir.Count) of 6"
+
+    # STAGE-BY-STAGE EQUALITY: the paced plan, joined back with ' ; ', must be the
+    # exact atomic chain that PaneDelayMs=0 produces (the legacy single invocation).
+    # @( ) at the CALL site: PowerShell unrolls a single-element array on function
+    # return, so a 1-invocation plan would arrive as a bare object without .Count.
+    $paced  = @(Invoke-GetFleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs 250 -TabDelayMs 1200)
+    $atomic = @(Invoke-GetFleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs 0   -TabDelayMs 1200)
+
+    Assert-That ($paced.Count -eq 7) 'paced plan = one wt invocation per stage' "got $($paced.Count)"
+    Assert-That ($atomic.Count -eq 1) 'atomic plan (pane delay 0) = one wt invocation for the tab' "got $($atomic.Count)"
+    Assert-That (@($paced | Where-Object { $_.Wt -like '-w rwn4ai *' }).Count -eq 7) 'every paced invocation targets -w rwn4ai'
+
+    $rejoined = (@($paced | ForEach-Object { $_.Wt -replace '^-w rwn4ai ', '' }) -join ' ; ')
+    $atomicSubcmds = $atomic[0].Wt -replace '^-w rwn4ai ', ''
+    Assert-That ($rejoined -eq $atomicSubcmds) 'staged sequence == the legacy atomic chain, subcommand for subcommand' `
+        "staged='$rejoined' atomic='$atomicSubcmds'"
+
+    # Pacing metadata: pane delay between stages, 0 after the last (single tab).
+    $betweenOk = $true
+    for ($i = 0; $i -lt $paced.Count - 1; $i++) { if ($paced[$i].DelayAfterMs -ne 250) { $betweenOk = $false } }
+    Assert-That $betweenOk 'pane delay applied between every stage'
+    Assert-That ($paced[$paced.Count - 1].DelayAfterMs -eq 0) 'no delay after the last stage of the last tab'
+
+    # 5pane degrades to 6 stages (no top-right Kimi split, no move-focus).
+    $stages5 = Invoke-BuildFleetTabStages -TargetDir $proj -LayoutMode '5pane'
+    Assert-That ($stages5.Count -eq 5) '5pane group emits 5 stages (no move-focus / top-right split)' "got $($stages5.Count)"
+    Assert-That (@($stages5 | Where-Object { $_ -eq 'move-focus up' }).Count -eq 0) '5pane emits no move-focus stage'
+}
+
+# ---------------------------------------------------------------------------
+# Test 5: a batch of N projects = N tab launches (never one packed invocation)
+# ---------------------------------------------------------------------------
+function Test-BatchPacing {
+    Write-Log "===== Test 5: batch of N projects -> N tab launches ====="
+    $n = 5
+    $tabStages = @()
+    $projects = @()
+    for ($i = 1; $i -le $n; $i++) {
+        $p = Join-Path $sandboxRoot "batch-proj-$i"
+        New-Item -ItemType Directory -Path $p -Force | Out-Null
+        $projects += $p
+        $tabStages += , (Invoke-BuildFleetTabStages -TargetDir $p)
+    }
+
+    $plan = @(Invoke-GetFleetLaunchPlan -TabStages $tabStages -PaneDelayMs 250 -TabDelayMs 1200)
+    $newTabs = @($plan | Where-Object { $_.Wt -like '-w rwn4ai new-tab *' })
+    Write-Log "  plan: $($plan.Count) invocations, $($newTabs.Count) new-tab launches for $n projects"
+
+    Assert-That ($newTabs.Count -eq $n) "batch of $n projects produces exactly $n tab launches" "got $($newTabs.Count)"
+    Assert-That ($plan.Count -eq $n * 7) "one wt invocation per stage across the batch ($($n * 7))" "got $($plan.Count)"
+
+    # Exactly one project per invocation: no invocation may carry two new-tabs, and
+    # each project's dir appears in exactly one new-tab.
+    $packed = @($plan | Where-Object { ([regex]::Matches($_.Wt, 'new-tab ')).Count -gt 1 })
+    Assert-That ($packed.Count -eq 0) 'no wt invocation packs more than one project (the old batching bug)' `
+        "packed invocations: $($packed.Count)"
+    $everyProjectOnce = $true
+    foreach ($p in $projects) {
+        $hits = @($newTabs | Where-Object { $_.Wt -like "*-d `"$p`"*" })
+        if ($hits.Count -ne 1) { $everyProjectOnce = $false }
+    }
+    Assert-That $everyProjectOnce 'each marked project owns exactly one new-tab launch'
+
+    # Tab delay lands on the LAST stage of each tab except the last one.
+    $tabBoundaryDelays = @()
+    for ($t = 1; $t -le $n; $t++) { $tabBoundaryDelays += $plan[($t * 7) - 1].DelayAfterMs }
+    $expected = @(1200, 1200, 1200, 1200, 0)
+    Assert-That ((($tabBoundaryDelays -join ',') -eq ($expected -join ','))) `
+        'tab delay separates projects; none after the last' "got $($tabBoundaryDelays -join ',')"
+}
+
+# ---------------------------------------------------------------------------
+# Test 6: delay knobs -- defaults, honored values, garbage, and 0 = atomic
+# ---------------------------------------------------------------------------
+function Test-DelayKnobs {
+    Write-Log "===== Test 6: RWN_4AI_PANE_DELAY_MS / RWN_4AI_TAB_DELAY_MS ====="
+
+    # Contract guard: the production assignments must read THESE env names with THESE
+    # defaults. If they are renamed, the knobs below would silently test nothing.
+    $ast = Get-SelectorAst
+    $paneAssign = Get-SelectorAssignmentText -Ast $ast -VarName 'paneDelayMs'
+    $tabAssign  = Get-SelectorAssignmentText -Ast $ast -VarName 'tabDelayMs'
+    Write-Log "  $paneAssign"
+    Write-Log "  $tabAssign"
+    Assert-That ($paneAssign -match 'RWN_4AI_PANE_DELAY_MS' -and $paneAssign -match '250') `
+        '$paneDelayMs reads RWN_4AI_PANE_DELAY_MS, default 250' "got: $paneAssign"
+    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '1200') `
+        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 1200' "got: $tabAssign"
+
+    $prevPane = $env:RWN_4AI_PANE_DELAY_MS
+    $prevTab  = $env:RWN_4AI_TAB_DELAY_MS
+    try {
+        Remove-Item Env:RWN_4AI_PANE_DELAY_MS -ErrorAction SilentlyContinue
+        Remove-Item Env:RWN_4AI_TAB_DELAY_MS -ErrorAction SilentlyContinue
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: default 250 when unset'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 1200) -eq 1200) 'tab delay: default 1200 when unset'
+
+        $env:RWN_4AI_PANE_DELAY_MS = '500'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 500) 'pane delay: honored when set to 500'
+
+        $env:RWN_4AI_PANE_DELAY_MS = ' 750 '
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 750) 'pane delay: surrounding whitespace tolerated'
+
+        $env:RWN_4AI_PANE_DELAY_MS = 'banana'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: garbage falls back to the default'
+
+        $env:RWN_4AI_PANE_DELAY_MS = '-5'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: negative falls back to the default'
+
+        $env:RWN_4AI_PANE_DELAY_MS = ''
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: empty falls back to the default'
+
+        $env:RWN_4AI_PANE_DELAY_MS = '0'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 0) 'pane delay: 0 is honored (atomic escape hatch)'
+    } finally {
+        if ($null -eq $prevPane) { Remove-Item Env:RWN_4AI_PANE_DELAY_MS -ErrorAction SilentlyContinue } else { $env:RWN_4AI_PANE_DELAY_MS = $prevPane }
+        if ($null -eq $prevTab)  { Remove-Item Env:RWN_4AI_TAB_DELAY_MS -ErrorAction SilentlyContinue }  else { $env:RWN_4AI_TAB_DELAY_MS = $prevTab }
+    }
+
+    # 0 = legacy atomic behavior, per dimension.
+    $a = Join-Path $sandboxRoot 'knob-proj-a'
+    $b = Join-Path $sandboxRoot 'knob-proj-b'
+    New-Item -ItemType Directory -Path $a -Force | Out-Null
+    New-Item -ItemType Directory -Path $b -Force | Out-Null
+    $tabStages = @()
+    $tabStages += , (Invoke-BuildFleetTabStages -TargetDir $a)
+    $tabStages += , (Invoke-BuildFleetTabStages -TargetDir $b)
+
+    $panedAtomic = @(Invoke-GetFleetLaunchPlan -TabStages $tabStages -PaneDelayMs 0 -TabDelayMs 1200)
+    Assert-That ($panedAtomic.Count -eq 2) 'pane delay 0: one atomic invocation per project (still one tab each)' "got $($panedAtomic.Count)"
+    Assert-That (@($panedAtomic | Where-Object { $_.Wt -like '-w rwn4ai new-tab *' }).Count -eq 2) `
+        'pane delay 0: still exactly one new-tab launch per project'
+    Assert-That ($panedAtomic[0].DelayAfterMs -eq 1200 -and $panedAtomic[1].DelayAfterMs -eq 0) `
+        'pane delay 0: tab delay still separates the two projects'
+
+    $fullyAtomic = @(Invoke-GetFleetLaunchPlan -TabStages $tabStages -PaneDelayMs 250 -TabDelayMs 0)
+    Assert-That ($fullyAtomic.Count -eq 1) 'tab delay 0: the whole batch collapses to ONE wt invocation (full legacy)' "got $($fullyAtomic.Count)"
+    $expectedAtomic = "-w rwn4ai " + ((@($tabStages | ForEach-Object { @($_) -join ' ; ' })) -join ' ; ')
+    Assert-That ($fullyAtomic[0].Wt -eq $expectedAtomic) 'tab delay 0: the atomic invocation is the exact legacy chain' `
+        "got '$($fullyAtomic[0].Wt)'"
+    Assert-That ($fullyAtomic[0].DelayAfterMs -eq 0) 'tab delay 0: no trailing sleep'
+}
+
+# ---------------------------------------------------------------------------
 # Safety fingerprints: nothing outside the sandbox may change.
 # ---------------------------------------------------------------------------
 function Get-DirFingerprint($path) {
@@ -428,6 +798,10 @@ try {
     Assert-EnvOverrideContract
     Test-InstallerPath
     Test-FallbackCopyPath
+    Test-Badges
+    Test-StagedEmission
+    Test-BatchPacing
+    Test-DelayKnobs
 } catch {
     # A thrown contract guard (or any fatal error) must not be able to masquerade
     # as "0 failed". Record it, still run the safety checks, then report ABORTED.
