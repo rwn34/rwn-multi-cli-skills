@@ -56,13 +56,98 @@ function Resolve-FleetNotifyConfig {
 
 # Dedup / rate-throttle window (seconds). A notification identical to one already
 # sent within this window (same Kind+Project+Handoff) is suppressed so a flapping
-# pane loop cannot spam Telegram. State is an in-process script-scoped map keyed by
-# Kind|Project|Handoff -> last-sent UTC: the simplest fail-open store, because the
-# pane-runner loop is one long-lived process (the map naturally spans the flapping
-# window) and there is NO file I/O that could fail. A fresh process starts with an
-# empty map and always sends. Set to 0 to disable throttling entirely.
+# pane loop cannot spam Telegram. Set to 0 to disable throttling entirely.
+#
+# The throttle is FILE-BACKED so it survives a supervised pane respawn:
+# run-pane-supervised.ps1 spawns a FRESH pane-runner process on each crash, which
+# would reset an in-process-only map and let a rapid crash-respawn-crash cycle emit
+# one notification per respawn. The file (Kind|Project|Handoff -> last-sent UTC) is
+# the cross-process source of truth; the in-process map below is only a fast path.
+# State lives under the gitignored runtime area .ai/handoffs/.claims/ (ignored via
+# ".ai/handoffs/.claims/*" in .gitignore) so it never enters version control.
+#
+# ABSOLUTE fail-open: if the file can't be read/parsed/written for ANY reason, the
+# decision SENDS (never suppress-on-error, never throw) - a throttle malfunction
+# must never silence a real alert. See Test-FleetNotifyThrottled.
 $script:FleetNotifyThrottleSeconds = 60
 $script:FleetNotifyLastSent = @{}
+try {
+    $script:FleetNotifyThrottlePath = [System.IO.Path]::GetFullPath(
+        (Join-Path $PSScriptRoot '../../.ai/handoffs/.claims/.fleet-notify-throttle.json'))
+} catch {
+    $script:FleetNotifyThrottlePath = $null
+}
+
+# Decide whether a notification keyed $Key is throttled (suppress) or should send,
+# recording a fresh send timestamp when it sends. File-backed (survives a respawn);
+# the in-process map is a fast path that also collapses same-process dupes without
+# file I/O. Returns $true = SUPPRESS, $false = SEND. FULLY fail-open: any read /
+# parse / write failure returns $false (SEND). Never throws. On write it prunes
+# entries older than 5 windows so the state file cannot grow unbounded. Atomic-ish
+# write (temp + Move-Item -Force, BOM-less UTF-8) mirrors Write-Claim.
+function Test-FleetNotifyThrottled {
+    param(
+        [string]$Key,
+        [int]$WindowSeconds = $script:FleetNotifyThrottleSeconds,
+        [string]$Path = $script:FleetNotifyThrottlePath
+    )
+    if ($WindowSeconds -le 0) { return $false }
+    $nowUtc = (Get-Date).ToUniversalTime()
+
+    # Fast in-process path (also collapses same-process dupes with no file I/O).
+    try {
+        $lastMem = $script:FleetNotifyLastSent[$Key]
+        if ($lastMem -and (($nowUtc - $lastMem).TotalSeconds -lt $WindowSeconds)) { return $true }
+    } catch { }
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+
+    # File-backed cross-process check. Any failure to read/parse -> SEND (fail-open).
+    $map = @{}
+    try {
+        if (Test-Path -LiteralPath $Path) {
+            $json = Get-Content -LiteralPath $Path -Raw
+            if (-not [string]::IsNullOrWhiteSpace($json)) {
+                $parsed = $json | ConvertFrom-Json
+                foreach ($prop in $parsed.PSObject.Properties) {
+                    $when = [datetime]::MinValue
+                    if ([datetime]::TryParse([string]$prop.Value, [ref]$when)) {
+                        $map[$prop.Name] = $when.ToUniversalTime()
+                    }
+                }
+            }
+        }
+    } catch {
+        return $false
+    }
+
+    $last = $map[$Key]
+    if ($last -and (($nowUtc - $last).TotalSeconds -lt $WindowSeconds)) {
+        try { $script:FleetNotifyLastSent[$Key] = $last } catch { }
+        return $true
+    }
+
+    # SEND: record the new timestamp, prune stale keys, write atomically. A write
+    # failure here still returns $false (we already decided to send) - fail-open.
+    $map[$Key] = $nowUtc
+    try { $script:FleetNotifyLastSent[$Key] = $nowUtc } catch { }
+    try {
+        $cutoff = $nowUtc.AddSeconds(-5 * $WindowSeconds)
+        $out = [ordered]@{}
+        foreach ($k in ($map.Keys | Sort-Object)) {
+            if ($map[$k] -ge $cutoff) { $out[$k] = $map[$k].ToString('yyyy-MM-ddTHH:mm:ssZ') }
+        }
+        $dir = Split-Path -Parent $Path
+        if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        $tmp = "$Path.tmp.$PID"
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($out | ConvertTo-Json -Compress))
+        [System.IO.File]::WriteAllBytes($tmp, $bytes)
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+    } catch { }
+    return $false
+}
 
 # Post a fleet event to the configured Telegram topic. Fail-open no-op if unset.
 # -Kind is one of picked|done|alert; the text is built from Owner/Handoff/Project.
@@ -82,19 +167,18 @@ function Send-FleetNotification {
         if ($null -eq $cfg) { return $null }
 
         # Throttle: suppress an identical notification (same Kind+Project+Handoff)
-        # already sent within FleetNotifyThrottleSeconds. Recorded at the send
-        # decision (not after the HTTP call), so a Telegram outage during a flapping
-        # loop still can't spam. Guarded so a throttle hiccup can never block a send
-        # (fail-open): any error here falls through and sends.
+        # already sent within FleetNotifyThrottleSeconds. Decided (and recorded) at
+        # the send decision (not after the HTTP call), so a Telegram outage during a
+        # flapping loop still can't spam. File-backed so it survives a supervised
+        # respawn. Guarded so a throttle hiccup can never block a send (fail-open):
+        # Test-FleetNotifyThrottled itself never throws, and any error here still
+        # falls through and sends.
         if ($script:FleetNotifyThrottleSeconds -gt 0) {
             try {
                 $throttleKey = "$Kind|$Project|$Handoff"
-                $nowUtc = (Get-Date).ToUniversalTime()
-                $last = $script:FleetNotifyLastSent[$throttleKey]
-                if ($last -and (($nowUtc - $last).TotalSeconds -lt $script:FleetNotifyThrottleSeconds)) {
+                if (Test-FleetNotifyThrottled -Key $throttleKey -WindowSeconds $script:FleetNotifyThrottleSeconds) {
                     return $null
                 }
-                $script:FleetNotifyLastSent[$throttleKey] = $nowUtc
             } catch { }
         }
 
