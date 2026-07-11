@@ -7,6 +7,9 @@
 > - `scripts/sync-4ai-panes-install.ps1` — the allowlist-driven sync script.
 > - `scripts/git-hooks/post-merge` — invokes the sync after `git pull` / merge.
 > - `scripts/git-hooks/post-checkout` — invokes the sync after a branch switch.
+> - `scripts/git-hooks/post-commit` — invokes the sync after a same-branch
+>   commit (gap D2, 2026-07-11). Diffs `HEAD~1..HEAD`; skips the initial commit.
+>   Merge, checkout, AND same-branch commit now all auto-sync in lockstep.
 >
 > The design content below remains valid as the rationale of record. See the
 > resolved **Open questions** for the decisions taken before implementation.
@@ -123,8 +126,9 @@ framework or state.
 
 ### Hook trigger logic
 
-Two repo-level hooks — **`scripts/git-hooks/post-merge`** and
-**`scripts/git-hooks/post-checkout`**. These live alongside the existing
+Three repo-level hooks — **`scripts/git-hooks/post-merge`**,
+**`scripts/git-hooks/post-checkout`**, and **`scripts/git-hooks/post-commit`**
+(the last added 2026-07-11 for gap D2). These live alongside the existing
 `scripts/git-hooks/pre-commit`, and the repo already sets
 `git config core.hooksPath scripts/git-hooks` (ADR-0005), so a new hook file in
 that dir is picked up with no extra wiring in existing clones. Fresh clones wire
@@ -149,6 +153,12 @@ post-merge  (args: <squash-flag>)
 post-checkout  (args: <prev-HEAD> <new-HEAD> <branch-flag>)
   - Same detection, using $1..$2 as the range; only act on branch checkouts
     (branch-flag == 1), skip file checkouts (branch-flag == 0).
+
+post-commit  (no args)
+  - Same detection, using HEAD~1..HEAD as the range (the commit just made).
+    GUARD: exit 0 on the initial commit, where HEAD~1 does not resolve.
+    Covers same-branch edit-then-commit — which touches neither merge nor
+    checkout, and was the remaining silent-restale path (gap D2).
 ```
 
 Key properties:
@@ -263,7 +273,11 @@ All four questions below were **resolved by owner decision before implementation
   (the 13:34 path). `post-checkout` also covers branch switches that change tool
   files. **Resolved: BOTH implemented** — `scripts/git-hooks/post-merge` and
   `scripts/git-hooks/post-checkout` both ship, so neither `git pull` nor a
-  branch-switch can silently re-stale the install.
+  branch-switch can silently re-stale the install. **Follow-up (gap D2,
+  2026-07-11): `scripts/git-hooks/post-commit` added** — merge and checkout still
+  left one path uncovered, a same-branch edit-then-commit (touches neither a
+  merge nor a checkout). post-commit diffs `HEAD~1..HEAD` and closes it, so
+  merge, checkout, AND same-branch commit now all auto-sync in lockstep.
 - **Bash hook + PowerShell sync, or a full bash sync too?** One PowerShell sync
   called from a bash hook avoids duplicating the allowlist; a pure-bash sync would
   run natively in the hook but forks the "which files are tool files" truth into

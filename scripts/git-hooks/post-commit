@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# =============================================================================
+# post-commit — auto-sync the 4AI-panes install when a SAME-BRANCH commit
+#               changes tools/4ai-panes/**
+# =============================================================================
+# Runs under Git-Bash on Windows via core.hooksPath=scripts/git-hooks (ADR-0005).
+# post-commit fires after a plain `git commit` records HEAD on the current
+# branch. It closes the gap the sibling hooks leave: post-merge covers
+# `git pull`/merge and post-checkout covers branch switches, but a same-branch
+# edit-then-commit touched neither — so tools/4ai-panes edits committed in place
+# left ~/.rwn-auto stale until a manual sync (gap D2). Now merge, checkout, AND
+# same-branch commit all auto-sync.
+#
+# post-commit is a post-event hook by nature: the commit already exists, so it
+# CANNOT and MUST NOT block. Every path exits 0.
+#
+# It only decides WHETHER to sync (did this commit touch tools/4ai-panes/**);
+# the "which files are tool files" question belongs entirely to the PowerShell
+# sync script scripts/sync-4ai-panes-install.ps1. See
+# docs/specs/4ai-panes-install-sync.md.
+# =============================================================================
+
+# Repo root (hook cwd is the repo root, but resolve defensively).
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+SYNC_SCRIPT="$REPO_ROOT/scripts/sync-4ai-panes-install.ps1"
+
+# 1. Change range = the commit just made: HEAD~1..HEAD.
+#    GUARD: an initial (root) commit has no HEAD~1 — nothing to diff, exit 0.
+if ! git rev-parse --verify -q HEAD~1 >/dev/null 2>&1; then
+    exit 0
+fi
+
+changed="$(git diff --name-only HEAD~1 HEAD 2>/dev/null)"
+
+# 2. Path filter — cheap: bail silently unless a tool file moved.
+if ! printf '%s\n' "$changed" | grep -q '^tools/4ai-panes/'; then
+    exit 0
+fi
+
+# 3. Locate PowerShell; if absent, warn to stderr and exit 0 (never fail git op).
+PS_BIN="$(command -v powershell || command -v pwsh)"
+if [ -z "$PS_BIN" ]; then
+    echo "post-commit: tools/4ai-panes/ changed but neither 'powershell' nor 'pwsh' is on PATH — 4AI-panes install NOT synced. Run scripts/sync-4ai-panes-install.ps1 manually." >&2
+    exit 0
+fi
+
+# 4. Invoke the sync. On non-zero, print a LOUD stderr warning but STILL exit 0.
+if ! "$PS_BIN" -NoProfile -File "$SYNC_SCRIPT"; then
+    {
+        echo "=============================================================================="
+        echo "post-commit: 4AI-panes install sync REPORTED ERRORS (commit itself is fine)."
+        echo "  A tool file may have failed post-copy hash verification, or an allowlisted"
+        echo "  source file is missing. The running install may be STALE or PARTIAL."
+        echo "  Install path: \${RWN_AUTO_INSTALL_DIR:-~/.rwn-auto/rwn-4AI-panes}"
+        echo "  Re-run manually to inspect:"
+        echo "    powershell -NoProfile -File scripts/sync-4ai-panes-install.ps1 -DryRun"
+        echo "=============================================================================="
+    } >&2
+fi
+
+exit 0
