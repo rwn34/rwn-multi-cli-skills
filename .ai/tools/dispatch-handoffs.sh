@@ -52,14 +52,22 @@ fi
 
 # Headless invocation per CLI. Verify locally before relying on kimi/kiro forms —
 # flags differ across versions (see .ai/cli-map.md § headless invocation).
+#
+# SECURITY: populates the global argv ARRAY `HEADLESS_ARGV` (exe + args), never a
+# command STRING. The prompt embeds $file (the handoff rel path, derived from an
+# attacker-controllable filename); as a single array element it is inert data that
+# is run via "${HEADLESS_ARGV[@]}" and never re-parsed by the shell. This replaced
+# a printf'd string that was executed with `eval` — a filename like `x$(cmd).md`
+# ran arbitrary code. Do NOT reintroduce a string form or `eval`. This MUST match
+# tools/4ai-panes/pane-runner.ps1 Get-HeadlessCmd (also argv-array form).
 headless_cmd() {
     local cli="$1" file="$2"
     local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
     case "$cli" in
-        claude) printf '%s' "claude -p \"$prompt\" --permission-mode acceptEdits" ;;
+        claude) HEADLESS_ARGV=(claude -p "$prompt" --permission-mode acceptEdits) ;;
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
-        kimi)   printf '%s' "kimi -p \"$prompt\"" ;;
+        kimi)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
         # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
         # "Tool approval required but --no-interactive was specified. Use
         # --trust-all-tools" (dispatch failure 2026-07-09, see
@@ -81,14 +89,14 @@ headless_cmd() {
         # (ADR-0005) is the version-agnostic mechanical floor for these commits.
         # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
         # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
-        kiro)   printf '%s' "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator \"$prompt\"" ;;
+        kiro)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
         # --agent opencode pins the contract-carrying agent (.opencode/contract.md);
         # without it the default build agent runs and never loads the contract
         # (ADR-0001 NOTE 2026-07-09: no dead text — pin the load path).
-        opencode) printf '%s' "opencode run --auto --agent opencode \"$prompt\"" ;;
+        opencode) HEADLESS_ARGV=(opencode run --auto --agent opencode "$prompt") ;;
         *)      return 1 ;;
     esac
 }
@@ -129,16 +137,39 @@ handoff_claimed_by_other() {
 }
 
 # Atomically acquire the claim. 0 = won (we own it), 1 = lost/could not.
+# RACE (latent-issue audit #10, MED): the old form created the claim empty with
+# noclobber `:>` and filled it with a SEPARATE `printf`, leaving a window where
+# the file existed but was 0 bytes — the cross-consumer PS pane-runner reads that
+# as UNCLAIMED and double-processes. Now the COMPLETE claim is written to a temp
+# file first and published atomically, so the claim name never points at an empty
+# file. Mirrors pane-runner.ps1 Write-Claim (temp + atomic rename). Fail-open.
 acquire_claim() {
     local claim="$1" cli="$2" slug="$3"
     mkdir -p "$claim_dir" 2>/dev/null
-    if ! ( set -o noclobber; : > "$claim" ) 2>/dev/null; then
-        # File already exists: reclaim only if it is NOT a live foreign claim.
-        handoff_claimed_by_other "$claim" && return 1
-        : > "$claim" 2>/dev/null || return 1
-    fi
+    local tmp="$claim_dir/.${cli}__${slug}.$$.tmp"
     printf '{"handoff":"%s","recipient":"%s","owner":"claude-auto","pid":%s,"host":"%s","claimed_at":"%s"}\n' \
-        "$slug" "$cli" "$$" "$(hostname 2>/dev/null)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$claim" 2>/dev/null
+        "$slug" "$cli" "$$" "$(hostname 2>/dev/null)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    # Exclusive publish: a hard link fails if the claim already exists, so two
+    # racers can't both win, AND the claim name appears already pointing at the
+    # fully-written inode — never a 0-byte window (the noclobber `:>` analog, but
+    # with content). Won -> drop the temp name (inode lives on under $claim).
+    if ln "$tmp" "$claim" 2>/dev/null; then
+        rm -f "$tmp"
+        return 0
+    fi
+    # Publish failed. If NO claim exists, the FS lacks hardlinks (rare) — fall back
+    # to an atomic rename, which also never leaves the target empty.
+    if [ ! -e "$claim" ]; then
+        mv -f "$tmp" "$claim" 2>/dev/null && return 0
+        rm -f "$tmp"; return 1
+    fi
+    # A claim already exists: reclaim only if it is NOT a live foreign claim.
+    if handoff_claimed_by_other "$claim"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    # Stale claim -> take it over via atomic rename (overwrites; never empty).
+    mv -f "$tmp" "$claim" 2>/dev/null || { rm -f "$tmp"; return 1; }
     return 0
 }
 
@@ -166,7 +197,10 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             echo "SKIP  [$cli] $rel — '$bin' not on PATH"
             continue
         fi
-        cmd=$(headless_cmd "$cli" "$rel")
+        # Populates HEADLESS_ARGV (argv array). $cmd is a HUMAN-READABLE render for
+        # logs/reports/dry-run ONLY — it is never executed (execution uses the array).
+        headless_cmd "$cli" "$rel" || { echo "SKIP  [$cli] $rel — unknown CLI"; continue; }
+        cmd="${HEADLESS_ARGV[*]}"
         slug=$(basename "$f" .md)
         claim="$claim_dir/${cli}__${slug}.claim.json"
         if [ "$MODE" = "exec" ]; then
@@ -183,7 +217,9 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             out_tmp=$(mktemp)
             # AI_HANDOFF_DISPATCH=1 marks the spawned CLI's environment so its own
             # SessionStart/Stop dispatch hook no-ops (recursion guard — see header).
-            ( cd "$root" && export AI_HANDOFF_DISPATCH=1 && eval "$cmd" ) 2>&1 | tee "$out_tmp"
+            # Native argv invocation ("${HEADLESS_ARGV[@]}"), NOT eval on a string —
+            # the handoff path is an inert argv element, never re-parsed by the shell.
+            ( cd "$root" && export AI_HANDOFF_DISPATCH=1 && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
             rc=${PIPESTATUS[0]}
             echo "---- [$cli] finished (exit $rc) ----"
             # Failure alerting (Tier B — act, then notify): non-zero exit writes a

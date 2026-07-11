@@ -30,6 +30,31 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.12] - 2026-07-11
+
+### Security
+
+- Handoff-dispatch command injection (two CRITICAL findings, latent-issue audit
+  #1/#2): a crafted handoff **filename** (e.g. `x$(touch pwned).md` or one with
+  backticks) could execute arbitrary code when a handoff was auto-processed. Both
+  the dispatcher (`.ai/tools/dispatch-handoffs.sh`) and the pane runner
+  (`tools/4ai-panes/pane-runner.ps1`) built a shell/PowerShell command STRING with
+  the handoff path embedded, then ran it via `eval` / `Invoke-Expression`. Both now
+  invoke the recipient CLI with a native argv array (`"${cmd[@]}"` in bash, the call
+  operator `& $exe @args` in PowerShell); the handoff path is a single inert argv
+  element that is never re-parsed by a shell. The interactive pause hatch was
+  likewise converted off `Invoke-Expression`.
+
+### Fixed
+
+- Cross-consumer claim-write race (latent-issue audit #10): the dispatcher created
+  the per-handoff claim empty (`:>`) and filled it in a separate `printf`, leaving a
+  0-byte window in which the PowerShell pane runner would read it as *unclaimed* and
+  double-process the handoff. The claim is now written to a temp file and published
+  atomically (hard-link on the common path, atomic rename to overwrite a stale
+  claim), mirroring the PowerShell `Write-Claim` pattern — the claim name never
+  points at an empty file.
+
 ## [0.0.11] - 2026-07-11
 
 ### Added
