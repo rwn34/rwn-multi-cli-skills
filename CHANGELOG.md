@@ -30,6 +30,22 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.17] - 2026-07-11
+
+### Added
+
+- Syntax gate in `scripts/sync-4ai-panes-install.ps1`: every `.ps1` source file is now
+  parsed (`[System.Management.Automation.Language.Parser]::ParseFile`) before it is
+  deployed into the live launcher install (`~/.rwn-auto/rwn-4AI-panes`). A file with
+  syntax errors is REFUSED — not copied — the previously deployed known-good version is
+  left untouched, the failure is printed loudly (file, first error message, line number),
+  and the script exits 1 so the calling git hook surfaces it. The pre-existing hash-verify
+  only proves *fidelity* (the bytes that landed are the bytes from source); it cannot
+  detect a broken file, so a `Selector.ps1` with an unbalanced brace used to deploy
+  cleanly and hash-verify green. The parse gate is an additional precondition, not a
+  replacement, and runs BEFORE the atomic move so the target is never half-updated.
+  Non-`.ps1` files (README.md, icon.ico, Launch4Panes.vbs) keep hash-verify-only behavior.
+
 ## [0.0.16] - 2026-07-11
 
 ### Fixed

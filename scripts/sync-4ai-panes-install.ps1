@@ -10,13 +10,25 @@
 
  Contract:
    exit 0  - synced, already in sync (no-op), or target absent (graceful skip).
-   exit 1  - a copy was attempted but post-copy hash verification failed, OR an
-             allowlisted file is missing from the source tree. Loud stderr warn.
+   exit 1  - a .ps1 source file failed the syntax gate, OR a copy was attempted
+             but post-copy hash verification failed, OR an allowlisted file is
+             missing from the source tree. Loud stderr warn.
 
  Copy is BYTE-EXACT ([IO.File]::Copy) - no Get-Content/Set-Content round-trip -
  so committed EOL is preserved and icon.ico (binary) stays intact. Each drifted
  file is written to a temp path in the target dir, hash-verified against source,
  then atomically moved into place; a failed verify leaves the target untouched.
+
+ SYNTAX GATE (why hash-verify is not enough):
+   The hash check proves FIDELITY - "the bytes that landed in the install are the
+   bytes that were in the source". It says nothing about VALIDITY - a Selector.ps1
+   with an unbalanced brace hashes perfectly and deploys straight into the owner's
+   live launcher, where it fails at runtime. So before any .ps1 is moved into the
+   target we PARSE it ([Parser]::ParseFile) and refuse to deploy that file if it
+   has syntax errors: the previously-deployed known-good copy stays untouched, the
+   failure is printed loudly (file + first error + line), and the script exits 1 so
+   the calling git hook surfaces it. Non-.ps1 files are unaffected (hash-verify
+   only). The gate runs BEFORE the atomic move, so the target is never half-updated.
 
  Called directly by a human (with -DryRun to preview) or by the bash git hooks
  scripts/git-hooks/post-merge and post-checkout when tools/4ai-panes/** changes.
@@ -75,6 +87,22 @@ function Get-Hash {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
 
+# Parse a .ps1 with the PowerShell language parser. Returns $null when the file
+# is syntactically valid, or a "message (line N)" string describing the FIRST
+# syntax error. This is the validity half of the gate; Get-Hash is the fidelity
+# half. A file that fails here must never reach the target.
+function Test-Ps1Syntax {
+    param([string]$Path)
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors -and $errors.Count -gt 0) {
+        $first = $errors[0]
+        return "$($first.Message) (line $($first.Extent.StartLineNumber))"
+    }
+    return $null
+}
+
 # --- Graceful skip when target absent --------------------------------------
 if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
     Write-Line "no install at $Target, skipping"
@@ -116,6 +144,19 @@ foreach ($name in $Allowlist) {
     }
 
     $reason = if ($null -eq $dstHash) { 'missing' } else { 'drifted' }
+
+    # --- Syntax gate: never deploy a .ps1 that does not parse -----------------
+    # Runs BEFORE the temp copy / atomic move, so a broken source leaves whatever
+    # is already installed (the last known-good file) completely untouched.
+    if ([IO.Path]::GetExtension($name) -eq '.ps1') {
+        $syntaxError = Test-Ps1Syntax $src
+        if ($syntaxError) {
+            Write-Warning "SYNTAX ERROR - REFUSING TO DEPLOY: $name`n    source=$src`n    first error: $syntaxError`n    Target file left UNTOUCHED (previously deployed version kept). Fix the source and re-run."
+            $actions += "${name}:syntax-error"
+            $exitCode = 1
+            continue
+        }
+    }
 
     if ($DryRun) {
         Write-Line "  WOULD COPY $name  ($reason)"
