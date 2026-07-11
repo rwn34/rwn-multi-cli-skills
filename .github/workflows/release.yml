@@ -54,6 +54,12 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Expected number of assets on a complete release. Bump this in ONE place if
+    # the asset set below changes. Current set (4): multi-cli-install tarball,
+    # bash-installers tarball, new-project.sh, install-template.sh. The
+    # asset-count postflight at the end of the job asserts against this.
+    env:
+      EXPECTED_ASSET_COUNT: 4
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -79,8 +85,14 @@ jobs:
           else
             # Master-push path: derive the tag from the version SSOT.
             VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' tools/multi-cli-install/package.json | head -1)
-            if [[ -z "$VERSION" ]]; then
-              echo "Could not read .version from tools/multi-cli-install/package.json" >&2
+            # Version-parse preflight — fail LOUDLY on an empty/invalid parse.
+            # A broken version SSOT must NOT be mistaken for "nothing to release":
+            # the idempotency gate below is for "already published", not for a
+            # parse failure. Require a non-empty semver-ish MAJOR.MINOR.PATCH with
+            # an optional pre-release suffix (e.g. 0.0.11, 0.1.0-pre.1, 1.2.3-rc.1)
+            # so a half-written or absent version halts the cut instead of no-oping.
+            if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::could not parse version from package.json (got: '${VERSION}')"
               exit 1
             fi
             TAG="v$VERSION"
@@ -182,3 +194,22 @@ jobs:
             dist-release/bash-installers-${{ steps.decide.outputs.tag }}.tar.gz
             dist-release/new-project.sh
             dist-release/install-template.sh
+
+      - name: Verify asset count
+        if: steps.decide.outputs.should_release == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Asset-count postflight — fail on a PARTIAL publish. Query the release
+          # live and assert it carries exactly EXPECTED_ASSET_COUNT assets. If the
+          # upload half-completed (e.g. one tarball failed), the release exists but
+          # is incomplete; without this check the job would still report green and
+          # the idempotency gate would then treat the broken release as "done".
+          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          if [[ "$COUNT" != "$EXPECTED_ASSET_COUNT" ]]; then
+            echo "::error::expected $EXPECTED_ASSET_COUNT assets, got $COUNT"
+            exit 1
+          fi
+          echo "Asset count OK — $COUNT assets on $TAG."
