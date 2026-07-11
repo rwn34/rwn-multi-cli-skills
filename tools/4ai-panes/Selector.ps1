@@ -137,8 +137,11 @@ function Format-TimeAgo($timestamp) {
     } catch { return "" }
 }
 
-function Get-ProjectInfo($project) {
-    $dir = Join-Path $projectsDir $project
+# -Project resolves under $projectsDir (default list); -Path takes an arbitrary
+# directory (browse mode, which walks nested folders outside the flat project list).
+function Get-ProjectInfo {
+    param([string]$Project, [string]$Path)
+    $dir = if ($Path) { $Path } else { Join-Path $projectsDir $Project }
     $branch = $null
     try { $branch = & git -C $dir branch --show-current 2>$null } catch {}
 
@@ -168,10 +171,13 @@ function Get-ProjectInfo($project) {
 #                      otherwise sit silently with no consumer.
 # Cheap on purpose: two Test-Path calls + one shallow glob per project; any error
 # in a broken project dir yields an empty/partial badge, never a crash.
-function Get-ProjectBadges($project) {
+# -Project resolves under $projectsDir (default list); -Path takes an arbitrary
+# directory (browse mode). Both paths produce identical badges.
+function Get-ProjectBadges {
+    param([string]$Project, [string]$Path)
     $badges = @()
     try {
-        $dir = Join-Path $projectsDir $project
+        $dir = if ($Path) { $Path } else { Join-Path $projectsDir $Project }
         $aiDir = Join-Path $dir ".ai"
         if (Test-Path (Join-Path $aiDir ".framework-version")) { $badges += "[v OK]" }
         elseif (Test-Path $aiDir) { $badges += "[! OLD]" }
@@ -208,6 +214,38 @@ function Get-ProjectBadges($project) {
         }
     } catch {}
     return $badges -join " "
+}
+
+# One-line badge legend, shown in BOTH the default list and browse mode so the
+# glyphs are never cryptic. Kept under 70 chars to fit the narrowest box.
+$badgeLegend = " [v OK]=ok [! OLD]=stale [- none]=none [H:n]=handoffs stranded:no CLI"
+
+# History label for a target dir: the folder name, or its path relative to
+# $projectsDir when it lives under it, so nested browse picks stay distinguishable.
+function Get-HistoryName($dir) {
+    $name = Split-Path $dir -Leaf
+    if ($dir.StartsWith($projectsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $rel = $dir.Substring($projectsDir.Length).TrimStart('\', '/')
+        if ($rel) { $name = $rel }
+    }
+    return $name
+}
+
+# Browse-mode row metadata = the SAME badges + git/mtime column the default list
+# shows, for an arbitrary directory. Cached per path: the browser redraws on every
+# keypress and Get-ProjectInfo shells out to git, so recomputing every row on every
+# redraw would stall navigation. Only VISIBLE rows are ever computed, so a folder
+# with hundreds of children stays cheap. Never throws (a broken dir yields blanks).
+$script:browseMeta = @{}
+function Get-BrowseMeta($path) {
+    if ($script:browseMeta.ContainsKey($path)) { return $script:browseMeta[$path] }
+    $meta = @{ badges = ''; info = '' }
+    try {
+        $meta.badges = Get-ProjectBadges -Path $path
+        $meta.info = Get-ProjectInfo -Path $path
+    } catch {}
+    $script:browseMeta[$path] = $meta
+    return $meta
 }
 
 function Find-Bash {
@@ -565,6 +603,10 @@ $script:pageSize = [Math]::Max(3, [Console]::WindowHeight - 13)
 # ENTER with >=1 marked launches every marked project in its own WT tab (batch);
 # ENTER with none marked keeps today's single-highlighted-project launch.
 $script:marked = @{}
+# Browse-mode multi-select: absolute paths SPACE-marked inside Show-FolderBrowser.
+# Same contract as $script:marked, but ordered (launch order = mark order) and keyed
+# by path because browse entries are nested dirs, not flat $projectsDir names.
+$script:browseMarked = [System.Collections.ArrayList]::new()
 
 function Draw-Menu {
     $conW = [Console]::WindowWidth
@@ -651,6 +693,9 @@ function Draw-Menu {
     }
     if ($footer.Length -gt $innerW) { $footer = $footer.Substring(0, $innerW) }
     Write-Host ("|" + $footer.PadRight($innerW) + "|") -ForegroundColor DarkGray
+    $legend = $badgeLegend
+    if ($legend.Length -gt $innerW) { $legend = $legend.Substring(0, $innerW) }
+    Write-Host ("|" + $legend.PadRight($innerW) + "|") -ForegroundColor DarkGray
     Write-Host ("+" + "-" * $innerW + "+") -ForegroundColor Cyan
 
     if ($menuItems.Count -gt $script:pageSize) {
@@ -809,7 +854,28 @@ function Show-FolderBrowser {
             $item = $items[$idx]
             $isSel = ($idx -eq $sel)
             $marker = if ($isSel) { ">" } else { " " }
-            $line = " $marker $($item.name)"
+            if ($item.type -eq 'parent') {
+                # '../' is navigation, not a launchable target: no checkbox, no badges.
+                $line = " $marker $($item.name)"
+            } else {
+                # Same row shape as the default project list: mark, name, badges, then
+                # the right-aligned git/mtime column.
+                $check = if ($script:browseMarked -contains $item.path) { "[x]" } else { "[ ]" }
+                $meta = Get-BrowseMeta $item.path
+                $namePart = " $marker $check $($item.name)"
+                if ($meta.badges) { $namePart += " $($meta.badges)" }
+                $infoStr = [string]$meta.info
+                $spaceForInfo = $innerW - $namePart.Length - 1
+                if ($spaceForInfo -gt 8 -and $infoStr.Length -gt 0) {
+                    if ($infoStr.Length -gt $spaceForInfo) {
+                        $infoStr = $infoStr.Substring(0, $spaceForInfo - 2) + ".."
+                    }
+                    $line = $namePart + " " + $infoStr.PadLeft($spaceForInfo - 1)
+                } else {
+                    $line = $namePart
+                }
+            }
+            if ($line.Length -gt $innerW) { $line = $line.Substring(0, $innerW) }
             $color = if ($isSel) { "Yellow" } else { "White" }
             if ($item.type -eq 'parent') { $color = if ($isSel) { "Yellow" } else { "DarkGray" } }
             elseif ($item.type -eq 'current') { $color = if ($isSel) { "Yellow" } else { "Green" } }
@@ -821,16 +887,35 @@ function Show-FolderBrowser {
         }
 
         Write-Host ("|" + ("-" * $innerW) + "|") -ForegroundColor DarkGray
-        $help = " Up/Down  Enter/Right:open/select  Left/Back:up  c:select  Esc:cancel"
+        $help = if ($script:browseMarked.Count -gt 0) {
+            " Space:mark($($script:browseMarked.Count))  Enter:launch marked  Left:up  Esc:cancel"
+        } else {
+            " Up/Dn  Space:mark  Enter/Right:open  Left:up  c:select  Esc:cancel"
+        }
         if ($help.Length -gt $innerW) { $help = $help.Substring(0, $innerW) }
         Write-Host ("|" + $help.PadRight($innerW) + "|") -ForegroundColor DarkGray
+        $legend = $badgeLegend
+        if ($legend.Length -gt $innerW) { $legend = $legend.Substring(0, $innerW) }
+        Write-Host ("|" + $legend.PadRight($innerW) + "|") -ForegroundColor DarkGray
         Write-Host ("+" + "-" * $innerW + "+") -ForegroundColor Cyan
 
         $key = [System.Console]::ReadKey($true)
         switch ($key.Key) {
             'UpArrow'    { $sel = [Math]::Max(0, $sel - 1) }
             'DownArrow'  { $sel = [Math]::Min([Math]::Max(0, $items.Count - 1), $sel + 1) }
+            'Spacebar'   {
+                # Toggle the highlighted entry's mark. '../' is navigation-only and
+                # never markable; './' (the current dir) and real subfolders are.
+                if ($items.Count -gt 0 -and $items[$sel].type -ne 'parent') {
+                    $p = $items[$sel].path
+                    if ($script:browseMarked -contains $p) { $script:browseMarked.Remove($p) }
+                    else { [void]$script:browseMarked.Add($p) }
+                }
+            }
             'Enter'      {
+                # >=1 marked -> hand the marks to the batch-launch path (one WT tab per
+                # marked dir). Nothing marked -> today's open/navigate behavior, unchanged.
+                if ($script:browseMarked.Count -ge 1) { return $null }
                 if ($items.Count -gt 0) {
                     if ($items[$sel].type -eq 'current') {
                         return $items[$sel].path
@@ -872,7 +957,7 @@ function Show-FolderBrowser {
                     $pageOffset = 0
                 }
             }
-            'Escape'     { $done = $true; $cancel = $true }
+            'Escape'     { $script:browseMarked.Clear(); $done = $true; $cancel = $true }
             default {
                 $ch = $key.KeyChar
                 if ($ch -eq 'c') {
@@ -882,7 +967,7 @@ function Show-FolderBrowser {
                     return $current
                 }
                 elseif ($ch -eq 'q') {
-                    $done = $true; $cancel = $true
+                    $script:browseMarked.Clear(); $done = $true; $cancel = $true
                 }
             }
         }
@@ -896,6 +981,9 @@ $script:targetDirFromBrowse = $null
 
 function Invoke-Browse {
     $path = Show-FolderBrowser -Root $projectsDir
+    # Marked entries win: the batch-launch block below consumes $script:browseMarked
+    # and never reads $script:selected, so the highlighted row is irrelevant here.
+    if ($script:browseMarked.Count -ge 1) { return $true }
     if ($path) {
         $script:targetDirFromBrowse = $path
         for ($i = 0; $i -lt $menuItems.Count; $i++) {
@@ -985,7 +1073,15 @@ foreach ($mi in $menuItems) {
     }
 }
 
-if ($script:markedList.Count -ge 1) {
+# Browse-mode marks join the same batch: main-list marks are names under $projectsDir,
+# browse marks are already absolute paths (possibly nested). Normalize both to dirs.
+$batchDirs = @()
+foreach ($p in $script:markedList) { $batchDirs += (Join-Path $projectsDir $p) }
+foreach ($p in $script:browseMarked) {
+    if ($batchDirs -notcontains $p) { $batchDirs += $p }
+}
+
+if ($batchDirs.Count -ge 1) {
     $layout = Get-Layout
     $activeCLIs = @($layout | Where-Object { $cliAvailable[$_] })
     if ($activeCLIs.Count -eq 0) {
@@ -996,9 +1092,8 @@ if ($script:markedList.Count -ge 1) {
 
     # Per-project prep: record history + install/adopt framework (same as single).
     $targetDirs = @()
-    foreach ($p in $script:markedList) {
-        $d = Join-Path $projectsDir $p
-        Save-History -project $p
+    foreach ($d in $batchDirs) {
+        Save-History -project (Get-HistoryName $d)
         Install-Framework -targetDir $d
         $targetDirs += $d
     }
@@ -1019,8 +1114,8 @@ if ($script:markedList.Count -ge 1) {
         }
     }
 
-    if ($script:markedList.Count -gt 4) {
-        Write-Host "Note: $($script:markedList.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
+    if ($targetDirs.Count -gt 4) {
+        Write-Host "Note: $($targetDirs.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
     }
 
     # One new-tab fleet group per marked project.
@@ -1053,7 +1148,8 @@ if ($script:markedList.Count -ge 1) {
     if ($current.Count -gt 0) { $batches += , @($current) }
 
     Clear-Host
-    Write-Host "Batch launch ($($targetDirs.Count) projects): $($script:markedList -join ', ')" -ForegroundColor Cyan
+    $batchNames = @($targetDirs | ForEach-Object { Get-HistoryName $_ })
+    Write-Host "Batch launch ($($targetDirs.Count) projects): $($batchNames -join ', ')" -ForegroundColor Cyan
     if ($batches.Count -gt 1) {
         Write-Host "Command length over the safe limit; splitting into $($batches.Count) wt invocations (same rwn4ai window)." -ForegroundColor Yellow
     }
@@ -1108,12 +1204,7 @@ switch ($chosen.type) {
     'browse' {
         $targetDir = $script:targetDirFromBrowse
         if ($targetDir) {
-            $histName = Split-Path $targetDir -Leaf
-            if ($targetDir.StartsWith($projectsDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $rel = $targetDir.Substring($projectsDir.Length).TrimStart('\', '/')
-                if ($rel) { $histName = $rel }
-            }
-            Save-History -project $histName
+            Save-History -project (Get-HistoryName $targetDir)
         }
     }
     'nodir' {
