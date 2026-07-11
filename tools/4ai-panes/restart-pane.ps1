@@ -10,8 +10,8 @@ param(
     [int]$MaxContinues = 5,
     [int]$PollSeconds = 10
 )
-$valid = @('claude','kimi','kiro','opencode')
-if ([string]::IsNullOrWhiteSpace($Cli) -or ($valid -notcontains $Cli)) {
+. (Join-Path $PSScriptRoot 'fleet-clis.ps1')   # SINGLE SOURCE: $FleetClis
+if ([string]::IsNullOrWhiteSpace($Cli) -or ($FleetClis -notcontains $Cli)) {
     Write-Host "restart-pane: pass -Cli claude|kimi|kiro|opencode (or run inside a pane where RWN_PANE_CLI is set). Got: '$Cli'" -ForegroundColor Yellow
     exit 1
 }

@@ -19,6 +19,7 @@
 
 param(
     [Parameter(Mandatory = $true)]
+    # keep in sync with fleet-clis.ps1 $FleetClis (ValidateSet needs a literal)
     [ValidateSet('claude', 'kimi', 'kiro', 'opencode')]
     [string]$Cli,
 
@@ -38,6 +39,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# SINGLE SOURCE for the fleet CLI list ($FleetClis / $FleetCliProper). The -Cli
+# ValidateSet above must stay a literal (PowerShell requirement); this dot-source
+# provides the list to any runtime use. Resolve via $PSScriptRoot so it works both
+# in the repo tree and in the flat install dir.
+. (Join-Path $PSScriptRoot 'fleet-clis.ps1')
 
 # UTF-8 console so streamed CLI output (e.g. kimi's bullet glyphs) is not
 # mojibake'd. Guarded: never throw in a redirected / no-console context.

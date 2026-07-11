@@ -21,6 +21,16 @@ $layoutFile = Join-Path $scriptDir ".4pane-layout"
 $wtExe = "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe"
 $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else { "C:/Users/rwn34/Code/rwn-multi-cli-skills" }
 
+# SINGLE SOURCE for the fleet CLI list. Resolve via $PSScriptRoot so it works both
+# in the repo tree and in the flat install dir (fleet-clis.ps1 sits beside this file).
+. (Join-Path $PSScriptRoot 'fleet-clis.ps1')   # provides $FleetClis + $FleetCliProper
+# Derive both case maps from the shared source instead of hardcoding them:
+#   $cliKey   : lower -> Proper (identical to $FleetCliProper) - used by Get-ProjectBadges
+#   $cliLower : Proper -> lower (the inverse) - used by the pane-launch commands
+$cliKey = @{}
+$cliLower = @{}
+foreach ($c in $FleetClis) { $cliKey[$c] = $FleetCliProper[$c]; $cliLower[$FleetCliProper[$c]] = $c }
+
 # ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
 # RWN_PANE_LAYOUT selects the WT tab layout built per project:
 #   '6pane' (default/unset) = TOP row (~50% tall) holding 2 side-by-side NON-polling
@@ -170,8 +180,8 @@ function Get-ProjectBadges($project) {
         # B6: count open handoffs PER recipient and flag "consumer-less" ones -- a
         # recipient with >=1 open handoff whose CLI is NOT available on this host
         # (not in $cliAvailable), so no pane-runner/dispatcher will ever poll it.
-        # Map the to-<name> dir to the proper-case $cliAvailable key.
-        $cliKey = @{ claude = 'Claude'; kiro = 'Kiro'; kimi = 'Kimi'; opencode = 'OpenCode' }
+        # Map the to-<name> dir to the proper-case $cliAvailable key via the
+        # shared $cliKey (derived from fleet-clis.ps1 $FleetCliProper at load).
         $handoffCount = 0
         $stranded = @()
         $handoffRoot = Join-Path $aiDir "handoffs"
@@ -975,7 +985,7 @@ if ($cliAvailable["Kiro"] -and $targetDir) {
 # bare interactive CLI when the owner wants a plain REPL: set env RWN_PANE_BARE=1,
 # or when there is no project dir (nodir mode) — the runner needs a project's
 # .ai/ to watch, so no-dir always uses the bare CLI.
-$cliLower = @{ Claude = 'claude'; Kiro = 'kiro'; Kimi = 'kimi'; OpenCode = 'opencode' }
+# $cliLower (Proper -> lower) is derived from fleet-clis.ps1 near the top of this script.
 $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
 $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
 
