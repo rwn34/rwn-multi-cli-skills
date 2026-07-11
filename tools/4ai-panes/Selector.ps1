@@ -463,6 +463,68 @@ function Install-Framework($targetDir) {
     Write-InstallLog "=== Install-Framework end ==="
 }
 
+# -- Fleet-tab command builder (shared by single-select and multi-select batch) --
+# Returns the Windows-Terminal subcommand string for ONE project's fleet tab,
+# starting with `new-tab` (NO -w prefix -- the caller adds `-w rwn4ai` once, then
+# chains one group per project with ` ; ` for a batch). Layout is chosen the same
+# way the single-launch path chooses it:
+#   6pane (default) = top-LEFT app-Claude + top-RIGHT Kimi over N pane-runner workers
+#   5pane           = full-width app-Claude over N pane-runner workers
+#   otherwise (4grid/bare/nodir-scripts-missing) = plain interactive REPLs per CLI
+# Reads script-scope state ($activeCLIs, $cliDefs, $cliLower, $cliAvailable,
+# $paneLayoutMode, $topStripFraction, $scriptDir) resolved at call time, so callers
+# must set $activeCLIs before invoking.
+function Build-FleetTabCmd {
+    param([Parameter(Mandatory = $true)][string]$TargetDir)
+
+    $dq = '"'
+    $bottomCLIs = $activeCLIs                       # available CLIs, layout order
+    $n = $bottomCLIs.Count
+
+    $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
+    $paneSupervisor = Join-Path $scriptDir 'run-pane-supervised.ps1'
+    $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
+    $composite = $cliAvailable['Claude'] -and (Test-Path $paneRunner) `
+                 -and (Test-Path $paneSupervisor) -and (-not $bareMode) `
+                 -and ($paneLayoutMode -eq '6pane' -or $paneLayoutMode -eq '5pane')
+
+    if (-not $composite) {
+        # Fallback tab: each available CLI as a plain interactive REPL (mirrors the
+        # legacy 4-grid/bare intent, but as its own new-tab so a batch still works).
+        $cmd = "new-tab -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[0]].cmd)$dq"
+        for ($i = 1; $i -lt $n; $i++) {
+            $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
+            $cmd += " ; split-pane -V -s $frac -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[$i]].cmd)$dq"
+        }
+        return $cmd
+    }
+
+    # Composite 6pane/5pane fleet tab (identical to the single-launch build).
+    # TOP pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
+    $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
+    $cmd = "new-tab -d $dq$TargetDir$dq $topCmd"
+
+    # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
+    # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
+    $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
+    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$TargetDir$dq"
+    $cmd += " ; split-pane -H -s $bottomFraction -d $dq$TargetDir$dq $runner0"
+
+    # BOTTOM panes 2..N: vertical splits sized for N equal columns.
+    for ($i = 1; $i -lt $n; $i++) {
+        $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
+        $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$TargetDir$dq"
+        $cmd += " ; split-pane -V -s $frac -d $dq$TargetDir$dq $runner"
+    }
+
+    # 6pane adds the top-RIGHT Kimi cockpit; 5pane keeps a single full-width top.
+    if ($paneLayoutMode -ne '5pane' -and $cliAvailable['Kimi']) {
+        $topRightCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Kimi'].cmd)$dq"
+        $cmd += " ; move-focus up ; split-pane -V -s 0.5 -d $dq$TargetDir$dq $topRightCmd"
+    }
+    return $cmd
+}
+
 # ── Build Menu Items ──
 $allProjects = Get-Projects
 $history = Get-History
@@ -498,6 +560,10 @@ foreach ($p in $ordered) {
 $script:selected = 0
 $script:pageOffset = 0
 $script:pageSize = [Math]::Max(3, [Console]::WindowHeight - 13)
+# Multi-select (task #25): project name -> $true for each SPACE-marked project.
+# ENTER with >=1 marked launches every marked project in its own WT tab (batch);
+# ENTER with none marked keeps today's single-highlighted-project launch.
+$script:marked = @{}
 
 function Draw-Menu {
     $conW = [Console]::WindowWidth
@@ -544,8 +610,9 @@ function Draw-Menu {
 
         if ($item.type -eq 'project') {
             $marker = if ($isSel) { " >" } else { "  " }
+            $check = if ($script:marked.ContainsKey($item.name)) { "[x]" } else { "[ ]" }
             $num = "$($idx + 1)".PadLeft(2)
-            $namePart = "$marker $num $($item.name)"
+            $namePart = "$marker $check $num $($item.name)"
             if ($item.badges) { $namePart += " $($item.badges)" }
 
             $infoParts = @()
@@ -576,7 +643,11 @@ function Draw-Menu {
 
     # Footer
     Write-Host ("|" + ("-" * $innerW) + "|") -ForegroundColor DarkGray
-    $footer = " Up/Down  Enter  b:browse  n:new  w:no dir  o:order  q:quit"
+    $footer = if ($script:marked.Count -gt 0) {
+        " Space:mark($($script:marked.Count))  Enter:launch marked  b:browse  o:order  q:quit"
+    } else {
+        " Up/Dn  Space:mark  Enter  b:browse  n:new  w:nodir  o:order  q:quit"
+    }
     if ($footer.Length -gt $innerW) { $footer = $footer.Substring(0, $innerW) }
     Write-Host ("|" + $footer.PadRight($innerW) + "|") -ForegroundColor DarkGray
     Write-Host ("+" + "-" * $innerW + "+") -ForegroundColor Cyan
@@ -846,8 +917,21 @@ while (-not $done) {
     switch ($key.Key) {
         'UpArrow'   { $script:selected = [Math]::Max(0, $script:selected - 1) }
         'DownArrow' { $script:selected = [Math]::Min($menuItems.Count - 1, $script:selected + 1) }
+        'Spacebar'  {
+            # Toggle the highlighted PROJECT's mark. Non-project rows (browse/new/
+            # nodir) are not markable. Remove-on-untoggle keeps .Count = marked total.
+            $cur = $menuItems[$script:selected]
+            if ($cur.type -eq 'project') {
+                if ($script:marked.ContainsKey($cur.name)) { $script:marked.Remove($cur.name) }
+                else { $script:marked[$cur.name] = $true }
+            }
+        }
         'Enter'     {
-            if ($menuItems[$script:selected].type -eq 'browse') {
+            if ($script:marked.Count -ge 1) {
+                # >=1 marked -> batch launch handled after the loop (ignores highlight).
+                $done = $true
+            }
+            elseif ($menuItems[$script:selected].type -eq 'browse') {
                 if (Invoke-Browse) { $done = $true }
             } else {
                 $done = $true
@@ -886,6 +970,73 @@ while (-not $done) {
             }
         }
     }
+}
+
+# -- Multi-select batch launch (task #25) --
+# If any projects are SPACE-marked, launch every marked project in its own WT tab
+# inside the one rwn4ai window (chained new-tab groups), each tab running that
+# project's full fleet via the shared Build-FleetTabCmd. When nothing is marked
+# this whole block is skipped and the single-select path below runs unchanged.
+$script:markedList = @()
+foreach ($mi in $menuItems) {
+    if ($mi.type -eq 'project' -and $script:marked.ContainsKey($mi.name)) {
+        $script:markedList += $mi.name
+    }
+}
+
+if ($script:markedList.Count -ge 1) {
+    $layout = Get-Layout
+    $activeCLIs = @($layout | Where-Object { $cliAvailable[$_] })
+    if ($activeCLIs.Count -eq 0) {
+        Write-Host "No CLIs available." -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        Stop-Process -Id $PID
+    }
+
+    # Per-project prep: record history + install/adopt framework (same as single).
+    $targetDirs = @()
+    foreach ($p in $script:markedList) {
+        $d = Join-Path $projectsDir $p
+        Save-History -project $p
+        Install-Framework -targetDir $d
+        $targetDirs += $d
+    }
+
+    # Kiro global-agent injection (profile-level, project-independent -> do once).
+    if ($cliAvailable["Kiro"]) {
+        $globalKiroAgents = Join-Path $env:USERPROFILE ".kiro\agents"
+        $backupAgents = Join-Path $scriptDir ".kiro\agents"
+        if (Test-Path $backupAgents) {
+            try {
+                Get-ChildItem -Path $backupAgents -Filter "*.json" | ForEach-Object {
+                    $dest = Join-Path $globalKiroAgents $_.Name
+                    if (-not (Test-Path $dest)) { Copy-Item -Path $_.FullName -Destination $dest -Force }
+                }
+            } catch {
+                Write-Host "Warning: failed to inject Kiro agents: $_" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    if ($script:markedList.Count -gt 4) {
+        Write-Host "Note: $($script:markedList.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
+    }
+
+    # One wt invocation, one new-tab fleet group per marked project.
+    $groups = @()
+    foreach ($d in $targetDirs) { $groups += (Build-FleetTabCmd -TargetDir $d) }
+    $wtCmd = "-w rwn4ai " + ($groups -join " ; ")
+
+    Clear-Host
+    Write-Host "Batch launch ($($targetDirs.Count) projects): $($script:markedList -join ', ')" -ForegroundColor Cyan
+    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
+    try {
+        & cmd.exe /c "`"$wtExe`" $wtCmd"
+        Write-Host "Launched $($targetDirs.Count) project tabs in window rwn4ai." -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to launch batch: $_" -ForegroundColor Red
+    }
+    return
 }
 
 # ── Process Selection ──
@@ -1028,43 +1179,11 @@ $use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
 # The top-RIGHT Kimi split is only emitted when Kimi is available; otherwise the top
 # row stays one full-width interactive Claude (graceful degrade, never a broken split).
 if ($use6pane) {
-    $dq = '"'
-    # B5: $activeCLIs = every AVAILABLE CLI in layout order, so every available
-    # recipient gets its own self-driving runner pane here (no cap/omission). The
-    # UNavailable-recipient case (handoffs with no local consumer) is surfaced by
-    # Get-ProjectBadges' [H:n stranded:...] marker, not by a runner.
-    $bottomCLIs = $activeCLIs                      # available CLIs, layout order
-    $n = $bottomCLIs.Count
-
-    # TOP-LEFT pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
-    $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
-    $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
-
-    # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction) = 0.5.
-    # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
-    $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
-    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
-    $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
-
-    # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split operates
-    # on the focused (rightmost) region; the k-th split (k = 1..N-1) gives the new pane
-    # (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
-    for ($i = 1; $i -lt $n; $i++) {
-        $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
-        $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
-        $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
-    }
-
-    # TOP-RIGHT operator: move focus back up to the full-width top pane, then split it
-    # 50/50 to place bare interactive Kimi on the right. Skip when Kimi is unavailable
-    # so we never emit a broken split (top stays a single full-width Claude).
-    if ($cliAvailable['Kimi']) {
-        $topRightCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Kimi'].cmd)$dq"
-        $wtCmd += " ; move-focus up ; split-pane -V -s 0.5 -d $dq$targetDir$dq $topRightCmd"
-    }
+    # Single-project fleet tab via the shared builder (same output as the batch path).
+    $wtCmd = "-w rwn4ai " + (Build-FleetTabCmd -TargetDir $targetDir)
 
     $topDesc = if ($cliAvailable['Kimi']) { 'app-Claude | Kimi' } else { 'app-Claude' }
-    Write-Host "6-pane layout (top=$topDesc, bottom=$($bottomCLIs -join ', ')):" -ForegroundColor Cyan
+    Write-Host "6-pane layout (top=$topDesc, bottom=$($activeCLIs -join ', ')):" -ForegroundColor Cyan
     Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
     try {
         & cmd.exe /c "`"$wtExe`" $wtCmd"
@@ -1082,30 +1201,10 @@ if ($use6pane) {
 # then N-1 vertical splits cut the bottom into equal columns, each running the
 # self-driving pane-runner (the Claude column self-IDs as claude-auto).
 if ($use5pane) {
-    $dq = '"'
-    $bottomCLIs = $activeCLIs                      # available CLIs, layout order
-    $n = $bottomCLIs.Count
+    # Single-project fleet tab via the shared builder (same output as the batch path).
+    $wtCmd = "-w rwn4ai " + (Build-FleetTabCmd -TargetDir $targetDir)
 
-    # TOP pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
-    $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
-    $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
-
-    # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
-    # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
-    $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
-    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
-    $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
-
-    # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split
-    # operates on the focused (rightmost) region; the k-th split (k = 1..N-1) gives
-    # the new pane (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
-    for ($i = 1; $i -lt $n; $i++) {
-        $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
-        $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
-        $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
-    }
-
-    Write-Host "5-pane layout (top=app-Claude, bottom=$($bottomCLIs -join ', ')):" -ForegroundColor Cyan
+    Write-Host "5-pane layout (top=app-Claude, bottom=$($activeCLIs -join ', ')):" -ForegroundColor Cyan
     Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
     try {
         & cmd.exe /c "`"$wtExe`" $wtCmd"
