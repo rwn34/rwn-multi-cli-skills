@@ -55,6 +55,10 @@ $ErrorActionPreference = 'Stop'
 # in the repo tree and in the flat install dir.
 . (Join-Path $PSScriptRoot 'fleet-clis.ps1')
 
+# Fleet Telegram notifications (task #26). Dot-sourced for Send-FleetNotification;
+# every call site is fail-open (a notify error must never break the pane loop).
+. (Join-Path $PSScriptRoot 'notify.ps1')
+
 # UTF-8 console so streamed CLI output (e.g. kimi's bullet glyphs) is not
 # mojibake'd. Guarded: never throw in a redirected / no-console context.
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
@@ -608,6 +612,9 @@ function Start-PaneRunner {
                 }
 
                 Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
+                $hbase = Get-HandoffBasename -HandoffPath $handoff
+                # PICKED notify (fail-open: a notify error must not break the loop).
+                try { Send-FleetNotification -Kind picked -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                 try {
                     $runResult = Invoke-HandoffRun -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff -MaxContinues $MaxContinues
                     # Defensive: if the run leaked extra pipeline objects, the decision
@@ -615,10 +622,14 @@ function Start-PaneRunner {
                     $runResult = @($runResult)[-1]
                     if ($runResult -and $runResult.Result -eq 'DONE') {
                         Clear-HandoffAttempts -Recipient $Cli -HandoffPath $handoff
+                        # DONE notify (fail-open).
+                        try { Send-FleetNotification -Kind done -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                     } else {
                         # MAXED (still OPEN after the continue cap) counts as a failed
                         # attempt; quarantine once the threshold is reached.
                         $q = Add-HandoffAttempt -Recipient $Cli -HandoffPath $handoff -ErrorText 'MAXED (still OPEN after continue cap)'
+                        # ALERT notify on MAXED or a new quarantine (fail-open).
+                        try { Send-FleetNotification -Kind alert -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                         if ($q.quarantined) {
                             Write-Host "== QUARANTINE [$Cli] $(Split-Path -Leaf $handoff) after $($q.attempts) failed attempts -- skipping until a human clears .ai/handoffs/.quarantine/ ==" -ForegroundColor Red
                         }
