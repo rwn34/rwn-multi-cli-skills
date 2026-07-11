@@ -191,15 +191,21 @@ function Send-FleetNotification {
             default  { '' }
         }
 
-        # Markdown two-line layout: the *bold* project leads on its own first
+        # Local wall-clock stamp (what the owner actually reads off their phone).
+        # Same format and same line 3 position as the bash path in .ai/tools/notify.sh
+        # so the two implementations produce byte-identical message shapes.
+        $ts = (Get-Date).ToString('HH:mm:ss')
+
+        # Markdown three-line layout: the *bold* project leads on its own first
         # line (prominent + unambiguous), the owner + `code` handoff follow on
-        # line 2. "`n" is the PowerShell newline inside the double-quoted string;
-        # a literal backtick in the handoff code span is a doubled backtick.
+        # line 2, the _HH:mm:ss_ stamp on line 3. "`n" is the PowerShell newline
+        # inside the double-quoted string; a literal backtick in the handoff code
+        # span is a doubled backtick.
         $text = switch ($Kind) {
-            'picked' { "$emoji *$Project*`n$Owner picked up ``$Handoff``" }
-            'done'   { "$emoji *$Project*`n$Owner finished ``$Handoff``" }
-            'alert'  { "$emoji *$Project* -- needs a human`n$Owner ALERT on ``$Handoff``" }
-            default  { "$emoji *$Project*`n$Owner ``$Handoff``" }
+            'picked' { "$emoji *$Project*`n$Owner picked up ``$Handoff```n_${ts}_" }
+            'done'   { "$emoji *$Project*`n$Owner finished ``$Handoff```n_${ts}_" }
+            'alert'  { "$emoji *$Project* -- needs a human`n$Owner ALERT on ``$Handoff```n_${ts}_" }
+            default  { "$emoji *$Project*`n$Owner ``$Handoff```n_${ts}_" }
         }
 
         $body = @{
