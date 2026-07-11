@@ -80,13 +80,15 @@ function Send-FleetNotification {
             default  { '' }
         }
 
-        # Markdown: *bold* owner, `code` handoff, _italic_ project. A literal
-        # backtick inside a double-quoted string is written as a doubled backtick.
+        # Markdown two-line layout: the *bold* project leads on its own first
+        # line (prominent + unambiguous), the owner + `code` handoff follow on
+        # line 2. "`n" is the PowerShell newline inside the double-quoted string;
+        # a literal backtick in the handoff code span is a doubled backtick.
         $text = switch ($Kind) {
-            'picked' { "$emoji *$Owner* picked up ``$Handoff`` -- _${Project}_" }
-            'done'   { "$emoji *$Owner* finished ``$Handoff`` -- _${Project}_" }
-            'alert'  { "$emoji *$Owner* ALERT on ``$Handoff`` -- _${Project}_ (needs a human)" }
-            default  { "$emoji *$Owner* ``$Handoff`` -- _${Project}_" }
+            'picked' { "$emoji *$Project*`n$Owner picked up ``$Handoff``" }
+            'done'   { "$emoji *$Project*`n$Owner finished ``$Handoff``" }
+            'alert'  { "$emoji *$Project* -- needs a human`n$Owner ALERT on ``$Handoff``" }
+            default  { "$emoji *$Project*`n$Owner ``$Handoff``" }
         }
 
         $body = @{
