@@ -30,6 +30,22 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.15] - 2026-07-11
+
+### Changed
+
+- Version bump to detect adopter drift for the CLAUDE.md owner-interaction-preference
+  directive that landed in the prior commit (7eff945) direct-to-master without a bump.
+  The directive tells CLIs to act-and-inform on reversible Tier-A/B work (act, then
+  report what was done and how to verify) rather than pausing to ask the owner to
+  confirm low-level steps — questions are reserved for genuine blockers and Tier-C
+  gates (reinforcing operating-prompt SSOT §8). CLAUDE.md is versioned framework
+  content shipped to adopters, but the direct-to-master push bypassed the PR-only
+  `check-version-bump.sh` gate, so onboarded projects comparing their
+  `.ai/.framework-version` against the template `package.json` .version would not
+  have seen the change. This bump versions that framework change so drift detection
+  fires.
+
 ## [0.0.14] - 2026-07-11
 
 ### Added
