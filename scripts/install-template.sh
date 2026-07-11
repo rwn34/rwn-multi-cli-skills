@@ -357,7 +357,11 @@ phase1() {
 
   copy_file "CLAUDE.md"
   copy_file "AGENTS.md"
-  copy_file "docs/architecture/0001-root-file-exceptions.md"
+  # A5: copy the WHOLE ADR set, not just 0001. Copied guards/hooks cite
+  # ADR-0002..0009 in their block messages; shipping only 0001 leaves every
+  # such citation dangling in an adopted project. Phase-3's amend_adr still
+  # targets 0001 specifically, which survives the dir copy.
+  copy_dir "docs/architecture"
   copy_file ".github/workflows/framework-check.yml"
   copy_file ".codegraph/config.json"
 
@@ -377,6 +381,36 @@ phase1() {
   # (not all of scripts/, which would drag this installer into the target), then
   # wire core.hooksPath so it is active on the target clone.
   wire_git_hooks
+
+  # A5: copy the concrete files that copied artifacts REFERENCE, so no link in a
+  # copied guard/hook dangles in the adopted project:
+  #   - scripts/fleet-init.sh              cited by 3 guards ("Scaffold the fleet
+  #                                        tier first (scripts/fleet-init.sh)"):
+  #                                        .claude/hooks/pretool-write-edit.sh,
+  #                                        .kimi/hooks/worktree-fleet-guard.sh,
+  #                                        .kiro/hooks/fleet-whitelist-guard.sh
+  #   - scripts/sync-4ai-panes-install.ps1 the copied git hooks (post-checkout/
+  #                                        post-commit/post-merge) set SYNC_SCRIPT
+  #                                        to it
+  #   - docs/specs/4ai-panes-install-sync.md   those same git hooks cite it
+  copy_file "scripts/fleet-init.sh"
+  copy_file "scripts/sync-4ai-panes-install.ps1"
+  copy_file "docs/specs/4ai-panes-install-sync.md"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: chmod +x scripts/fleet-init.sh"
+  else
+    chmod +x "$TARGET/scripts/fleet-init.sh" 2>/dev/null || true
+  fi
+
+  # STUB / FLAG (A5, owner decision pending): the tools/4ai-panes/ pane fleet is
+  # deliberately NOT shipped to adopters by default. Whether every adopter gets
+  # the full pane runner + Selector + supervised launchers is a PRODUCT decision,
+  # not a correctness one — fleet-init.sh (copied above) scaffolds the fleet tier
+  # on demand, and the copied git hooks no-op safely when tools/4ai-panes/ is
+  # absent (their `grep -q '^tools/4ai-panes/'` gate never matches). Left explicit
+  # here rather than silently missing. Owner: framework maintainer. To ship it,
+  # add `copy_dir "tools/4ai-panes"` (mind node_modules / heavy trees) here.
+  log "NOTE: tools/4ai-panes fleet not shipped to adopters by default — owner decision pending (see STUB in phase1)."
 
   # Note: we did NOT copy the rest of scripts/ (would copy this installer into
   # target), nor README.md/LICENSE/CHANGELOG (target keeps its own).
@@ -814,11 +848,110 @@ PYEOF
 # itself), so a changed snippet — a new guard, a fixed path, a removed hook — now
 # propagates to an already-wired machine. User content OUTSIDE the sentinels is
 # preserved byte-for-byte. Resolves the former TODO(A4-followup).
+# strip_legacy_kimi_block <target-file>
+# Migration for pre-sentinel machines. An OLDER append-once wire_kimi_hooks
+# appended a block headed `# ADDED BY install-template.sh kimi-hooks (template @
+# SHA)` with NO begin/end sentinels — just the four guard [[hooks]] entries
+# (root-guard, framework-guard, sensitive-guard, destructive-guard). reconcile_block
+# keys on the NEW sentinels, so it is blind to that legacy block and would append a
+# SECOND managed block beside it. This strips the clearly-marked legacy block first
+# so reconcile converges to exactly ONE sentinel-fenced block regardless of prior
+# state. Conservative: only a stanza whose command references one of those four
+# legacy guard scripts is dropped; the first non-legacy [[hooks]] (safety-check.ps1,
+# activity-log-remind.sh, worktree-fleet-guard, any user hook) ends the legacy region
+# and everything from there on is preserved byte-for-byte. Atomic same-dir rename.
+strip_legacy_kimi_block() {
+  local target="$1"
+  local marker="$MARKER kimi-hooks"   # "# ADDED BY install-template.sh kimi-hooks"
+
+  [ -f "$target" ] || return 0
+  grep -qF "$marker" "$target" 2>/dev/null || return 0
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: strip legacy '$marker' block from $target (pre-sentinel migration)"
+    return 0
+  fi
+
+  local dir tmp
+  dir="$(dirname "$target")"
+  tmp="$(mktemp "$dir/.kimi-strip-XXXXXX" 2>/dev/null || echo "$dir/.kimi-strip.$$")"
+
+  # A "stanza" is buffered from a [[hooks]] line (plus any comments accumulated
+  # before the next boundary). In the legacy region the default disposition is
+  # DROP; a command referencing a non-legacy script flips the stanza (and all
+  # that follow) to KEEP and ends the region. Legacy leading/trailing comments
+  # carry no command and are dropped by the default.
+  awk -v marker="$marker" '
+    function flush_stanza() {
+      if (sn == 0) return
+      if (drop) { sn = 0; return }
+      for (i = 1; i <= sn; i++) print sbuf[i]
+      sn = 0
+    }
+    BEGIN { in_legacy = 0; sn = 0; drop = 0; nb = 0 }
+    {
+      line = $0
+
+      if (!in_legacy) {
+        if (index(line, marker) > 0) {
+          nb = 0                 # drop buffered pre-marker blanks + marker line
+          in_legacy = 1; sn = 0; drop = 1
+          next
+        }
+        if (line ~ /^[ \t]*$/) { nb++; next }
+        while (nb > 0) { print ""; nb-- }
+        print line
+        next
+      }
+
+      # ---- legacy region ----
+      # A managed-block sentinel ends the region; reconcile owns that block.
+      if (index(line, ">>> rwn-framework:") > 0) {
+        flush_stanza(); in_legacy = 0; print line; next
+      }
+      # A second legacy marker starts a fresh legacy stanza.
+      if (index(line, marker) > 0) {
+        flush_stanza(); sn = 0; drop = 1; next
+      }
+      # New stanza boundary.
+      if (line ~ /^[ \t]*\[\[hooks\]\]/) {
+        flush_stanza(); sn = 0; drop = 1; sbuf[++sn] = line; next
+      }
+      # The command line decides this stanza.
+      if (line ~ /^[ \t]*command[ \t]*=/) {
+        sbuf[++sn] = line
+        if (line ~ /(root-guard|framework-guard|sensitive-guard|destructive-guard)\.sh/) {
+          drop = 1               # legacy guard -> drop this stanza
+        } else {
+          drop = 0               # non-legacy hook -> keep + end legacy region
+          flush_stanza(); in_legacy = 0
+        }
+        next
+      }
+      # Comments / event / matcher / timeout / blanks: buffer with the stanza.
+      sbuf[++sn] = line
+      next
+    }
+    END {
+      if (in_legacy) { sn = 0 }  # trailing legacy stanza at EOF -> drop
+      else { flush_stanza() }
+      while (nb > 0) { print ""; nb-- }
+    }
+  ' "$target" > "$tmp"
+
+  mv "$tmp" "$target"
+  log "Stripped legacy kimi-hooks block from $target (migrated to sentinel scheme)"
+}
+
 wire_kimi_hooks() {
   # Source the snippet from the template (SSOT, always present) rather than the
   # target: phase1's copy only lands in non-dry runs, and template == target copy.
   local snippet="$TEMPLATE_DIR/.ai/config-snippets/kimi-hooks.toml"
   local cfg="$HOME/.kimi-code/config.toml"
+
+  # Pre-sentinel migration: remove any legacy `# ADDED BY … kimi-hooks` block so
+  # reconcile does not append a duplicate beside it. No-op once migrated.
+  strip_legacy_kimi_block "$cfg"
 
   reconcile_block "$cfg" \
     "# >>> rwn-framework:kimi-hooks >>>" \
