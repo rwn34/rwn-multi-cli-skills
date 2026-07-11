@@ -30,6 +30,63 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.19] - 2026-07-11
+
+### Fixed
+
+- **`tools/4ai-panes/Selector.ps1`: the framework source repo no longer badges itself
+  `[! OLD]`.** `Get-ProjectBadges` decided staleness from `.ai/.framework-version` — a
+  marker the installer writes *into target projects*. The source repo never carries one
+  (its version is `tools/multi-cli-install/package.json` `.version`), so the repo that IS
+  the framework reported itself stale against itself. It now badges **`[v SRC]`**: the
+  resolved dir is compared to `$frameworkRepo` (`RWN_FRAMEWORK_REPO`-overridable) as
+  canonicalized full paths — case-insensitive, trailing-slash and separator tolerant, and
+  safe on paths that do not exist. The `[H:n]` handoff badge still applies to it
+  unchanged. The one-line badge legend documents `[v SRC]` and stays within its 70-char
+  box budget (68).
+- **`Selector.ps1`: batch launches no longer race Windows Terminal.** Marking N projects
+  used to pack ALL of their `new-tab` groups into as few `wt` invocations as a 7000-char
+  budget allowed — WT applies each chained subcommand against whatever pane is focused
+  when it reaches it, so ~7 projects dumped dozens of splits at once and the layout came
+  out scrambled. Each project now gets **its own `wt` invocation (one tab)**, fired
+  sequentially with a settle delay between projects; the cross-project char-budget packing
+  is gone.
+- **`Selector.ps1`: pane splits within a tab no longer race either.** `Build-FleetTabCmd`
+  returned one string chaining `new-tab ; split-pane ; … ; move-focus up ; split-pane`,
+  fired as a single atomic `wt` call, so even a lone project could land messy. It is
+  replaced by `Build-FleetTabStages`, which returns the tab as a structured `[string[]]`
+  of stages (built at the KNOWN boundaries rather than by splitting a chained string on
+  `' ; '`, which a quoted CLI payload could otherwise corrupt). Each stage is issued as
+  its own `wt -w rwn4ai <stage>` invocation with a delay between. Every stage acts on the
+  active pane of the active tab in the `rwn4ai` window — exactly the pane the atomic chain
+  acted on — so **the layout is identical; only the timing changes**. `--title` / `-d` /
+  `-w rwn4ai` semantics are byte-identical. Applied to the batch path AND both
+  single-project (6pane/5pane) paths.
+
+### Added
+
+- **Two pacing knobs (documented in `tools/4ai-panes/README.md`):**
+  `RWN_4AI_PANE_DELAY_MS` (default `250`) between pane stages within a tab, and
+  `RWN_4AI_TAB_DELAY_MS` (default `1200`) between project tabs in a batch. Setting either
+  to `0` restores the legacy **atomic single-invocation** behavior for that dimension
+  (escape hatch): pane `0` collapses a project's tab to one chained call; tab `0` collapses
+  the whole batch to one chained call. Values are parsed defensively — non-numeric,
+  negative or empty fall back to the default and never crash the launcher. An
+  over-long atomic invocation (> 7000 chars) is now warned about rather than silently
+  truncated by Windows.
+- **`tools/4ai-panes/test-selector-e2e.ps1`: four new suites (Tests 3-6), 46 new
+  assertions (35 -> 81).** Badge resolution (`[v SRC]` for the source repo including
+  trailing-slash / forward-slash / case / non-existent-path tolerance and the retained
+  `[H:n]`; `[v OK]` / `[! OLD]` / `[- none]` for temp targets; the legend's 70-char
+  budget); staged emission of a 6-pane group asserted **stage-by-stage equal** to the
+  legacy atomic chain, with a guard that no stage contains a literal `' ; '`; a batch of N
+  projects producing exactly N `new-tab` launches and no packed invocation; and the delay
+  knobs (default when unset, honored when set, default on garbage/negative/empty, `0`
+  restoring atomic behavior), including contract guards that the production assignments
+  still read those env names with those defaults. The plan builders
+  (`Build-FleetTabStages`, `Get-FleetLaunchPlan`) are pure, so the suite asserts on the
+  constructed `wt` command/stage arrays and never launches Windows Terminal.
+
 ## [0.0.18] - 2026-07-11
 
 ### Added

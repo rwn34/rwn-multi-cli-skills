@@ -46,6 +46,36 @@ $paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '6pa
 # Bottom region (the 4-column fleet) = 1 - this.
 $topStripFraction = 0.50
 
+# ── Launch pacing (owner defect 2026-07-11: batch launches landed scrambled) ──
+# Firing one `wt` call that chains dozens of new-tab/split-pane subcommands makes
+# Windows Terminal race itself: splits land against whichever pane happens to be
+# focused when WT gets to them, so the layout comes out shuffled. We therefore
+# PACE the launch — one wt invocation per stage, with a settle delay between:
+#   RWN_4AI_PANE_DELAY_MS : ms between pane stages inside one project's tab (250)
+#   RWN_4AI_TAB_DELAY_MS  : ms between project tabs in a batch launch (1200)
+# Either knob set to 0 restores the legacy ATOMIC single-invocation behavior for
+# that dimension (escape hatch if staging ever misbehaves on a machine):
+#   pane delay 0 -> a project's whole tab ships as one chained wt call
+#   tab delay 0  -> the WHOLE batch ships as one chained wt call (which necessarily
+#                   makes the panes atomic too — one invocation cannot be staged)
+# Garbage / negative / non-numeric values fall back to the default, never crash.
+function Get-DelayMs {
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][int]$Default)
+    $raw = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+    $parsed = 0
+    if (-not [int]::TryParse($raw.Trim(), [ref]$parsed)) { return $Default }
+    if ($parsed -lt 0) { return $Default }
+    return $parsed
+}
+$paneDelayMs = Get-DelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250
+$tabDelayMs  = Get-DelayMs -Name 'RWN_4AI_TAB_DELAY_MS'  -Default 1200
+
+# Windows caps a command line at ~8191 chars. Only the ATOMIC escape-hatch paths
+# can approach that now (staged emission ships one short subcommand per call), but
+# a single over-long invocation would silently truncate, so it is warned about.
+$maxSafeCmdLen = 7000
+
 # ── CLI Definitions ──
 # Each CLI: name, detection command, launch command
 $cliDefs = [ordered]@{}
@@ -159,8 +189,37 @@ function Get-ProjectInfo {
     return $parts -join " "
 }
 
+# Canonical form of a directory path for identity comparison: absolute, no trailing
+# separator. NEVER throws and never touches the filesystem (the path need not exist);
+# an unusable value degrades to the trimmed input, which simply won't match anything.
+function Get-CanonicalDir {
+    param([string]$PathValue)
+    if ([string]::IsNullOrWhiteSpace($PathValue)) { return '' }
+    try {
+        return ([System.IO.Path]::GetFullPath($PathValue)).TrimEnd('\', '/')
+    } catch {
+        return $PathValue.Trim().TrimEnd('\', '/')
+    }
+}
+
+# True when $dir IS the framework source repo ($frameworkRepo). Case-insensitive,
+# trailing-slash and separator tolerant, non-existent paths safe.
+function Test-IsFrameworkSource {
+    param([string]$Dir)
+    $a = Get-CanonicalDir $Dir
+    $b = Get-CanonicalDir $frameworkRepo
+    if (-not $a -or -not $b) { return $false }
+    return ($a -eq $b)      # PowerShell string -eq is case-insensitive
+}
+
 # Per-project status badges shown in the menu row:
-#   framework-version: [v OK] = .ai/.framework-version present (current install)
+#   framework-version: [v SRC] = this dir IS the framework source repo ($frameworkRepo).
+#                      It never carries .ai/.framework-version — that marker is written
+#                      BY the installer INTO target projects — so the version badges do
+#                      not apply to it. Its own version is
+#                      tools/multi-cli-install/package.json .version. Badging it [! OLD]
+#                      (pre-fix behavior) claimed the framework was stale against itself.
+#                      [v OK] = .ai/.framework-version present (current install)
 #                      [! OLD] = .ai/ exists but no version marker (pre-marker install)
 #                      [- none] = no .ai/ (framework not installed)
 #   handoff queue:     [H:<n>] = n open cross-CLI handoffs (.ai/handoffs/to-*/open/*.md),
@@ -179,7 +238,10 @@ function Get-ProjectBadges {
     try {
         $dir = if ($Path) { $Path } else { Join-Path $projectsDir $Project }
         $aiDir = Join-Path $dir ".ai"
-        if (Test-Path (Join-Path $aiDir ".framework-version")) { $badges += "[v OK]" }
+        # The framework SOURCE repo is not an install target: badge it as the source.
+        # The [H:n] handoff badge below still applies to it, unchanged.
+        if (Test-IsFrameworkSource $dir) { $badges += "[v SRC]" }
+        elseif (Test-Path (Join-Path $aiDir ".framework-version")) { $badges += "[v OK]" }
         elseif (Test-Path $aiDir) { $badges += "[! OLD]" }
         else { $badges += "[- none]" }
 
@@ -217,8 +279,11 @@ function Get-ProjectBadges {
 }
 
 # One-line badge legend, shown in BOTH the default list and browse mode so the
-# glyphs are never cryptic. Kept under 70 chars to fit the narrowest box.
-$badgeLegend = " [v OK]=ok [! OLD]=stale [- none]=none [H:n]=handoffs stranded:no CLI"
+# glyphs are never cryptic. Kept at <= 70 chars to fit the narrowest box (the box
+# truncates, so an overflowing legend loses its tail). Adding [v SRC] cost the
+# "stranded:no CLI" tail -- the stranded badge spells its own recipients out
+# ([H:3 stranded:kimi]), so it is the most self-describing thing here.
+$badgeLegend = " [v OK]=ok [v SRC]=fw src [! OLD]=stale [- none]=none [H:n]=handoffs"
 
 # History label for a target dir: the folder name, or its path relative to
 # $projectsDir when it lives under it, so nested browse picks stay distinguishable.
@@ -501,24 +566,35 @@ function Install-Framework($targetDir) {
     Write-InstallLog "=== Install-Framework end ==="
 }
 
-# -- Fleet-tab command builder (shared by single-select and multi-select batch) --
-# Returns the Windows-Terminal subcommand string for ONE project's fleet tab,
-# starting with `new-tab` (NO -w prefix -- the caller adds `-w rwn4ai` once, then
-# chains one group per project with ` ; ` for a batch). Layout is chosen the same
-# way the single-launch path chooses it:
+# -- Fleet-tab STAGE builder (shared by single-select and multi-select batch) --
+# Returns ONE project's fleet tab as an ORDERED [string[]] of Windows-Terminal
+# subcommand STAGES: stage 0 is always `new-tab ...`, the rest are `split-pane ...`
+# / `move-focus ...`. No -w prefix and no ' ; ' glue -- the caller decides whether to
+# fire each stage as its own `wt -w rwn4ai <stage>` call (paced, the default) or to
+# join them with ' ; ' into one atomic call (the delay=0 escape hatch). Both forms
+# produce the SAME layout: every stage after new-tab acts on the active pane of the
+# active tab in the rwn4ai window, which is exactly the pane the chained form acts on.
+#
+# Structured array rather than string-splitting the old chained string on ' ; ':
+# the stages embed quoted CLI payloads and paths, and a payload that ever contained
+# a literal ' ; ' would silently corrupt a split. Building the boundaries where they
+# are KNOWN removes the ambiguity entirely.
+#
+# Layout is chosen the same way the single-launch path chooses it:
 #   6pane (default) = top-LEFT app-Claude + top-RIGHT Kimi over N pane-runner workers
 #   5pane           = full-width app-Claude over N pane-runner workers
 #   otherwise (4grid/bare/nodir-scripts-missing) = plain interactive REPLs per CLI
 # Reads script-scope state ($activeCLIs, $cliDefs, $cliLower, $cliAvailable,
 # $paneLayoutMode, $topStripFraction, $scriptDir) resolved at call time, so callers
 # must set $activeCLIs before invoking.
-function Build-FleetTabCmd {
+function Build-FleetTabStages {
     param([Parameter(Mandatory = $true)][string]$TargetDir)
 
     $dq = '"'
     $leaf = Split-Path -Leaf $TargetDir             # project name -> WT tab --title
     $bottomCLIs = $activeCLIs                       # available CLIs, layout order
     $n = $bottomCLIs.Count
+    $stages = New-Object System.Collections.Generic.List[string]
 
     $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
     $paneSupervisor = Join-Path $scriptDir 'run-pane-supervised.ps1'
@@ -530,38 +606,108 @@ function Build-FleetTabCmd {
     if (-not $composite) {
         # Fallback tab: each available CLI as a plain interactive REPL (mirrors the
         # legacy 4-grid/bare intent, but as its own new-tab so a batch still works).
-        $cmd = "new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[0]].cmd)$dq"
+        $stages.Add("new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[0]].cmd)$dq")
         for ($i = 1; $i -lt $n; $i++) {
             $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
-            $cmd += " ; split-pane -V -s $frac -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[$i]].cmd)$dq"
+            $stages.Add("split-pane -V -s $frac -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[$i]].cmd)$dq")
         }
-        return $cmd
+        return $stages.ToArray()
     }
 
     # Composite 6pane/5pane fleet tab (identical to the single-launch build).
     # TOP pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
     $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
-    $cmd = "new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq $topCmd"
+    $stages.Add("new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq $topCmd")
 
     # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
     # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
     $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
     $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$TargetDir$dq"
-    $cmd += " ; split-pane -H -s $bottomFraction -d $dq$TargetDir$dq $runner0"
+    $stages.Add("split-pane -H -s $bottomFraction -d $dq$TargetDir$dq $runner0")
 
     # BOTTOM panes 2..N: vertical splits sized for N equal columns.
     for ($i = 1; $i -lt $n; $i++) {
         $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
         $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$TargetDir$dq"
-        $cmd += " ; split-pane -V -s $frac -d $dq$TargetDir$dq $runner"
+        $stages.Add("split-pane -V -s $frac -d $dq$TargetDir$dq $runner")
     }
 
     # 6pane adds the top-RIGHT Kimi cockpit; 5pane keeps a single full-width top.
+    # move-focus is its own stage: it is its own wt subcommand in the chained form too.
     if ($paneLayoutMode -ne '5pane' -and $cliAvailable['Kimi']) {
         $topRightCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Kimi'].cmd)$dq"
-        $cmd += " ; move-focus up ; split-pane -V -s 0.5 -d $dq$TargetDir$dq $topRightCmd"
+        $stages.Add("move-focus up")
+        $stages.Add("split-pane -V -s 0.5 -d $dq$TargetDir$dq $topRightCmd")
     }
-    return $cmd
+    return $stages.ToArray()
+}
+
+# -- Launch PLAN: the ordered wt invocations for a set of project tabs --
+# PURE (no side effects, no WT): takes one string[] of stages per project and the two
+# pacing knobs, returns the ordered list of invocations to fire, each carrying the
+# delay to observe AFTER it:
+#     [pscustomobject]@{ Wt = '-w rwn4ai <subcommands>'; DelayAfterMs = <int> }
+# Default (both delays > 0): one invocation per STAGE, pane delay between stages of a
+# tab, tab delay between projects -> exactly one `new-tab` per project, paced.
+# PaneDelayMs = 0: each project's tab collapses to one atomic chained invocation.
+# TabDelayMs  = 0: the WHOLE batch collapses to one atomic chained invocation (full
+#                  legacy behavior; a single invocation cannot be pane-staged).
+# Being pure is what makes the pacing testable without launching Windows Terminal.
+function Get-FleetLaunchPlan {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$TabStages,  # array of string[]
+        [int]$PaneDelayMs = 250,
+        [int]$TabDelayMs = 1200
+    )
+    $plan = New-Object System.Collections.Generic.List[object]
+    if ($TabStages.Count -eq 0) { return @() }
+
+    if ($TabDelayMs -le 0) {
+        $joined = (@($TabStages | ForEach-Object { @($_) -join ' ; ' }) -join ' ; ')
+        $plan.Add([pscustomobject]@{ Wt = "-w rwn4ai $joined"; DelayAfterMs = 0 })
+        return $plan.ToArray()
+    }
+
+    for ($t = 0; $t -lt $TabStages.Count; $t++) {
+        $stages = @($TabStages[$t])
+        $isLastTab = ($t -eq $TabStages.Count - 1)
+        if ($PaneDelayMs -le 0) {
+            $after = if ($isLastTab) { 0 } else { $TabDelayMs }
+            $plan.Add([pscustomobject]@{ Wt = "-w rwn4ai " + ($stages -join ' ; '); DelayAfterMs = $after })
+            continue
+        }
+        for ($s = 0; $s -lt $stages.Count; $s++) {
+            $isLastStage = ($s -eq $stages.Count - 1)
+            $after = if (-not $isLastStage) { $PaneDelayMs }
+                     elseif (-not $isLastTab) { $TabDelayMs }
+                     else { 0 }
+            $plan.Add([pscustomobject]@{ Wt = "-w rwn4ai $($stages[$s])"; DelayAfterMs = $after })
+        }
+    }
+    return $plan.ToArray()
+}
+
+# Fire a plan at Windows Terminal. Every invocation targets the SAME rwn4ai window,
+# so paced stages land in the tab/pane the atomic chain would have used. Returns
+# $true when every invocation was issued without throwing.
+function Invoke-FleetLaunchPlan {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan)
+    $ok = $true
+    foreach ($step in $Plan) {
+        $wtCmd = $step.Wt
+        if ($wtCmd.Length -gt $maxSafeCmdLen) {
+            Write-Host "Warning: wt command is $($wtCmd.Length) chars (safe limit $maxSafeCmdLen); Windows may truncate it. Unset RWN_4AI_TAB_DELAY_MS/RWN_4AI_PANE_DELAY_MS=0 to use the paced (short) invocations." -ForegroundColor Yellow
+        }
+        Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
+        try {
+            & cmd.exe /c "`"$wtExe`" $wtCmd"
+        } catch {
+            $ok = $false
+            Write-Host "Failed to launch: $_" -ForegroundColor Red
+        }
+        if ($step.DelayAfterMs -gt 0) { Start-Sleep -Milliseconds $step.DelayAfterMs }
+    }
+    return $ok
 }
 
 # ── Build Menu Items ──
@@ -1063,9 +1209,10 @@ while (-not $done) {
 
 # -- Multi-select batch launch (task #25) --
 # If any projects are SPACE-marked, launch every marked project in its own WT tab
-# inside the one rwn4ai window (chained new-tab groups), each tab running that
-# project's full fleet via the shared Build-FleetTabCmd. When nothing is marked
-# this whole block is skipped and the single-select path below runs unchanged.
+# inside the one rwn4ai window -- one PACED wt invocation per tab (see
+# Get-FleetLaunchPlan), each tab running that project's full fleet via the shared
+# Build-FleetTabStages. When nothing is marked this whole block is skipped and the
+# single-select path below runs unchanged.
 $script:markedList = @()
 foreach ($mi in $menuItems) {
     if ($mi.type -eq 'project' -and $script:marked.ContainsKey($mi.name)) {
@@ -1118,55 +1265,24 @@ if ($batchDirs.Count -ge 1) {
         Write-Host "Note: $($targetDirs.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
     }
 
-    # One new-tab fleet group per marked project.
-    $groups = @()
-    foreach ($d in $targetDirs) { $groups += (Build-FleetTabCmd -TargetDir $d) }
-
-    # Windows caps a command line at ~8191 chars; one wt invocation chaining many
-    # new-tab groups can blow past that and silently truncate/fail. Keep the single
-    # invocation when it fits; otherwise pack the groups into batches that each stay
-    # under the threshold and fire them as successive `wt -w rwn4ai ...` calls -- every
-    # call targets the SAME rwn4ai window, so the tabs still land together, and each
-    # group keeps its own --title / -d untouched. Headroom under 8191 leaves room for
-    # the quoted "wtExe" path + cmd.exe wrapping.
-    $wtPrefix = "-w rwn4ai "
-    $maxCmdLen = 7000
-    $batches = @()
-    $current = @()
-    foreach ($g in $groups) {
-        $candidate = @($current) + $g
-        $candidateCmd = $wtPrefix + ($candidate -join " ; ")
-        if ($current.Count -gt 0 -and $candidateCmd.Length -gt $maxCmdLen) {
-            # Current batch is full; a single group that alone exceeds the limit still
-            # ships on its own (can't split one atomic new-tab further).
-            $batches += , @($current)
-            $current = @($g)
-        } else {
-            $current = $candidate
-        }
-    }
-    if ($current.Count -gt 0) { $batches += , @($current) }
+    # One new-tab fleet group per marked project, as stage arrays.
+    # PACING (owner defect 2026-07-11): the old code packed ALL projects' groups into
+    # as few wt invocations as it could (split only by a char budget), so marking ~7
+    # projects dumped dozens of splits on WT at once and the layout came out scrambled.
+    # Now every project is its OWN wt invocation (one tab), fired sequentially with
+    # $tabDelayMs between them, and each project's panes are staged with $paneDelayMs
+    # between them. Delay = 0 restores the legacy atomic form for that dimension.
+    $tabStages = @()
+    foreach ($d in $targetDirs) { $tabStages += , (Build-FleetTabStages -TargetDir $d) }
+    # @( ) forces an array: PowerShell unrolls a single-element result on return, and
+    # the atomic escape hatch produces exactly one invocation.
+    $plan = @(Get-FleetLaunchPlan -TabStages $tabStages -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
 
     Clear-Host
     $batchNames = @($targetDirs | ForEach-Object { Get-HistoryName $_ })
     Write-Host "Batch launch ($($targetDirs.Count) projects): $($batchNames -join ', ')" -ForegroundColor Cyan
-    if ($batches.Count -gt 1) {
-        Write-Host "Command length over the safe limit; splitting into $($batches.Count) wt invocations (same rwn4ai window)." -ForegroundColor Yellow
-    }
-    $launchOk = $true
-    for ($b = 0; $b -lt $batches.Count; $b++) {
-        $wtCmd = $wtPrefix + (@($batches[$b]) -join " ; ")
-        Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
-        try {
-            & cmd.exe /c "`"$wtExe`" $wtCmd"
-            # Small settle between multiple invocations so WT attaches each tab to the
-            # existing window rather than racing to create a second rwn4ai window.
-            if ($batches.Count -gt 1 -and $b -lt $batches.Count - 1) { Start-Sleep -Milliseconds 500 }
-        } catch {
-            $launchOk = $false
-            Write-Host "Failed to launch batch: $_" -ForegroundColor Red
-        }
-    }
+    Write-Host "Pacing: pane ${paneDelayMs}ms, tab ${tabDelayMs}ms ($($plan.Count) wt invocations)." -ForegroundColor DarkGray
+    $launchOk = Invoke-FleetLaunchPlan -Plan $plan
     if ($launchOk) {
         Write-Host "Launched $($targetDirs.Count) project tabs in window rwn4ai." -ForegroundColor Green
     }
@@ -1308,17 +1424,18 @@ $use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
 # The top-RIGHT Kimi split is only emitted when Kimi is available; otherwise the top
 # row stays one full-width interactive Claude (graceful degrade, never a broken split).
 if ($use6pane) {
-    # Single-project fleet tab via the shared builder (same output as the batch path).
-    $wtCmd = "-w rwn4ai " + (Build-FleetTabCmd -TargetDir $targetDir)
+    # Single-project fleet tab via the shared builder (same output as the batch path),
+    # emitted stage-by-stage so a lone project also lands cleanly (RWN_4AI_PANE_DELAY_MS
+    # = 0 collapses it back to the legacy single atomic wt call).
+    $stages = Build-FleetTabStages -TargetDir $targetDir
+    $plan = @(Get-FleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
 
     $topDesc = if ($cliAvailable['Kimi']) { 'app-Claude | Kimi' } else { 'app-Claude' }
-    Write-Host "6-pane layout (top=$topDesc, bottom=$($activeCLIs -join ', ')):" -ForegroundColor Cyan
-    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
-    try {
-        & cmd.exe /c "`"$wtExe`" $wtCmd"
+    Write-Host "6-pane layout (top=$topDesc, bottom=$($activeCLIs -join ', ')), pane pacing ${paneDelayMs}ms:" -ForegroundColor Cyan
+    if (Invoke-FleetLaunchPlan -Plan $plan) {
         Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
-    } catch {
-        Write-Host "Failed to launch 6-pane layout: $_" -ForegroundColor Red
+    } else {
+        Write-Host "Failed to launch 6-pane layout." -ForegroundColor Red
     }
     return
 }
@@ -1330,16 +1447,16 @@ if ($use6pane) {
 # then N-1 vertical splits cut the bottom into equal columns, each running the
 # self-driving pane-runner (the Claude column self-IDs as claude-auto).
 if ($use5pane) {
-    # Single-project fleet tab via the shared builder (same output as the batch path).
-    $wtCmd = "-w rwn4ai " + (Build-FleetTabCmd -TargetDir $targetDir)
+    # Single-project fleet tab via the shared builder (same output as the batch path),
+    # staged the same way as the 6pane path.
+    $stages = Build-FleetTabStages -TargetDir $targetDir
+    $plan = @(Get-FleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
 
-    Write-Host "5-pane layout (top=app-Claude, bottom=$($activeCLIs -join ', ')):" -ForegroundColor Cyan
-    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
-    try {
-        & cmd.exe /c "`"$wtExe`" $wtCmd"
+    Write-Host "5-pane layout (top=app-Claude, bottom=$($activeCLIs -join ', ')), pane pacing ${paneDelayMs}ms:" -ForegroundColor Cyan
+    if (Invoke-FleetLaunchPlan -Plan $plan) {
         Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
-    } catch {
-        Write-Host "Failed to launch 5-pane layout: $_" -ForegroundColor Red
+    } else {
+        Write-Host "Failed to launch 5-pane layout." -ForegroundColor Red
     }
     return
 }
