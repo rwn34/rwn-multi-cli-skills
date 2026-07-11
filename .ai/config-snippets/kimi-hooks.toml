@@ -73,6 +73,16 @@ matcher = "Bash"
 command = "bash .kimi/hooks/destructive-guard.sh"
 timeout = 10
 
+# --- Guard 5: Worktree/fleet boundary guard ---
+# Blocks writes that cross git-worktree / fleet-isolation boundaries (ADR-0004),
+# so a subagent running in one worktree can't mutate another's tree.
+# Fires before Write and Edit.
+[[hooks]]
+event = "PreToolUse"
+matcher = "Write|Edit"
+command = "bash .kimi/hooks/worktree-fleet-guard.sh"
+timeout = 10
+
 # --- Handoff reminder (SessionStart) ---
 # Lists qualifying open handoffs (Status: OPEN, Auto: yes, Risk A|B) addressed
 # to kimi-cli at the start of each interactive session, so they are not silently
