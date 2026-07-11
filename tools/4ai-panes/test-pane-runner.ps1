@@ -23,6 +23,8 @@
 #   (r) Test-ClaimBlocks same-host live+fresh   (true  -> block)
 #   (s) Test-HandoffQuarantined expired record  (false -> allow one retry)
 #   (t) Test-HandoffQuarantined fresh record    (true  -> still quarantined)
+#   (u) Get-StopExitCode intentional stop        (Intent=$true  -> 0)
+#   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -298,6 +300,10 @@ $freshRec = [ordered]@{
 $freshRec | ConvertTo-Json -Compress | Set-Content -Path $sPath -Encoding utf8 -NoNewline
 Assert-Equal $true (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hexp) 't: fresh quarantine -> Test-HandoffQuarantined true'
 Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hexp
+
+# -- (u/v) exit-code contract helper: intent -> 0, crash -> non-zero --
+Assert-Equal 0 (Get-StopExitCode -Intent $true) 'u: intentional stop -> Get-StopExitCode 0'
+Assert-Equal $true ((Get-StopExitCode -Intent $false) -ne 0) 'v: crash -> Get-StopExitCode non-zero'
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
