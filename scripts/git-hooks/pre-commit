@@ -23,8 +23,16 @@
 
 # ---- Decision functions (pure; testable) -----------------------------------
 
+# _lc <path> — echo the path lowercased. On case-insensitive filesystems
+# (Windows NTFS, default macOS APFS) `.ENV`, `ID_RSA`, `.Kimi/` name the SAME
+# file as `.env`, `id_rsa`, `.kimi/`, so guards must match case-insensitively or
+# they fail OPEN. Matching on the lowercased path keeps the guard fail-CLOSED
+# without changing WHICH patterns/territories are blocked.
+_lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
 # _is_sensitive <path> — 0 if the path is a secret/credential file (any depth).
 _is_sensitive() {
+    set -- "$(_lc "$1")"
     case "$1" in
         .env|.env.*|*/.env|*/.env.*)                          return 0 ;;
         *.key|*.pem|*.p12|*.pfx)                              return 0 ;;
@@ -40,6 +48,7 @@ _is_sensitive() {
 # KimiGraph/KiroGraph were removed 2026-07-09 (ADR-0003 amendment); nothing
 # should ever be committed under these paths again.
 _is_tombstone() {
+    set -- "$(_lc "$1")"
     case "$1" in
         .kimigraph|.kimigraph/*|.kirograph|.kirograph/*) return 0 ;;
     esac
@@ -64,7 +73,7 @@ _is_sync_replica() {
 # (except OpenCode, whose lane is a strict whitelist). Source writes by
 # claude/kimi/kiro are fine — this catches WRONG-CLI writes to config dirs.
 _territory_violation() {
-    committer="$1"; p="$2"
+    committer="$1"; p="$(_lc "$2")"
     case "$committer" in
         claude-code)
             case "$p" in
