@@ -30,6 +30,22 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.14] - 2026-07-11
+
+### Added
+
+- Headless dispatch now notifies Telegram (notification coverage gap): the bash
+  auto-dispatch path (`.ai/tools/dispatch-handoffs.sh`) was silent — only the
+  PowerShell pane-runner loop notified, so `Auto:yes` Risk-A/B handoffs dispatched
+  headless never reached the owner. New `.ai/tools/notify.sh` mirrors
+  `tools/4ai-panes/notify.ps1` (env-first config resolution, the same 2-line
+  bold-project Markdown format, robot/check/warning emoji, 5s curl timeout,
+  fail-open) and is wired into the dispatcher at three lifecycle points — `picked`
+  before launch, `done` on exit 0, `alert` on a non-zero exit. Both paths share the
+  throttle file `.ai/handoffs/.claims/.fleet-notify-throttle.json` (60s dedup on
+  `kind|project|handoff`) so they never double-send. `dispatch-own-queue.sh`
+  variants inherit this by delegating to `dispatch-handoffs.sh`.
+
 ## [0.0.13] - 2026-07-11
 
 ### Security

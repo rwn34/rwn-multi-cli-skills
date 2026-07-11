@@ -42,6 +42,29 @@ done
 root="$(pwd)"
 [ -d "$root/.ai/handoffs" ] || { echo "Run from repo root (no .ai/handoffs found)."; exit 1; }
 
+# Fleet Telegram notifications for the HEADLESS path (closes the coverage gap:
+# before this, only the PS pane-runner notified — bash-dispatched handoffs were
+# silent). Sourced fail-open: if notify.sh is missing/broken, define a no-op so a
+# notify call can never abort a dispatch. fleet_notify itself always returns 0 and
+# no-ops when the feature is off (unresolved token/chat_id). It shares the throttle
+# file .ai/handoffs/.claims/.fleet-notify-throttle.json with notify.ps1 (60s dedup)
+# so the two paths never double-send.
+# shellcheck source=notify.sh disable=SC1091
+. "$root/.ai/tools/notify.sh" 2>/dev/null || true
+command -v fleet_notify >/dev/null 2>&1 || fleet_notify() { :; }
+project_name="$(basename "$root")"
+
+# The recipient CLI's activity-log identity (mirrors pane-runner.ps1 Get-DefaultOwner).
+owner_for() {
+    case "$1" in
+        claude)   echo "claude-auto" ;;
+        kimi)     echo "kimi-cli" ;;
+        kiro)     echo "kiro-cli" ;;
+        opencode) echo "opencode" ;;
+        *)        echo "$1" ;;
+    esac
+}
+
 # Self-heal (gap C3): before selecting/dispatching, move any handoff left in
 # open/ but already marked Status:DONE into its sibling done/ dir — a forgotten
 # protocol-v3 self-retire. Fail-open: reconcile is exit-0 by contract and any
@@ -214,6 +237,10 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                 continue
             fi
             echo "DISPATCH [$cli] $rel"
+            owner=$(owner_for "$cli")
+            # PICKED notify — right as we commit to dispatching, before launch.
+            # Fail-open: a notify error must never abort a dispatch.
+            fleet_notify picked "$project_name" "$slug" "$cli" "$owner" || true
             out_tmp=$(mktemp)
             # AI_HANDOFF_DISPATCH=1 marks the spawned CLI's environment so its own
             # SessionStart/Stop dispatch hook no-ops (recursion guard — see header).
@@ -247,6 +274,13 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                     echo "stays OPEN — the dispatcher will retry it on the next --exec run."
                 } > "$report"
                 echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                # ALERT notify (Tier B — act, then notify). Fail-open.
+                fleet_notify alert "$project_name" "$slug" "$cli" "$owner" || true
+            else
+                # DONE notify — handoff dispatched to completion (exit 0). The
+                # recipient self-retires (moves to done/); we just announce it.
+                # Fail-open.
+                fleet_notify done "$project_name" "$slug" "$cli" "$owner" || true
             fi
             rm -f "$out_tmp"
             # Release the claim: the recipient self-retires the handoff (moves it
