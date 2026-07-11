@@ -49,6 +49,9 @@ is_versioned() {
     .ai/handoffs/README.md|.ai/handoffs/template.md) return 0 ;;
     .claude/*|.kimi/*|.kiro/*|.opencode/*) return 0 ;;
     scripts/git-hooks/*|scripts/install-template.sh) return 0 ;;
+    # Shipped-to-adopters scripts the installer copies (install-template.sh:396-397).
+    # NOT tools/4ai-panes/** — that is deliberately not shipped that way.
+    scripts/fleet-init.sh|scripts/sync-4ai-panes-install.ps1) return 0 ;;
     CLAUDE.md|AGENTS.md|opencode.json|.codegraph/config.json) return 0 ;;
     .github/workflows/framework-check.yml|.github/workflows/gates.yml) return 0 ;;
     # --- everything else: project source, not versioned framework content ---

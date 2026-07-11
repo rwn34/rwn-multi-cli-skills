@@ -32,6 +32,7 @@ ORIGINAL_BRANCH=""   # target's branch at install time (main/master/etc.)
 # in-flight handoffs, reports) instead of wiping it back to the empty template.
 UPDATE_MODE=0
 AI_STASH_DIR=""      # mktemp dir holding stashed .ai state across the .ai copy
+LOCAL_STASH_DIR=""   # mktemp dir holding gitignored per-CLI local state across the .claude copy
 
 # ---------- logging ----------
 log()  { echo "[install] $*"; }
@@ -261,19 +262,19 @@ copy_file() {
 # it, so the refreshed .ai keeps its accumulated cross-CLI state. No-op on fresh
 # install (UPDATE_MODE=0); in DRY_RUN just logs. Stateful paths (only if present):
 #   .ai/activity/  (log + archive)   .ai/reports/  (whole dir)
-#   .ai/handoffs/to-*/{open,done}    (every recipient queue)
+#   .ai/research/  (accumulated notes) .ai/handoffs/to-*/{open,done}  (queues)
 preserve_ai_state() {
   [ "$UPDATE_MODE" -eq 1 ] || return 0
   local src_ai="$TARGET/.ai"
 
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "DRY: update mode — would preserve .ai/activity, .ai/reports, and .ai/handoffs/to-*/{open,done} across the .ai copy"
+    log "DRY: update mode — would preserve .ai/activity, .ai/reports, .ai/research, and .ai/handoffs/to-*/{open,done} across the .ai copy"
     return 0
   fi
 
   AI_STASH_DIR="$(mktemp -d -t install-ai-stash.XXXXXX 2>/dev/null || mktemp -d)"
   local p
-  for p in activity reports; do
+  for p in activity reports research; do
     if [ -d "$src_ai/$p" ]; then
       cp -R "$src_ai/$p" "$AI_STASH_DIR/$p"
       log "Preserved .ai/$p"
@@ -309,7 +310,7 @@ restore_ai_state() {
   [ -n "$AI_STASH_DIR" ] && [ -d "$AI_STASH_DIR" ] || { warn "No .ai stash to restore"; return 0; }
 
   local p
-  for p in activity reports; do
+  for p in activity reports research; do
     if [ -d "$AI_STASH_DIR/$p" ]; then
       rm -rf "$dst_ai/$p"
       cp -R "$AI_STASH_DIR/$p" "$dst_ai/$p"
@@ -335,6 +336,46 @@ restore_ai_state() {
   AI_STASH_DIR=""
 }
 
+# A4: stash gitignored per-CLI local state before copy_dir ".claude" rm -rf's it.
+# .claude/settings.local.json is a gitignored local permission allowlist — git
+# can't recover it, so an update on an onboarded project would silently drop it.
+# No-op on fresh install (UPDATE_MODE=0); in DRY_RUN just logs.
+preserve_local_state() {
+  [ "$UPDATE_MODE" -eq 1 ] || return 0
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: update mode — would preserve .claude/settings.local.json across the .claude copy"
+    return 0
+  fi
+
+  LOCAL_STASH_DIR="$(mktemp -d -t install-local-stash.XXXXXX 2>/dev/null || mktemp -d)"
+  if [ -f "$TARGET/.claude/settings.local.json" ]; then
+    cp "$TARGET/.claude/settings.local.json" "$LOCAL_STASH_DIR/settings.local.json"
+    log "Preserved .claude/settings.local.json"
+  fi
+}
+
+# A4: restore the stashed gitignored local state over the freshly-copied .claude.
+restore_local_state() {
+  [ "$UPDATE_MODE" -eq 1 ] || return 0
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: update mode — would restore preserved .claude/settings.local.json over the refreshed .claude"
+    return 0
+  fi
+
+  [ -n "$LOCAL_STASH_DIR" ] && [ -d "$LOCAL_STASH_DIR" ] || return 0
+
+  if [ -f "$LOCAL_STASH_DIR/settings.local.json" ]; then
+    mkdir -p "$TARGET/.claude"
+    cp "$LOCAL_STASH_DIR/settings.local.json" "$TARGET/.claude/settings.local.json"
+    track ".claude/settings.local.json"
+    log "Restored .claude/settings.local.json"
+  fi
+  rm -rf "$LOCAL_STASH_DIR"
+  LOCAL_STASH_DIR=""
+}
+
 phase1() {
   log "=== Phase 1: copy framework files ==="
   # A4: on update, stash stateful .ai content around the destructive .ai copy.
@@ -342,7 +383,10 @@ phase1() {
   copy_dir ".ai"
   restore_ai_state
 
+  # A4: on update, stash gitignored .claude local state around the destructive copy.
+  preserve_local_state
   copy_dir ".claude"
+  restore_local_state
   copy_dir ".kimi"
   copy_dir ".kiro"
   # A4: keep the target's archived history on update — don't clobber with the
