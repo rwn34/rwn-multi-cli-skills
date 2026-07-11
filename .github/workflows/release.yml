@@ -7,17 +7,21 @@ name: release
 #      a GitHub Release for that tag.
 #
 #   2. A push to master — the auto-cut path. Reads .version from
-#      tools/multi-cli-install/package.json (the version SSOT) and, if tag
-#      v<version> does NOT yet exist, creates + pushes it and then runs the
-#      SAME build+publish steps for it. This exists because the version SSOT
-#      advanced (e.g. 0.0.4 -> 0.0.8) without anyone cutting tags, and a tag
-#      pushed by GITHUB_TOKEN does NOT cascade to re-trigger the tag-push path
-#      above — so the tag-create and the release must happen in one run.
+#      tools/multi-cli-install/package.json (the version SSOT) and, if no
+#      Release for v<version> exists yet, creates + pushes the tag and then
+#      runs the SAME build+publish steps for it. This exists because the
+#      version SSOT advanced (e.g. 0.0.4 -> 0.0.8) without anyone cutting tags,
+#      and a tag pushed by GITHUB_TOKEN does NOT cascade to re-trigger the
+#      tag-push path above — so the tag-create and the release must happen in
+#      one run.
 #
-# The "decide" step centralizes tag resolution + the skip/proceed gate so both
+# The "decide" step centralizes tag resolution + the idempotency gate so both
 # paths share every build/package/publish step below (parameterized on the
-# decided tag, never on github.ref directly). Most master pushes carry no
-# version bump, so v<version> already exists and the job cleanly no-ops.
+# decided tag, never on github.ref directly). The gate keys on whether a
+# Release for the target tag already exists (queried live via `gh release
+# view`), so a re-pushed version or a retried run is a clean no-op — never a
+# partial/duplicate re-publish. Serialization is enforced by the workflow-level
+# `concurrency` block so two master pushes cannot race the tag-create.
 #
 # Pre-release detection is purely tag-shape based — any tag containing "-"
 # (e.g. v0.0.1-pre.1, v0.1.0-rc.1) is marked pre-release.
@@ -35,6 +39,18 @@ on:
 permissions:
   contents: write
 
+# Serialize release runs so two near-simultaneous master pushes cannot both
+# reach the tag-create / publish steps and collide on the same tag or assets.
+# Group by ref: every master push shares one group and queues; a manually
+# pushed tag runs under its own group. cancel-in-progress is FALSE on purpose —
+# a queued run must wait for an in-flight publish to finish rather than abort
+# it, so we never leave a half-uploaded release behind. The decide-step
+# idempotency gate below then turns the queued run into a clean no-op if the
+# release already landed.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -42,46 +58,73 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # Full history + tags: the auto-notes generator diffs this tag against
-          # the previous one, and the decide step needs the tag list to know
-          # whether v<version> already exists.
+          # Full history + tags: the auto-notes generator diffs this tag
+          # against the previous one. (The decide step checks tag/release
+          # existence against origin directly, not this local checkout.)
           fetch-depth: 0
 
       - name: Decide target tag + whether to release
         id: decide
         env:
           GITHUB_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # 1. Resolve the target tag from whichever path triggered us.
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             # Tag-push path: release exactly the pushed tag.
             TAG="${GITHUB_REF#refs/tags/}"
-            echo "Tag push detected — releasing $TAG"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "Tag push detected — target $TAG"
+          else
+            # Master-push path: derive the tag from the version SSOT.
+            VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' tools/multi-cli-install/package.json | head -1)
+            if [[ -z "$VERSION" ]]; then
+              echo "Could not read .version from tools/multi-cli-install/package.json" >&2
+              exit 1
+            fi
+            TAG="v$VERSION"
+            echo "Master push detected — target $TAG"
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          # Master-push path: derive the tag from the version SSOT.
-          VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' tools/multi-cli-install/package.json | head -1)
-          if [[ -z "$VERSION" ]]; then
-            echo "Could not read .version from tools/multi-cli-install/package.json" >&2
-            exit 1
-          fi
-          TAG="v$VERSION"
-
-          if [[ -n "$(git tag -l "$TAG")" ]]; then
-            echo "Tag $TAG already exists — no version bump, skipping release."
+          # 2. Idempotency gate (the authoritative check for BOTH paths):
+          #    if a GitHub Release for $TAG is already published, do nothing.
+          #    Keyed on the RELEASE, not just the tag, and queried live so it
+          #    reflects any run that finished after this run's checkout. This
+          #    prevents a partial/duplicate re-publish (no half-uploaded assets,
+          #    no duplicate release) on a re-pushed version or a retried run.
+          #    Clean skip is chosen over hard-fail because the master path fires
+          #    on EVERY push — most carry no bump, so failing loudly would keep
+          #    the workflow perpetually red on the normal case. Skip is also
+          #    inherently idempotent and still recovers a partial failure (tag
+          #    pushed but release never created → release missing → we proceed).
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already published — nothing to do, skipping cleanly."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "Tag $TAG does not exist — creating + pushing it, then releasing."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG"
-          git push origin "$TAG"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          # 3. No release yet. On the master path, ensure the tag exists on
+          #    origin before we publish (the tag-push path already has it).
+          #    Check origin directly (not the local checkout) so we see a tag a
+          #    concurrent/earlier run may have pushed after our checkout.
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            if [[ -z "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+              echo "Tag $TAG absent on origin — creating + pushing it."
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git tag "$TAG"
+              # If a racing run pushed $TAG between the check and here, this push
+              # fails non-fatally under set -e and the job stops BEFORE any build
+              # or asset upload — no partial publish. The queued run then no-ops
+              # at the gate above once that run's release lands.
+              git push origin "$TAG"
+            else
+              echo "Tag $TAG already on origin but no release — publishing the missing release."
+            fi
+          fi
+
           echo "should_release=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
