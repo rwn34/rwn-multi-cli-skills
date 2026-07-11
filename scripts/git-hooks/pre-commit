@@ -130,6 +130,53 @@ _root_new_violation() {
     return 0   # at root, not allowlisted → violation
 }
 
+# ---- PowerShell syntax gate -------------------------------------------------
+# A .ps1 that does not PARSE must never enter history: the post-commit sync hook
+# deploys scripts toward the owner's LIVE launcher, so a broken script committed
+# here becomes a broken script running there. The sync script's own parse gate is
+# the LAST line of defense; this is the FIRST — refuse the commit itself.
+#
+# PORTABILITY: this gate is a no-op where no PowerShell host exists (Linux CI,
+# the test suite on ubuntu). It SKIPS gracefully rather than failing — a commit
+# must never be blocked just because the machine cannot run the check. It is
+# enforced where it matters: the owner's Windows box, which is the only place a
+# .ps1 actually executes.
+
+# _ps_host — echo the available PowerShell binary ('pwsh' or 'powershell'), or
+# nothing at all when neither is on PATH (→ callers skip the gate).
+_ps_host() {
+    if command -v pwsh >/dev/null 2>&1; then
+        printf 'pwsh'
+    elif command -v powershell >/dev/null 2>&1; then
+        printf 'powershell'
+    fi
+}
+
+# _ps1_parse_error <file> — 0 if <file> has a PowerShell SYNTAX error, with a
+# "line N: message" summary left in PS1_ERR. Returns 1 (allow) if the file parses
+# cleanly, if no PowerShell host is available, or if the host itself failed to
+# produce a verdict — we block only on a DEFINITIVE parse error, never on broken
+# tooling.
+PS1_ERR=""
+_ps1_parse_error() {
+    PS1_ERR=""
+    _psh="$(_ps_host)"
+    [ -n "$_psh" ] || return 1          # no PowerShell → graceful skip
+
+    # PowerShell needs a native path; Git Bash hands us an MSYS one.
+    _pspath="$1"
+    if command -v cygpath >/dev/null 2>&1; then
+        _pspath="$(cygpath -w "$1")" || return 1
+    fi
+
+    _psout="$("$_psh" -NoProfile -NonInteractive -Command "\$t=\$null; \$e=\$null; [void][System.Management.Automation.Language.Parser]::ParseFile('$_pspath', [ref]\$t, [ref]\$e); if (\$e -and \$e.Count -gt 0) { \$x=\$e[0]; Write-Output ('line ' + \$x.Extent.StartLineNumber + ': ' + \$x.Message) } else { Write-Output 'OK' }" 2>/dev/null | tr -d '\r')"
+
+    case "$_psout" in
+        line\ *) PS1_ERR="$_psout"; return 0 ;;   # definitive syntax error → block
+        *)       return 1 ;;                      # 'OK', or host produced nothing → allow
+    esac
+}
+
 # When sourced as a library, stop here (do not run the hook body).
 if [ -n "$PRECOMMIT_LIB" ]; then
     return 0 2>/dev/null || exit 0
@@ -192,6 +239,28 @@ while IFS= read -r -d '' p; do
     fi
 done < "$tmp_add"
 
+# Pass 3 — staged .ps1 files: PowerShell syntax gate (skips where no PS host).
+# Parses the STAGED CONTENT (git show ":$p"), not the working tree — a file that
+# is clean on disk but broken in the index must still be caught.
+if [ -n "$(_ps_host)" ]; then
+    while IFS= read -r -d '' p; do
+        [ -z "$p" ] && continue
+        p="$(printf '%s' "$p" | tr '\\' '/')"
+        case "$(_lc "$p")" in *.ps1) ;; *) continue ;; esac
+
+        tmp_ps="$(mktemp)" || { rm -f "$tmp_all" "$tmp_add"; fail_closed "mktemp failed"; }
+        # Deleted-but-staged paths have no blob to show → nothing to parse.
+        if git show ":$p" > "$tmp_ps" 2>/dev/null; then
+            if _ps1_parse_error "$tmp_ps"; then
+                offenders="${offenders}  - ${p}
+      PowerShell syntax error in the STAGED content — ${PS1_ERR}
+"
+            fi
+        fi
+        rm -f "$tmp_ps"
+    done < "$tmp_all"
+fi
+
 rm -f "$tmp_all" "$tmp_add"
 
 if [ -n "$offenders" ]; then
@@ -206,6 +275,8 @@ if [ -n "$offenders" ]; then
         echo "Fix: unstage the path(s)  ->  git reset <path>"
         echo "     route cross-CLI changes through .ai/handoffs/ (the correct CLI commits them)."
         echo "     sensitive files must never be committed."
+        echo "     .ps1 syntax errors: fix the script, then RE-STAGE it (the gate reads the"
+        echo "     staged content, so a working-tree-only fix will not clear it)."
         echo
         echo "Owner override (in a pinch):  git commit --no-verify"
         echo "=============================================================================="

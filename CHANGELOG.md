@@ -30,6 +30,27 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.18] - 2026-07-11
+
+### Added
+
+- PowerShell syntax gate in `scripts/git-hooks/pre-commit`: a `.ps1` that does not parse
+  can no longer enter history. For every staged `.ps1`, the hook extracts the **staged
+  blob** (`git show ":$file"`) — not the working tree — and runs it through
+  `[System.Management.Automation.Language.Parser]::ParseFile`. Any syntax error rejects
+  the commit, naming the file, the first error message and its line number. Reading the
+  index rather than the disk is deliberate: a file that is valid on disk but broken in the
+  staged version (a partial `git add`) is still caught. This complements the 0.0.17 sync
+  gate, which is the *last* line of defense — deploy-time. The commit is the *first*: a
+  broken `Selector.ps1` was committed and then carried toward the owner's live launcher by
+  the post-commit sync hook, gated only by a copy-hash check that proves fidelity, not
+  validity. The gate is a graceful no-op where no PowerShell host exists (`pwsh` and
+  `powershell` both absent — i.e. Linux CI), so it can never break commits or CI on
+  ubuntu; it enforces on the Windows box, the only place a `.ps1` actually runs. It blocks
+  only on a *definitive* parse error, never on a PowerShell host that failed to answer.
+  All other guards (territory, sensitive-file, tombstone, root-file) are unchanged; test
+  coverage in `scripts/git-hooks/test-pre-commit.sh` goes 50 -> 54 cases.
+
 ## [0.0.17] - 2026-07-11
 
 ### Added
