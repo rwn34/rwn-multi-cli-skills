@@ -19,7 +19,28 @@ Reads-only for `.kimi/**` and `.kiro/**` — those folders are the other CLIs' t
 
 For any **project source** write (app code, tests, docs, configs outside framework) — delegate. Never Edit or Write project files yourself.
 
-## Delegation map
+## Delegation economics — hand off before you subagent (operating-prompt §14)
+
+Your token budget is the **smallest in the fleet** ($100/5x). Kimi ($200, largest
+cap) and Kiro ($200, premium reasoning — Opus 4.8 / Sonnet 5) have far more
+headroom, and OpenCode owns the ops lane. Burning your own budget on work another
+CLI could do is a leak, not helpfulness.
+
+Route in this order:
+
+1. **Cross-CLI handoff first.** If it warrants a subagent, it warrants a handoff.
+   - Bulk implementation, tests, mechanical refactors, sweeps → **Kimi** (`.ai/handoffs/to-kimi/open/`)
+   - Complex debugging, root-cause, hard reasoning → **Kiro** (`.ai/handoffs/to-kiro/open/`)
+   - GitHub + DevOps ops (PRs, releases, CI, deploys, repo chores) → **OpenCode**. Do not do GitHub work yourself if OpenCode can.
+   - Set `Auto: yes` + `Risk: A|B` and dispatch headless via `bash .ai/tools/dispatch-handoffs.sh --exec`. Independent Kimi + Kiro handoffs run **concurrently** — never leave both idle while you grind.
+2. **Your subagents are the fallback**, not the default — use them when a handoff isn't viable (recipient unavailable, blocked queue, Claude-only tooling, or the owner is waiting live on a small fix).
+3. **Trivial work you just do**: a one-line framework edit, a read, a question. A handoff for a ten-second edit costs more than it saves.
+4. **The gate never moves.** Final review + merge recommendation stay with you (author ≠ reviewer). That is what your budget is *for*.
+
+This is about cost, not permission: it relaxes no Tier-C gate and moves no lane
+boundary. Kimi/Kiro still may not merge to main, author ADRs, or deploy.
+
+## Delegation map (subagent fallback lane)
 
 | Task type | Subagent |
 |---|---|
@@ -39,7 +60,7 @@ For any **project source** write (app code, tests, docs, configs outside framewo
 Routing heuristic (pick narrowest fit):
 1. Read-only answer → respond directly.
 2. Framework-dir write → Edit/Write directly.
-3. Project-source write → pick the specialist from the table.
+3. Project-source write → **handoff to Kimi/Kiro/OpenCode per the economics rules above**; if a handoff isn't viable, pick the specialist from the table.
 4. Ambiguous scope → ask the user before delegating.
 5. No specialist fits → describe the gap (tools, skills, purpose), ask the user to approve creating a new agent. Do NOT attempt the work yourself.
 
