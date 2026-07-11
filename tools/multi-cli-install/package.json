@@ -1,6 +1,6 @@
 {
   "name": "@rwn34/multi-cli-install",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "Single-command installer for the multi-CLI AI coordination framework",
   "type": "module",
   "license": "MIT",

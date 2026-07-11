@@ -95,6 +95,34 @@ assert_block "kimi -> .kiro replica"     _territory_violation kimi-cli ".kiro/st
 # Fail-closed: if the registry is unreadable, even a real replica path is blocked.
 assert_block "claude replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kimi/steering/operating-prompt.md"'
 
+echo "== PowerShell .ps1 syntax gate =="
+# The gate is enforced only where a PowerShell host exists. On Linux CI there is
+# none, so the check must SKIP (allow) rather than fail — assert that contract
+# unconditionally, then assert real parse behaviour only where PS is available.
+assert_allow "no PS host -> parse check skips" \
+    bash -c 'PATH=/nonexistent; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _ps1_parse_error /nonexistent.ps1'
+
+if [ -z "$(_ps_host)" ]; then
+    echo "SKIP  no powershell/pwsh on PATH — parse cases not run (gate is a no-op here)"
+else
+    ps_tmp="$(mktemp -d)"
+    printf 'param([string]$Name)\nif ($Name) { Write-Host "hi $Name" }\n' > "$ps_tmp/good.ps1"
+    printf 'function Broken {\n  if ($x -eq ) { }\n' > "$ps_tmp/bad.ps1"
+
+    assert_allow "valid .ps1 parses clean"   _ps1_parse_error "$ps_tmp/good.ps1"
+    assert_block "broken .ps1 is caught"     _ps1_parse_error "$ps_tmp/bad.ps1"
+
+    # The error summary must name the line and the reason — that is what makes the
+    # rejection actionable.
+    _ps1_parse_error "$ps_tmp/bad.ps1"
+    case "$PS1_ERR" in
+        line\ 2:*eq*) pass=$((pass + 1)); printf 'PASS  msg    error names line 2 + reason: %s\n' "$PS1_ERR" ;;
+        *)            fail=$((fail + 1)); printf 'FAIL  msg    expected "line 2: ...-eq...", got: %s\n' "$PS1_ERR" ;;
+    esac
+
+    rm -rf "$ps_tmp"
+fi
+
 echo "== unknown committer (strictest) =="
 assert_block "unknown -> .claude"        _territory_violation unknown ".claude/x.md"
 assert_block "unknown -> .kimi"          _territory_violation unknown ".kimi/x.md"
