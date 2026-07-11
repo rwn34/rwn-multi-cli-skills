@@ -105,3 +105,6 @@ id_ed25519*
 # Same pattern as .claims: ignore the sidecars, keep the contract README.
 .ai/handoffs/.quarantine/*
 !.ai/handoffs/.quarantine/README.md
+
+# ---- Agent worktrees (transient; created/removed by the Agent tool — never commit) ----
+.claude/worktrees/
