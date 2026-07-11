@@ -72,6 +72,9 @@ Know your lane. Know your limitation. Do not drift into another lane.
   user approves merge → deploy via OpenCode (dry-run + per-deploy human
   confirmation; Claude's `release-engineer` is fallback). Author ≠ reviewer ≠
   deployer.
+- **Lanes say who MAY do the work; §14 (delegation economics) says who SHOULD.**
+  Read them together: Claude thinks and gates, Kimi and Kiro build and test,
+  OpenCode ships.
 
 ## 5. Orchestrator rules
 
@@ -205,6 +208,48 @@ branch → commit → push (Tier A, feature branches) → PR (Tier B) → review
 (peer, then Claude gate) → user-approved merge (Tier C) → deploy per §4
 pipeline (Tier C). Deleting a merged branch removes only the pointer; commits
 remain reachable through the merge commit.
+
+## 14. Delegation economics — route by capacity, not by convenience
+
+Owner directive 2026-07-11. Fleet capacity is **not uniform**, and the CLI the
+owner talks to (Claude) is the *scarcest* one. Routing work to whoever is
+already in the conversation is the single easiest way to waste the fleet.
+
+| CLI | Budget headroom | Spend it on |
+|---|---|---|
+| **Kimi CLI** | Highest cap in the fleet ($200 plan, largest token ceiling) | Default executor: bulk implementation, test authoring + execution, mechanical refactors, sweeps |
+| **Kiro CLI** | High ($200 plan; premium reasoning — Opus 4.8 / Sonnet 5) | Hard reasoning: complex debugging, root-cause analysis, tricky design-constrained implementation |
+| **Claude Code** | **Lowest ($100, 5x plan) — the bottleneck** | Triage, specs/ADRs, writing the brief, and the FINAL review + merge gate |
+| **OpenCode** | Ops lane | GitHub + DevOps: PRs, releases, CI chores, deploys, repo housekeeping |
+
+**Rules:**
+
+1. **If it can be handed off, hand it off.** Claude performing work another CLI
+   could have done is a budget leak, not helpfulness.
+2. **Threshold — if it warrants a subagent, it warrants a handoff.** Claude's
+   own subagents are the *fallback* for when a handoff is genuinely not viable
+   (recipient CLI unavailable, blocked queue, Claude-only tooling, or the owner
+   is waiting live on a small fix), not the first choice. Trivial work — a
+   one-line framework edit, a read, answering a question — Claude just does; a
+   handoff for a ten-second edit costs more than it saves.
+3. **Route by nature of work**, per the table above. GitHub operations in
+   particular (opening PRs, release chores, CI fixes) go to **OpenCode** — do
+   not do them yourself if OpenCode can.
+4. **Handing off execution never hands off the gate.** Final review and the
+   merge decision stay with Claude (§4): author ≠ reviewer. This is the one
+   place Claude's budget is *meant* to be spent.
+5. **Parallelize across CLIs.** Independent handoffs to Kimi and Kiro dispatch
+   concurrently (`Auto: yes` + Risk A/B → `bash .ai/tools/dispatch-handoffs.sh
+   --exec`). Two executors idle while Claude grinds is the worst possible
+   allocation.
+6. **A brief is cheap; execution is not.** Writing a good handoff costs Claude
+   hundreds of tokens; doing the work costs thousands. Invest in the brief —
+   exact paths, `docs/` refs, the delivery bar, what to paste back as proof —
+   and let the high-cap CLIs burn the tokens.
+
+This section is about **cost**, not permission. It never relaxes a Tier-C gate
+(§8) and never moves a lane boundary (§4): Kimi and Kiro still may not merge to
+main, author ADRs, or deploy — no matter how much budget they have left.
 
 ---
 

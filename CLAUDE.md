@@ -27,6 +27,20 @@ product/design fork where the answer actually changes what you build. Rule of
 thumb: if it's reversible and clearly beneficial, do it and report — don't ask.
 This reinforces SSOT §8 (it does not relax any Tier-C gate).
 
+**Delegation economics (owner directive 2026-07-11, SSOT §14):** your token
+budget is the *smallest in the fleet* ($100/5x). Kimi ($200, largest cap) and
+Kiro ($200, premium reasoning — Opus 4.8 / Sonnet 5) have far more headroom;
+OpenCode owns the GitHub/DevOps ops lane. **So hand off as much as you can.**
+If it warrants a subagent, it warrants a handoff — your own subagents are the
+fallback (recipient unavailable, blocked queue, Claude-only tooling, owner
+waiting live), not the default. Bulk implementation/tests/refactors → Kimi;
+complex debugging/hard reasoning → Kiro; GitHub work (PRs, releases, CI) →
+OpenCode, don't do it yourself if OpenCode can. Trivial edits you still just do.
+**The final review + merge gate always stays yours** (author ≠ reviewer) — that
+is what your budget is for. This is a cost rule, not a permission rule: it
+relaxes no Tier-C gate and moves no lane boundary. Note it does NOT conflict
+with the owner-interaction preference above — don't ask, *do* hand off.
+
 ## Your identity for the activity log: `claude-code`
 
 ## Single source of truth
