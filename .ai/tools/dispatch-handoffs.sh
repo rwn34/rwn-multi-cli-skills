@@ -42,6 +42,14 @@ done
 root="$(pwd)"
 [ -d "$root/.ai/handoffs" ] || { echo "Run from repo root (no .ai/handoffs found)."; exit 1; }
 
+# Self-heal (gap C3): before selecting/dispatching, move any handoff left in
+# open/ but already marked Status:DONE into its sibling done/ dir — a forgotten
+# protocol-v3 self-retire. Fail-open: reconcile is exit-0 by contract and any
+# hiccup here must never block dispatch (hence the trailing `|| true`).
+if [ "$MODE" = "exec" ]; then
+    bash "$root/.ai/tools/reconcile-done-handoffs.sh" "$root" || true
+fi
+
 # Headless invocation per CLI. Verify locally before relying on kimi/kiro forms —
 # flags differ across versions (see .ai/cli-map.md § headless invocation).
 headless_cmd() {
