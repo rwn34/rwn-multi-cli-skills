@@ -151,7 +151,11 @@ function Get-ProjectInfo($project) {
 #                      [! OLD] = .ai/ exists but no version marker (pre-marker install)
 #                      [- none] = no .ai/ (framework not installed)
 #   handoff queue:     [H:<n>] = n open cross-CLI handoffs (.ai/handoffs/to-*/open/*.md),
-#                      hidden when n = 0
+#                      hidden when n = 0. B6: when one or more recipients have open
+#                      handoffs but their CLI is NOT available on this host (nobody
+#                      will poll/execute them), the badge appends a stranded marker:
+#                      [H:3 stranded:kimi,opencode]. This surfaces work that would
+#                      otherwise sit silently with no consumer.
 # Cheap on purpose: two Test-Path calls + one shallow glob per project; any error
 # in a broken project dir yields an empty/partial badge, never a crash.
 function Get-ProjectBadges($project) {
@@ -163,16 +167,35 @@ function Get-ProjectBadges($project) {
         elseif (Test-Path $aiDir) { $badges += "[! OLD]" }
         else { $badges += "[- none]" }
 
+        # B6: count open handoffs PER recipient and flag "consumer-less" ones -- a
+        # recipient with >=1 open handoff whose CLI is NOT available on this host
+        # (not in $cliAvailable), so no pane-runner/dispatcher will ever poll it.
+        # Map the to-<name> dir to the proper-case $cliAvailable key.
+        $cliKey = @{ claude = 'Claude'; kiro = 'Kiro'; kimi = 'Kimi'; opencode = 'OpenCode' }
         $handoffCount = 0
+        $stranded = @()
         $handoffRoot = Join-Path $aiDir "handoffs"
         if (Test-Path $handoffRoot) {
             Get-ChildItem -Path $handoffRoot -Directory -Filter "to-*" -ErrorAction SilentlyContinue |
                 ForEach-Object {
                     $openDir = Join-Path $_.FullName "open"
-                    $handoffCount += @(Get-ChildItem -Path $openDir -Filter "*.md" -File -ErrorAction SilentlyContinue).Count
+                    $n = @(Get-ChildItem -Path $openDir -Filter "*.md" -File -ErrorAction SilentlyContinue).Count
+                    if ($n -gt 0) {
+                        $handoffCount += $n
+                        $suffix = ($_.Name -replace '^to-', '').ToLower()
+                        $key = $cliKey[$suffix]
+                        if ($key -and $cliAvailable -and -not $cliAvailable[$key]) { $stranded += $suffix }
+                    }
                 }
         }
-        if ($handoffCount -gt 0) { $badges += "[H:$handoffCount]" }
+        if ($handoffCount -gt 0) {
+            if ($stranded.Count -gt 0) {
+                $list = ($stranded | Sort-Object -Unique) -join ','
+                $badges += "[H:$handoffCount stranded:$list]"
+            } else {
+                $badges += "[H:$handoffCount]"
+            }
+        }
     } catch {}
     return $badges -join " "
 }
@@ -992,6 +1015,10 @@ $use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
 # row stays one full-width interactive Claude (graceful degrade, never a broken split).
 if ($use6pane) {
     $dq = '"'
+    # B5: $activeCLIs = every AVAILABLE CLI in layout order, so every available
+    # recipient gets its own self-driving runner pane here (no cap/omission). The
+    # UNavailable-recipient case (handoffs with no local consumer) is surfaced by
+    # Get-ProjectBadges' [H:n stranded:...] marker, not by a runner.
     $bottomCLIs = $activeCLIs                      # available CLIs, layout order
     $n = $bottomCLIs.Count
 
