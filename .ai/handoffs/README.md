@@ -119,6 +119,14 @@ line is treated as C — conservative by default.
 > sender validates post-hoc. This removes the sender round-trip that left
 > correctly-completed handoffs lingering in `open/`. Applies to all four CLIs.
 
+> **Auto-reconcile (belt-and-suspenders, gap C3):** if a recipient sets
+> `Status: DONE` inline but forgets to move the file out of `open/`,
+> `.ai/tools/reconcile-done-handoffs.sh` moves any such `Status:DONE`-in-`open/`
+> handoff into its sibling `done/` dir. It runs at the start of every
+> `dispatch-handoffs.sh --exec` cycle (so every auto-dispatch across all CLIs
+> self-heals a forgotten step-4 self-retire), and can also be run standalone.
+> It is idempotent and fail-open (always exits 0).
+
 ## Polling — who watches the queues (P4, 2026-07-09)
 
 Three mechanisms, three scopes — they complement, never compete:
