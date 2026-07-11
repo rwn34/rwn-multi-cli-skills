@@ -54,6 +54,16 @@ function Resolve-FleetNotifyConfig {
     }
 }
 
+# Dedup / rate-throttle window (seconds). A notification identical to one already
+# sent within this window (same Kind+Project+Handoff) is suppressed so a flapping
+# pane loop cannot spam Telegram. State is an in-process script-scoped map keyed by
+# Kind|Project|Handoff -> last-sent UTC: the simplest fail-open store, because the
+# pane-runner loop is one long-lived process (the map naturally spans the flapping
+# window) and there is NO file I/O that could fail. A fresh process starts with an
+# empty map and always sends. Set to 0 to disable throttling entirely.
+$script:FleetNotifyThrottleSeconds = 60
+$script:FleetNotifyLastSent = @{}
+
 # Post a fleet event to the configured Telegram topic. Fail-open no-op if unset.
 # -Kind is one of picked|done|alert; the text is built from Owner/Handoff/Project.
 # Returns the Telegram API response object on send (callers pipe to Out-Null in
@@ -70,6 +80,23 @@ function Send-FleetNotification {
     try {
         $cfg = Resolve-FleetNotifyConfig
         if ($null -eq $cfg) { return $null }
+
+        # Throttle: suppress an identical notification (same Kind+Project+Handoff)
+        # already sent within FleetNotifyThrottleSeconds. Recorded at the send
+        # decision (not after the HTTP call), so a Telegram outage during a flapping
+        # loop still can't spam. Guarded so a throttle hiccup can never block a send
+        # (fail-open): any error here falls through and sends.
+        if ($script:FleetNotifyThrottleSeconds -gt 0) {
+            try {
+                $throttleKey = "$Kind|$Project|$Handoff"
+                $nowUtc = (Get-Date).ToUniversalTime()
+                $last = $script:FleetNotifyLastSent[$throttleKey]
+                if ($last -and (($nowUtc - $last).TotalSeconds -lt $script:FleetNotifyThrottleSeconds)) {
+                    return $null
+                }
+                $script:FleetNotifyLastSent[$throttleKey] = $nowUtc
+            } catch { }
+        }
 
         # Emoji built at runtime from code points (keeps this source ASCII-only):
         #   picked = robot (U+1F916), done = check mark (U+2705), alert = warning (U+26A0)

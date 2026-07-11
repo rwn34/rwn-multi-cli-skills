@@ -565,6 +565,24 @@ function Start-PaneRunner {
     # Left false on a crash / escaped exception -> exit non-zero (supervisor respawns).
     $stopIntent = $false
 
+    # Keyboard hatch guard: [Console]::KeyAvailable throws InvalidOperationException
+    # in a headless / redirected / no-console context, and it sits INSIDE the loop -
+    # so unguarded it would throw every iteration, tripping the recovery catch into an
+    # endless ALERT+sleep spin (the runner could never run headless at all). Probe the
+    # console ONCE up front: require an interactive process with non-redirected input,
+    # then touch KeyAvailable once to confirm the host backend truly supports it (some
+    # hosts pass the flags but still throw). If any check fails, the 'p'/'q' manual
+    # override is simply inactive and the loop polls handoffs normally (fail-open).
+    $keyboardAvailable = $false
+    try {
+        if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+            $null = [Console]::KeyAvailable
+            $keyboardAvailable = $true
+        }
+    } catch {
+        $keyboardAvailable = $false
+    }
+
     try {
         while ($true) {
             # Per-iteration reset so the recovery catch below never releases a claim
@@ -573,7 +591,9 @@ function Start-PaneRunner {
             try {
                 # Manual-override escape hatch: 'p' drops to the interactive CLI;
                 # 'q' is a clean intentional stop (exit 0, supervisor does not respawn).
-                if ([Console]::KeyAvailable) {
+                # Skipped entirely when no keyboard is attached (see guard above) so
+                # KeyAvailable never throws in a headless pane.
+                if ($keyboardAvailable -and [Console]::KeyAvailable) {
                     $k = [Console]::ReadKey($true)
                     if ($k.KeyChar -eq 'p') {
                         Write-Host "== PAUSED -> dropping to interactive $Cli (exit it to resume the loop) ==" -ForegroundColor Magenta

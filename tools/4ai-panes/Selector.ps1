@@ -1023,19 +1023,56 @@ if ($script:markedList.Count -ge 1) {
         Write-Host "Note: $($script:markedList.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
     }
 
-    # One wt invocation, one new-tab fleet group per marked project.
+    # One new-tab fleet group per marked project.
     $groups = @()
     foreach ($d in $targetDirs) { $groups += (Build-FleetTabCmd -TargetDir $d) }
-    $wtCmd = "-w rwn4ai " + ($groups -join " ; ")
+
+    # Windows caps a command line at ~8191 chars; one wt invocation chaining many
+    # new-tab groups can blow past that and silently truncate/fail. Keep the single
+    # invocation when it fits; otherwise pack the groups into batches that each stay
+    # under the threshold and fire them as successive `wt -w rwn4ai ...` calls -- every
+    # call targets the SAME rwn4ai window, so the tabs still land together, and each
+    # group keeps its own --title / -d untouched. Headroom under 8191 leaves room for
+    # the quoted "wtExe" path + cmd.exe wrapping.
+    $wtPrefix = "-w rwn4ai "
+    $maxCmdLen = 7000
+    $batches = @()
+    $current = @()
+    foreach ($g in $groups) {
+        $candidate = @($current) + $g
+        $candidateCmd = $wtPrefix + ($candidate -join " ; ")
+        if ($current.Count -gt 0 -and $candidateCmd.Length -gt $maxCmdLen) {
+            # Current batch is full; a single group that alone exceeds the limit still
+            # ships on its own (can't split one atomic new-tab further).
+            $batches += , @($current)
+            $current = @($g)
+        } else {
+            $current = $candidate
+        }
+    }
+    if ($current.Count -gt 0) { $batches += , @($current) }
 
     Clear-Host
     Write-Host "Batch launch ($($targetDirs.Count) projects): $($script:markedList -join ', ')" -ForegroundColor Cyan
-    Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
-    try {
-        & cmd.exe /c "`"$wtExe`" $wtCmd"
+    if ($batches.Count -gt 1) {
+        Write-Host "Command length over the safe limit; splitting into $($batches.Count) wt invocations (same rwn4ai window)." -ForegroundColor Yellow
+    }
+    $launchOk = $true
+    for ($b = 0; $b -lt $batches.Count; $b++) {
+        $wtCmd = $wtPrefix + (@($batches[$b]) -join " ; ")
+        Write-Host "  `"$wtExe`" $wtCmd" -ForegroundColor DarkGray
+        try {
+            & cmd.exe /c "`"$wtExe`" $wtCmd"
+            # Small settle between multiple invocations so WT attaches each tab to the
+            # existing window rather than racing to create a second rwn4ai window.
+            if ($batches.Count -gt 1 -and $b -lt $batches.Count - 1) { Start-Sleep -Milliseconds 500 }
+        } catch {
+            $launchOk = $false
+            Write-Host "Failed to launch batch: $_" -ForegroundColor Red
+        }
+    }
+    if ($launchOk) {
         Write-Host "Launched $($targetDirs.Count) project tabs in window rwn4ai." -ForegroundColor Green
-    } catch {
-        Write-Host "Failed to launch batch: $_" -ForegroundColor Red
     }
     return
 }
