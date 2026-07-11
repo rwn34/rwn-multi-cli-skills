@@ -204,6 +204,56 @@ fi
 
 rm -rf "$T"
 
+# --- dispatch-own-queue.sh: recursion guard no-ops under AI_HANDOFF_DISPATCH ---
+T2=$(mktemp -d)
+mkdir -p "$T2/open"
+cat > "$T2/open/202001010000-qualifying.md" <<'EOF'
+# qualifying
+Status: OPEN
+Auto: yes
+Risk: B
+EOF
+out_recur=$(AI_HANDOFF_DISPATCH=1 HANDOFFS_DIR="$T2/open" DISPATCH_STAMP="$T2/stamp" bash .kimi/hooks/dispatch-own-queue.sh 2>/dev/null)
+if [ -z "$out_recur" ]; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t52-dispatch-own-queue-recursion-guard")
+fi
+
+# --- dispatch-own-queue.sh: empty queue fast-exits (no output) ---
+mkdir -p "$T2/empty"
+out_empty=$(HANDOFFS_DIR="$T2/empty" DISPATCH_STAMP="$T2/stamp2" bash .kimi/hooks/dispatch-own-queue.sh 2>/dev/null)
+if [ -z "$out_empty" ]; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t53-dispatch-own-queue-empty-fast-exit")
+fi
+
+# --- dispatch-own-queue.sh: candidate -> would-dispatch (DRY_RUN, offline) ---
+out_cand=$(DRY_RUN=1 HANDOFFS_DIR="$T2/open" DISPATCH_STAMP="$T2/stamp3" bash .kimi/hooks/dispatch-own-queue.sh 2>/dev/null)
+if echo "$out_cand" | grep -q 'auto-dispatchable to-kimi handoff found' \
+   && echo "$out_cand" | grep -q -- '--exec --only kimi' \
+   && echo "$out_cand" | grep -q '202001010000-qualifying.md'; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t54-dispatch-own-queue-candidate-would-dispatch")
+fi
+
+# --- dispatch-own-queue.sh: debounce on 2nd run within 5 min ---
+DRY_RUN=1 HANDOFFS_DIR="$T2/open" DISPATCH_STAMP="$T2/stamp4" bash .kimi/hooks/dispatch-own-queue.sh >/dev/null 2>&1
+out_deb=$(DRY_RUN=1 HANDOFFS_DIR="$T2/open" DISPATCH_STAMP="$T2/stamp4" bash .kimi/hooks/dispatch-own-queue.sh 2>/dev/null)
+if echo "$out_deb" | grep -q 'debounced'; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1))
+    fails+=("t55-dispatch-own-queue-debounce")
+fi
+
+rm -rf "$T2"
+
 total=$((pass+fail))
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"

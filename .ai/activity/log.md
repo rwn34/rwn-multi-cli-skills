@@ -247,6 +247,11 @@ See the AI contract in this project's CLI steering files (`CLAUDE.md`,
 
 ---
 
+## 2026-07-11 10:13 — kimi-cli
+- Action: Executed handoff 202607110218 (Kimi always-on auto-dispatch, e2e-test gap). Added .kimi/hooks/dispatch-own-queue.sh (mirror of .ai/tools/dispatch-own-queue.sh, kimi-scoped: recursion guard, fast-exit empty queue, 5-min debounce, then dispatch-handoffs.sh --exec --only kimi; HANDOFFS_DIR/DISPATCH_STAMP/DISPATCH_ONLY/DRY_RUN overrides for offline tests). Wired SessionStart auto-dispatch into BOTH .kimi/config.toml and .ai/config-snippets/kimi-hooks.toml (inside the D3 >>> rwn-framework:kimi-hooks >>> fence, block byte-identical across files); kept handoffs-remind.sh as the human-visible listing. Marked WIRED in .kimi/hooks/README.md; added test_hooks.sh t52-t55 (recursion no-op, empty fast-exit, candidate->would-dispatch, debounce). Bumped tools/multi-cli-install/package.json 0.0.9 -> 0.0.10 (D1 gate). Verified with kimi masked (PATH=/usr/bin:/bin): throwaway Risk-B handoff selected + invoked dispatcher -> SKIP ('kimi' not on PATH, NO real launch); debounce on 2nd run; recursion guard silent; trap cleaned throwaway/stamps, real handoff untouched, no leftover claim sidecars.
+- Files: .kimi/hooks/dispatch-own-queue.sh (new), .kimi/config.toml, .ai/config-snippets/kimi-hooks.toml, .kimi/hooks/README.md, .kimi/hooks/test_hooks.sh, tools/multi-cli-install/package.json, .ai/activity/log.md
+- Decisions: timeout=600 for the dispatch hook (a real dispatch runs a headless CLI; the existing 10s guard timeout would kill it) — flagged tuneable. Added DRY_RUN knob (vs claude reference) so candidate->would-dispatch is testable offline without launching a CLI. Did NOT add the D3 fence to .kimi/config.toml (legacy unfenced doc block; pre-existing) — only the new hook entry is kept byte-identical. Did NOT commit/push (git mutation) — left to human/orchestrator.
+
 ## 2026-07-11 04:16 — kiro-cli
 - Action: Fixed handoff-queue dir fragility exposed when the last handoff is moved out. to-kiro/kimi/claude open/ dirs vanished (git drops empty dirs; only to-opencode had a .gitkeep). Added .gitkeep to all three open/ queues so they persist empty — matches to-opencode convention. No open handoffs pending.
 - Files: .ai/handoffs/to-kiro/open/.gitkeep, .ai/handoffs/to-kimi/open/.gitkeep, .ai/handoffs/to-claude/open/.gitkeep

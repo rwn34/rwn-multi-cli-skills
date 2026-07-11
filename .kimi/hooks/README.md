@@ -14,6 +14,7 @@ invoked by `~/.kimi-code/config.toml`.
 | safety-check.ps1 | `PreToolUse` | `Shell` | `safety-check.ps1` | ✅ **WIRED** | Broad PowerShell safety net (blocks dangerous patterns) |
 | Git status at start | `SessionStart` | — | `git-status.sh` | ⚠️ **NOT WIRED** | Inject `git status --short` into context at session start |
 | Open handoffs reminder | `SessionStart` | — | `handoffs-remind.sh` | ✅ **WIRED** | List qualifying (Status: OPEN, Auto: yes, Risk A\|B) handoffs in `.ai/handoffs/to-kimi/open/` at session start |
+| Auto-dispatch own queue | `SessionStart` | — | `dispatch-own-queue.sh` | ✅ **WIRED** | Run `dispatch-handoffs.sh --exec --only kimi` for qualifying to-kimi handoffs at session start (recursion-guarded + 5-min debounce; closes the e2e-test non-delivery gap) |
 | Open handoff queue-counts | `Stop` | — | `handoff-queue-count.sh` | ✅ **WIRED** | Print per-queue open counts across all `to-*/open` queues at each turn end (gap B4 poll point) |
 | Activity log inject | `UserPromptSubmit` | — | `activity-log-inject.sh` | ⚠️ **NOT WIRED** | Inject top 40 lines of `.ai/activity/log.md` into context |
 | Activity log remind | `Stop` | — | `activity-log-remind.sh` | ⚠️ **NOT WIRED** | Remind to update activity log if not touched in 60 min |
@@ -80,7 +81,13 @@ They are now active alongside the existing `safety-check.ps1` hook.
 The handoff-delivery hooks were wired on 2026-07-11 (handoff
 `.ai/handoffs/to-kimi/open/202607101900-wire-kimi-handoff-reminder.md`):
 `handoffs-remind.sh` (SessionStart — lists qualifying to-kimi handoffs) and
-`handoff-queue-count.sh` (Stop — per-queue open counts, gap B4).
+`handoff-queue-count.sh` (Stop — per-queue open counts, gap B4). The always-on
+auto-dispatcher `dispatch-own-queue.sh` (SessionStart — runs
+`dispatch-handoffs.sh --exec --only kimi` for qualifying handoffs; recursion-
+guarded + 5-min debounce) was added the same day (handoff
+`.ai/handoffs/to-kimi/open/202607110218-kimi-auto-dispatch-own-queue.md`),
+closing the e2e-test non-delivery gap. The listing hook is kept as the
+human-visible view; the dispatch hook acts on it.
 
 **To finish activation:** restart Kimi Code CLI or start a fresh session.
 

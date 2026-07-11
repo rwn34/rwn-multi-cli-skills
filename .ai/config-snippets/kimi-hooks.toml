@@ -89,4 +89,14 @@ timeout = 10
 event = "Stop"
 command = "bash .kimi/hooks/handoff-queue-count.sh"
 timeout = 10
+
+# --- Handoff auto-dispatch (SessionStart) ---
+# Closes the loop on the listing above: for qualifying (Auto: yes, Risk A|B)
+# to-kimi handoffs, run the scoped dispatcher so they are processed on session
+# start without a live pane. Recursion-guarded + debounced inside the script;
+# non-blocking (exit 0). Long timeout: a real dispatch runs a headless CLI.
+[[hooks]]
+event = "SessionStart"
+command = "bash .kimi/hooks/dispatch-own-queue.sh"
+timeout = 600
 # <<< rwn-framework:kimi-hooks <<<
