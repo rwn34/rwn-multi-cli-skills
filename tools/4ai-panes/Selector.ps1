@@ -478,6 +478,7 @@ function Build-FleetTabCmd {
     param([Parameter(Mandatory = $true)][string]$TargetDir)
 
     $dq = '"'
+    $leaf = Split-Path -Leaf $TargetDir             # project name -> WT tab --title
     $bottomCLIs = $activeCLIs                       # available CLIs, layout order
     $n = $bottomCLIs.Count
 
@@ -491,7 +492,7 @@ function Build-FleetTabCmd {
     if (-not $composite) {
         # Fallback tab: each available CLI as a plain interactive REPL (mirrors the
         # legacy 4-grid/bare intent, but as its own new-tab so a batch still works).
-        $cmd = "new-tab -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[0]].cmd)$dq"
+        $cmd = "new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[0]].cmd)$dq"
         for ($i = 1; $i -lt $n; $i++) {
             $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
             $cmd += " ; split-pane -V -s $frac -d $dq$TargetDir$dq powershell -NoExit -NoProfile -Command $dq$($cliDefs[$bottomCLIs[$i]].cmd)$dq"
@@ -502,7 +503,7 @@ function Build-FleetTabCmd {
     # Composite 6pane/5pane fleet tab (identical to the single-launch build).
     # TOP pane: bare interactive Claude (app-Claude). No pane-runner, no -Owner.
     $topCmd = "powershell -NoExit -NoProfile -Command $dq$($cliDefs['Claude'].cmd)$dq"
-    $cmd = "new-tab -d $dq$TargetDir$dq $topCmd"
+    $cmd = "new-tab --title $dq$leaf$dq -d $dq$TargetDir$dq $topCmd"
 
     # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
     # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
