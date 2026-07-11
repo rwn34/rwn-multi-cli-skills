@@ -16,6 +16,15 @@
 # script-scoped scriptblocks ($script:InvokeCli / $script:TestPidAlive) so the
 # test harness can drive the decision logic with a mock CLI. Dot-source with
 # -NoRun to load functions without entering the loop.
+#
+# Exit-code contract (consumed by run-pane-supervised.ps1): the runner declares
+# intent to its parent via the process exit code -
+#   0        = intentional / clean stop (Ctrl-C caught, or a 'q' quit key). The
+#              supervisor does NOT respawn; the pane falls through to a live prompt.
+#   non-zero = crash / escaped exception / parse-bind error / kill. The supervisor
+#              respawns subject to exponential backoff + a rolling-window cap.
+# The exit fires only from the outer finally in Start-PaneRunner, which runs only
+# when -not $NoRun, so -NoRun dot-source (tests) never hits it.
 
 param(
     [Parameter(Mandatory = $true)]
@@ -49,6 +58,17 @@ $ErrorActionPreference = 'Stop'
 # UTF-8 console so streamed CLI output (e.g. kimi's bullet glyphs) is not
 # mojibake'd. Guarded: never throw in a redirected / no-console context.
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+# Exit-code contract (see header): 0 = intentional stop, non-zero = crash.
+$script:ExitIntentional = 0
+$script:ExitCrash = 1
+
+# Pure decision helper for the exit-code contract (unit-tested; the loop itself is
+# infinite and not unit-testable). Intentional stop -> ExitIntentional, else crash.
+function Get-StopExitCode {
+    param([bool]$Intent)
+    if ($Intent) { return $script:ExitIntentional } else { return $script:ExitCrash }
+}
 
 # -- Single source of headless launch flags (mirrors dispatch-handoffs.sh) --
 # This is the ONLY place per-CLI launch flags live. If dispatch-handoffs.sh
@@ -533,8 +553,13 @@ function Start-PaneRunner {
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "| pane-runner  project=$proj  cli=$Cli" -ForegroundColor Cyan
     Write-Host "| IDLE poll every ${PollSeconds}s  |  MAX-continues=$MaxContinues" -ForegroundColor Cyan
-    Write-Host "| 'p' = pause -> interactive CLI   Ctrl-C = stop   |" -ForegroundColor Cyan
+    Write-Host "| 'p' = pause -> CLI   'q' = quit   Ctrl-C = stop  |" -ForegroundColor Cyan
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
+
+    # Intent flag for the exit-code contract: set true on a deliberate stop (Ctrl-C
+    # caught, or the 'q' quit key) so the outer finally exits 0 (do-not-respawn).
+    # Left false on a crash / escaped exception -> exit non-zero (supervisor respawns).
+    $stopIntent = $false
 
     try {
         while ($true) {
@@ -542,7 +567,8 @@ function Start-PaneRunner {
             # bound to a stale handoff from a previous iteration.
             $handoff = $null
             try {
-                # Manual-override escape hatch: 'p' drops to the interactive CLI.
+                # Manual-override escape hatch: 'p' drops to the interactive CLI;
+                # 'q' is a clean intentional stop (exit 0, supervisor does not respawn).
                 if ([Console]::KeyAvailable) {
                     $k = [Console]::ReadKey($true)
                     if ($k.KeyChar -eq 'p') {
@@ -551,6 +577,11 @@ function Start-PaneRunner {
                         try { Invoke-Expression (Get-InteractiveCmd -CliName $Cli) } finally { Pop-Location }
                         Write-Host "== resumed supervisor loop ==" -ForegroundColor Magenta
                         continue
+                    }
+                    if ($k.KeyChar -eq 'q') {
+                        Write-Host "== QUIT -> intentional stop (no respawn) ==" -ForegroundColor Magenta
+                        $stopIntent = $true
+                        break
                     }
                 }
 
@@ -599,12 +630,14 @@ function Start-PaneRunner {
                 }
             }
             catch [System.Management.Automation.PipelineStoppedException] {
-                # Ctrl-C / intentional stop: let it propagate to the outer finally so
-                # the runner stops cleanly instead of looping forever.
+                # Ctrl-C / intentional stop: mark intent (exit 0, do-not-respawn) and let
+                # it propagate to the outer finally so the runner stops cleanly.
+                $stopIntent = $true
                 throw
             }
             catch [System.OperationCanceledException] {
                 # PS 5.1 may surface a console cancel as OperationCanceled - also a stop.
+                $stopIntent = $true
                 throw
             }
             catch {
@@ -628,6 +661,12 @@ function Start-PaneRunner {
         # Ctrl-C / any exit: always release our claim.
         Remove-Claim -ProjectDir $ProjectDir -CliName $Cli
         Write-Host "== pane-runner stopped ($Cli) - claim released ==" -ForegroundColor DarkGray
+        # Exit-code contract: force the process code so the supervisor can tell an
+        # intentional stop (0, don't respawn) from a crash (non-zero, respawn). This
+        # runs only under -not $NoRun (Start-PaneRunner is not called with -NoRun), so
+        # dot-source tests never terminate here. An 'exit' here also suppresses a
+        # propagating terminating error, which is intended - intent already recorded.
+        exit (Get-StopExitCode -Intent $stopIntent)
     }
 }
 

@@ -987,15 +987,19 @@ if ($cliAvailable["Kiro"] -and $targetDir) {
 # .ai/ to watch, so no-dir always uses the bare CLI.
 # $cliLower (Proper -> lower) is derived from fleet-clis.ps1 near the top of this script.
 $paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
+# Auto-resurrection supervisor: launched instead of pane-runner.ps1 so a crashed
+# runner is respawned as an isolated child (exit-code contract, exp backoff, cap).
+$paneSupervisor = Join-Path $scriptDir 'run-pane-supervised.ps1'
 $bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
 
 # ── Layout gating ──
 # 6pane/5pane both need a project dir (the runner watches its .ai/), an available
-# Claude, the runner script, and non-bare mode. Anything else (4grid, bare, nodir,
-# unknown RWN_PANE_LAYOUT value, missing Claude/runner) falls through to the legacy
-# 4-grid path below — the instant, always-safe fallback.
+# Claude, the runner script, the supervisor script, and non-bare mode. Anything else
+# (4grid, bare, nodir, unknown RWN_PANE_LAYOUT value, missing Claude/runner/supervisor)
+# falls through to the legacy 4-grid path below — the instant, always-safe fallback,
+# which itself supervises when the supervisor script is present.
 $layoutSupported = $targetDir -and $cliAvailable['Claude'] `
-                   -and (Test-Path $paneRunner) -and (-not $bareMode)
+                   -and (Test-Path $paneRunner) -and (Test-Path $paneSupervisor) -and (-not $bareMode)
 $use6pane = ($paneLayoutMode -eq '6pane') -and $layoutSupported
 $use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
 
@@ -1037,8 +1041,9 @@ if ($use6pane) {
     $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
 
     # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction) = 0.5.
+    # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
     $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
-    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
+    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
     $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
 
     # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split operates
@@ -1046,7 +1051,7 @@ if ($use6pane) {
     # (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
     for ($i = 1; $i -lt $n; $i++) {
         $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
-        $runner = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
+        $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
         $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
     }
 
@@ -1086,8 +1091,9 @@ if ($use5pane) {
     $wtCmd = "-w rwn4ai new-tab -d $dq$targetDir$dq $topCmd"
 
     # BOTTOM pane 1: split-pane -H, new (bottom) pane takes (1 - topStripFraction).
+    # Launch the SUPERVISOR (keeps -NoExit) so a crashed runner auto-respawns.
     $bottomFraction = [math]::Round(1 - $topStripFraction, 4)
-    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
+    $runner0 = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[0]]) -ProjectDir $dq$targetDir$dq"
     $wtCmd += " ; split-pane -H -s $bottomFraction -d $dq$targetDir$dq $runner0"
 
     # BOTTOM panes 2..N: vertical splits sized for N equal columns. Each split
@@ -1095,7 +1101,7 @@ if ($use5pane) {
     # the new pane (N-k)/(N-k+1) of that region, leaving 1/N per column overall.
     for ($i = 1; $i -lt $n; $i++) {
         $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
-        $runner = "powershell -NoExit -NoProfile -File $dq$paneRunner$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
+        $runner = "powershell -NoExit -NoProfile -File $dq$paneSupervisor$dq -Cli $($cliLower[$bottomCLIs[$i]]) -ProjectDir $dq$targetDir$dq"
         $wtCmd += " ; split-pane -V -s $frac -d $dq$targetDir$dq $runner"
     }
 
@@ -1116,7 +1122,9 @@ function Get-PaneLaunch {
     if ($bareMode -or (-not $TargetDir) -or (-not (Test-Path $paneRunner))) {
         return "powershell -NoExit -NoProfile -Command `"$($cliDefs[$CliName].cmd)`""
     }
-    return "powershell -NoExit -NoProfile -File `"$paneRunner`" -Cli $($cliLower[$CliName]) -ProjectDir `"$TargetDir`""
+    # Prefer the supervisor (auto-respawn) when present; degrade to the bare runner.
+    $launcher = if (Test-Path $paneSupervisor) { $paneSupervisor } else { $paneRunner }
+    return "powershell -NoExit -NoProfile -File `"$launcher`" -Cli $($cliLower[$CliName]) -ProjectDir `"$TargetDir`""
 }
 
 # Split sequence: first CLI stays in this pane, remaining CLIs split off to the right
@@ -1138,8 +1146,9 @@ for ($i = 1; $i -lt $activeCLIs.Count; $i++) {
 }
 
 # This pane -> first CLI in the layout.
-# Self-driving path: run the pane-runner loop directly in this pane so it too
-# supervises its CLI. Bare path (RWN_PANE_BARE / nodir): plain interactive REPL.
+# Self-driving path: run the supervisor (auto-respawn) directly in this pane so it
+# too supervises its CLI, degrading to the bare runner if the supervisor is absent.
+# Bare path (RWN_PANE_BARE / nodir): plain interactive REPL.
 $firstCli = $activeCLIs[0]
 
 Clear-Host
@@ -1149,5 +1158,6 @@ if ($targetDir) {
 if ($bareMode -or (-not $targetDir) -or (-not (Test-Path $paneRunner))) {
     Invoke-Expression $cliDefs[$firstCli].cmd
 } else {
-    & $paneRunner -Cli $cliLower[$firstCli] -ProjectDir $targetDir
+    $launcher = if (Test-Path $paneSupervisor) { $paneSupervisor } else { $paneRunner }
+    & $launcher -Cli $cliLower[$firstCli] -ProjectDir $targetDir
 }
