@@ -24,6 +24,21 @@
 # - Safe to run repeatedly (idle CLIs, polling loops, or the user): dispatched
 #   handoffs get Status updated by the recipient, so re-runs skip them once
 #   they leave OPEN state. The human gate applies only to Risk C.
+#
+# Worktree-per-CLI (ADR-0004 amendment, 2026-07-11): every dispatched CLI runs
+# inside its OWN git worktree at <parent>/.wt/<project>/<cli>/, never in the
+# primary checkout. This closes the shared-HEAD race that let two concurrently
+# dispatched CLIs clobber each other's working files via `git checkout`
+# (see the ADR amendment's "2026-07-11 near-miss"). Rules, enforced below:
+#   - Worktree creation reuses scripts/wt-bootstrap.sh (single implementation).
+#   - An existing healthy worktree is REUSED, never destroyed.
+#   - Worktree setup failure => the dispatch for that handoff FAILS (non-zero
+#     item, handoff stays OPEN, failure report written). Falling back to the
+#     primary checkout is FORBIDDEN — see ensure_cli_worktree()'s contract.
+#   - Each dispatch cuts (or reuses) a per-handoff branch `exec/<cli>/<slug>`
+#     from a DECLARED base — `origin/master`, or the handoff's `Base:` field —
+#     never from ambient HEAD. This is a second, independent defect from the
+#     shared-HEAD one (see ensure_declared_base_branch()).
 
 set -u
 
@@ -133,6 +148,153 @@ bin_for() {
     esac
 }
 
+# --- Worktree-per-CLI (ADR-0004 amendment, 2026-07-11) ---
+#
+# Every dispatched CLI runs inside <parent>/.wt/<project>/<cli>/, never the
+# primary checkout. WT_BOOTSTRAP resolves relative to this script so the
+# dispatcher works regardless of the caller's cwd (it also `cd`s to $root
+# itself, but resolving via SCRIPT_DIR is more robust to future refactors).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WT_BOOTSTRAP="$SCRIPT_DIR/../../scripts/wt-bootstrap.sh"
+
+# worktree_path_for <cli> -> echoes the absolute worktree path for that CLI.
+# Pure path arithmetic — matches wt-bootstrap.sh's own WT_CONTAINER derivation
+# (sibling .wt/<project>/<cli> next to the primary checkout). No side effects.
+worktree_path_for() {
+    local cli="$1"
+    local project_dir parent_dir project_name
+    project_dir="$root"
+    parent_dir="$(dirname "$project_dir")"
+    project_name="$(basename "$project_dir")"
+    echo "$parent_dir/.wt/$project_name/$cli"
+}
+
+# ensure_cli_worktree <cli> -> 0 + prints the worktree path on success.
+# 1 on failure. NEVER prints/returns the primary checkout as a substitute —
+# callers MUST treat a non-zero return as "this dispatch cannot proceed", full
+# stop. Idempotent: delegates entirely to wt-bootstrap.sh, which reuses an
+# existing healthy worktree and never destroys one (see that script's header).
+ensure_cli_worktree() {
+    local cli="$1"
+    local wt_path
+    wt_path="$(worktree_path_for "$cli")"
+
+    if [ ! -f "$WT_BOOTSTRAP" ]; then
+        echo "ERROR: worktree bootstrap script not found at $WT_BOOTSTRAP" >&2
+        return 1
+    fi
+
+    # bash scripts/wt-bootstrap.sh <project-dir> <cli> — creates-or-reuses.
+    # Its own idempotency guard (git worktree already a valid worktree -> skip)
+    # is exactly the "reuse, never destroy" contract this function relies on.
+    if ! bash "$WT_BOOTSTRAP" "$root" "$cli" >&2; then
+        echo "ERROR: wt-bootstrap.sh failed for cli=$cli (see output above)" >&2
+        return 1
+    fi
+
+    # Belt-and-suspenders: confirm the path is actually a git worktree before
+    # handing it back. wt-bootstrap.sh dies loudly on a non-worktree collision,
+    # but re-verify here so a future refactor of that script can't silently
+    # regress this contract.
+    if ! git -C "$wt_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "ERROR: $wt_path exists but is not a usable git worktree" >&2
+        return 1
+    fi
+
+    echo "$wt_path"
+    return 0
+}
+
+# ensure_declared_base_branch <wt_path> <cli> <slug> <base> -> 0 on success
+# (worktree HEAD is now on the per-handoff branch, or on an existing branch
+# with the dispatcher's own uncommitted work preserved), 1 on hard failure.
+#
+# Fixes the SECOND, independent defect from the ADR-0004 amendment: even with
+# one worktree per CLI, a branch cut from "whatever HEAD happens to be" can
+# entangle one handoff's history with a prior one's (the incident's
+# Kimi-off-Kiro's-branch cut). Every dispatch therefore:
+#   1. `git fetch origin` for a fresh base (best-effort — network hiccups warn,
+#      never abort; a locally-cached ref is still a DECLARED base, just stale).
+#   2. Cuts/reuses `exec/<cli>/<slug>` FROM that declared base explicitly.
+#   3. Never touches a worktree with pre-existing uncommitted changes on a
+#      DIFFERENT branch — reports and lets the caller skip instead of
+#      clobbering live work (mirrors wt-bootstrap.sh's own safety posture).
+ensure_declared_base_branch() {
+    local wt_path="$1" cli="$2" slug="$3" base="$4"
+    local branch="exec/$cli/$slug"
+
+    # Uncommitted work already sitting in this worktree, on ANY branch, is
+    # never touched by a checkout/branch-create here — that is precisely the
+    # class of mutation (`git checkout` reverting on-disk files) the ADR
+    # amendment names as the root cause. Report and let the caller decide.
+    # Uncommitted work already sitting in this worktree, on ANY branch, is
+    # never touched by a checkout/branch-create here — that is precisely the
+    # class of mutation (`git checkout` reverting on-disk files) the ADR
+    # amendment names as the root cause. Report and let the caller decide.
+    #
+    # EXCLUDE .ai/** from this check. `.ai` is a directory JUNCTION into the
+    # canonical coordination plane (wt-bootstrap.sh link_ai()); `git status`
+    # does not honor .git/info/exclude for files reached through a Windows
+    # junction the way it does for a real directory — it recurses through the
+    # reparse point and reports newly-created files under .ai/ as untracked
+    # (`?? .ai/handoffs/...`) even though the junction line is present in
+    # info/exclude (verified empirically). Since .ai/ activity/handoffs churn
+    # constantly and legitimately across CLIs, treating it as "uncommitted
+    # work" here would make every dispatch spuriously skip the branch cut.
+    # This grep is scoped to exactly that known false-positive; it does not
+    # touch or attempt to fix the underlying junction/exclude gap, which is
+    # explicitly out of scope for this change (see the handoff's NON-goal).
+    dirty="$(git -C "$wt_path" status --porcelain 2>/dev/null | grep -v ' \.ai/' || true)"
+    if [ -n "$dirty" ]; then
+        local current
+        current="$(git -C "$wt_path" branch --show-current 2>/dev/null)"
+        echo "WARN: $wt_path has uncommitted changes on '$current' — reusing as-is, not cutting $branch" >&2
+        return 0
+    fi
+
+    # Best-effort fetch for a fresh base ref. Never fatal: a stale-but-present
+    # base is still a DECLARED one (better than ambient HEAD), and dispatch
+    # must not hard-fail just because the network is briefly unavailable.
+    if ! git -C "$wt_path" fetch origin >/dev/null 2>&1; then
+        echo "WARN: git fetch origin failed in $wt_path — using cached '$base'" >&2
+    fi
+
+    # Resolve the base ref. If it can't be resolved at all (no network AND no
+    # local cache), that's a hard failure — there is no declared base to cut
+    # from, and cutting from ambient HEAD is exactly what this function exists
+    # to prevent.
+    if ! git -C "$wt_path" rev-parse --verify --quiet "$base" >/dev/null; then
+        echo "ERROR: declared base '$base' does not resolve in $wt_path (no network + no local cache?)" >&2
+        return 1
+    fi
+
+    if git -C "$wt_path" show-ref --verify --quiet "refs/heads/$branch"; then
+        # Branch already exists (a retried/resumed dispatch for this exact
+        # handoff) — reuse it in place. Do not reset/rebase it onto the base;
+        # that would discard any commits already made on it.
+        if ! git -C "$wt_path" checkout --quiet "$branch" 2>/dev/null; then
+            echo "ERROR: could not check out existing branch $branch in $wt_path" >&2
+            return 1
+        fi
+    else
+        if ! git -C "$wt_path" checkout --quiet -b "$branch" "$base" 2>/dev/null; then
+            echo "ERROR: could not cut $branch from $base in $wt_path" >&2
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# base_for <file> -> echoes the declared base ref for a handoff. Reads an
+# optional `Base:` line from the status block (first 20 lines, mirrors the
+# Auto:/Risk: scan below); defaults to origin/master per the ADR amendment
+# ("origin/master unless the handoff names a different one").
+base_for() {
+    local file="$1" base
+    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i')"
+    [ -n "$base" ] && echo "$base" || echo "origin/master"
+}
+
 # --- Per-handoff claim-lock (ADR-0009 §3, contract in .ai/handoffs/.claims/README.md) ---
 # Prevents this dispatcher and a live 4AI pane-runner from processing the SAME
 # handoff twice. Sidecar path: .ai/handoffs/.claims/<recipient>__<slug>.claim.json.
@@ -236,7 +398,60 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                 echo "SKIP  [$cli] $rel — could not acquire claim (raced)"
                 continue
             fi
-            echo "DISPATCH [$cli] $rel"
+            # Worktree-per-CLI (ADR-0004 amendment): establish (idempotently
+            # reuse or create) this CLI's dedicated worktree BEFORE launching.
+            # Contract: wt_path is EITHER a real, usable worktree path, OR this
+            # branch fails the dispatch outright. There is no third outcome —
+            # ensure_cli_worktree() never returns the primary checkout as a
+            # substitute, and neither does this call site.
+            wt_path="$(ensure_cli_worktree "$cli")"
+            wt_rc=$?
+            if [ "$wt_rc" -ne 0 ] || [ -z "$wt_path" ]; then
+                echo "FAIL  [$cli] $rel — could not establish worktree; refusing to fall back to primary checkout"
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (worktree setup)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Stage: worktree-per-CLI setup (ADR-0004 amendment) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: run 'bash $WT_BOOTSTRAP $root $cli' manually to see the failure."
+                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
+                    echo "This dispatch was deliberately NOT run in the primary checkout — falling back"
+                    echo "to shared-HEAD execution is the exact bug ADR-0004's amendment forbids."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+            # Declared-base branch cut (second, independent defect from the
+            # shared-HEAD one): never leave the worktree on ambient HEAD.
+            base="$(base_for "$f")"
+            if ! ensure_declared_base_branch "$wt_path" "$cli" "$slug" "$base"; then
+                echo "FAIL  [$cli] $rel — could not establish declared-base branch (base=$base)"
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (declared-base branch)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Declared base: $base"
+                    echo "- Stage: declared-base branch cut (ADR-0004 amendment) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: inspect $wt_path by hand (git status/log) before retrying."
+                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+            echo "DISPATCH [$cli] $rel — worktree: ${wt_path#$root/} branch: exec/$cli/$slug (base: $base)"
             owner=$(owner_for "$cli")
             # PICKED notify — right as we commit to dispatching, before launch.
             # Fail-open: a notify error must never abort a dispatch.
@@ -246,7 +461,12 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             # SessionStart/Stop dispatch hook no-ops (recursion guard — see header).
             # Native argv invocation ("${HEADLESS_ARGV[@]}"), NOT eval on a string —
             # the handoff path is an inert argv element, never re-parsed by the shell.
-            ( cd "$root" && export AI_HANDOFF_DISPATCH=1 && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
+            #
+            # cd "$wt_path" (NOT "$root"): this is the worktree-per-CLI fix itself —
+            # every dispatched CLI runs in its OWN working tree, never the primary
+            # checkout, so a concurrent dispatch's `git checkout` can never revert
+            # this session's on-disk files (ADR-0004 amendment).
+            ( cd "$wt_path" && export AI_HANDOFF_DISPATCH=1 && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
             rc=${PIPESTATUS[0]}
             echo "---- [$cli] finished (exit $rc) ----"
             # Failure alerting (Tier B — act, then notify): non-zero exit writes a
