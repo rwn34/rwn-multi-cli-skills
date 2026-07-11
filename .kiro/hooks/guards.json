@@ -75,6 +75,13 @@
       "trigger": "Stop",
       "action": { "type": "command", "command": "bash .kiro/hooks/activity-log-remind.sh" },
       "enabled": true
+    },
+    {
+      "name": "handoff-queue-count",
+      "description": "Stop: prints per-queue open-handoff counts across all to-*/open queues so each turn end is a poll point (gap B4-Kiro). Mirrors Kimi's handoff-queue-count.sh; recursion-guarded via AI_HANDOFF_DISPATCH; non-blocking (exit 0). Coexists with activity-log-remind.",
+      "trigger": "Stop",
+      "action": { "type": "command", "command": "bash .kiro/hooks/handoff-queue-count.sh" },
+      "enabled": true
     }
   ]
 }

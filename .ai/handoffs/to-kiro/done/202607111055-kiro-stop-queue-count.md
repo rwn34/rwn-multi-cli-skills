@@ -1,5 +1,5 @@
 # Add a Stop queue-count hook for Kiro (gap B4-Kiro)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-11 15:05
@@ -75,3 +75,39 @@ root moves, the `HANDOFFS_ROOT` default must track it (same as Kimi's).
 Set Status to `DONE` and move this file to `.ai/handoffs/to-kiro/done/` yourself
 once the hook is wired and the runs are pasted. If blocked, leave it in `open/`,
 set Status `BLOCKED`, and append a `## Blocker` with verbatim errors.
+
+---
+
+## Completion (kiro-cli, 2026-07-11 18:24) — DONE
+
+Touched: `.kiro/hooks/handoff-queue-count.sh` (new), `.kiro/hooks/guards.json`
+(added Stop hook entry). Note: Kiro's config is `.kiro/hooks/guards.json`, not
+`.kiro/guards.json` as the Steps referenced.
+
+### (a) new script path + guards.json Stop array
+- New script: `.kiro/hooks/handoff-queue-count.sh`
+- guards.json Stop hooks now:
+
+      ['activity-log-remind', 'handoff-queue-count']
+
+### (b) pasted runs
+Populated-queue run (recursion guard unset — this dispatched session has
+`AI_HANDOFF_DISPATCH=1`, so `env -u AI_HANDOFF_DISPATCH` was used to see the
+populated path):
+
+    === (a) populated run, guard explicitly UNSET ===
+    REMINDER: open handoffs by queue:
+      to-kiro: 1 open
+    Auto-dispatchable (Risk A/B launch, Risk C HOLD): run
+      bash .ai/tools/dispatch-handoffs.sh --exec   # or --only kiro
+    exit=0
+
+Recursion-guard no-op run:
+
+    === (b) recursion-guard no-op, AI_HANDOFF_DISPATCH=1 ===
+    captured_output=[]
+    exit=0
+
+### (c) JSON validity
+`python -m json.tool .kiro/hooks/guards.json` → `guards.json: valid JSON`.
+Stop array lists BOTH `activity-log-remind` and `handoff-queue-count`.
