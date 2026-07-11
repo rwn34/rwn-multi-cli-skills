@@ -1,0 +1,8 @@
+{
+  "_comment": "Fleet Telegram notify config for the pane-runner (task #26). This is a SCHEMA EXAMPLE with placeholders only. The REAL file lives OUTSIDE the repo at ~/.rwn-auto/notify.json and is NEVER committed (it holds a live bot token). Env vars RWN_TELEGRAM_BOT_TOKEN / RWN_TELEGRAM_CHAT_ID / RWN_TELEGRAM_THREAD_ID take precedence over this file. If bot_token or chat_id is unresolved, notifications are silently disabled. thread_id is optional (omit for a non-topic chat).",
+  "telegram": {
+    "bot_token": "REPLACE_WITH_BOT_TOKEN",
+    "chat_id": "REPLACE_WITH_CHAT_ID",
+    "thread_id": "REPLACE_WITH_TOPIC_THREAD_ID_OR_OMIT"
+  }
+}
