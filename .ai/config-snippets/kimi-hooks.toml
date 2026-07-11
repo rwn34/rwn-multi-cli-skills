@@ -1,6 +1,10 @@
+# >>> rwn-framework:kimi-hooks >>>
 # =============================================================================
 # Paste-ready Kimi CLI hook configuration
 # =============================================================================
+# MANAGED BLOCK — do not edit between the >>> and <<< sentinel lines. The
+# installer's reconcile_block supersedes everything between them on every run
+# (scripts/install-template.sh). Put your own hooks OUTSIDE this block.
 # What:   Wires the project's 4 bash guard scripts into Kimi Code CLI so they
 #         fire automatically on every tool use (root agent + subagents).
 # How:    Append this entire block to your global ~/.kimi-code/config.toml, then
@@ -85,3 +89,4 @@ timeout = 10
 event = "Stop"
 command = "bash .kimi/hooks/handoff-queue-count.sh"
 timeout = 10
+# <<< rwn-framework:kimi-hooks <<<
