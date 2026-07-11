@@ -3,7 +3,7 @@
  sync-4ai-panes-install.ps1  -  allowlist-driven install sync
 ================================================================================
  Keeps the executable install (default ~/.rwn-auto/rwn-4AI-panes) in lockstep
- with the canonical source tree tools/4ai-panes/ by copying ONLY the nine tool
+ with the canonical source tree tools/4ai-panes/ by copying ONLY the ten tool
  files named in the allowlist below. It never touches the embedded framework
  (.ai/ .claude/ .git/ ...) or runtime state (.4pane-history, *.log, ...) that
  also live in the install dir. See docs/specs/4ai-panes-install-sync.md.
@@ -35,11 +35,12 @@ $ErrorActionPreference = 'Stop'
 
 # --- Authoritative tool-file allowlist -------------------------------------
 # The ONLY place the "which files are tool files" knowledge lives. Adding a
-# tenth tool file is a one-line edit here.
+# eleventh tool file is a one-line edit here.
 $Allowlist = @(
     'Launch4Panes.ps1',
     'Launch4Panes.vbs',
     'Selector.ps1',
+    'fleet-clis.ps1',
     'pane-runner.ps1',
     'restart-pane.ps1',
     'test-pane-runner.ps1',
