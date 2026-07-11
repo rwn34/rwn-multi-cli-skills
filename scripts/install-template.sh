@@ -667,49 +667,174 @@ PYEOF
   fi
 }
 
-# Append the project's Kimi hook snippet to the user-global Kimi config so the
-# guards actually fire. Kimi Code reads ~/.kimi-code/config.toml (NOT ~/.kimi/;
+# reconcile_block <target-file> <begin-marker> <end-marker> <snippet-file>
+# Idempotent RECONCILE of a marker-fenced managed block inside a user-global text
+# file (gap D3, docs/specs/global-config-tracking.md). The snippet file carries
+# its OWN begin/end sentinel lines (they ARE its first + last lines), so the whole
+# snippet is the managed block. This SUPERSEDES the old append-once wire step:
+#   - existing block (begin AND end present): replace it (inclusive) with snippet
+#   - absent: append the fenced snippet on a fresh line (CREATE)
+# Content OUTSIDE the sentinels is never read or rewritten. Atomic write via a
+# same-dir temp file + rename (a crash never leaves a truncated global config).
+# POSIX-bash / Git-Bash safe.
+reconcile_block() {
+  local target="$1" begin="$2" end="$3" snippet="$4"
+
+  if [ ! -f "$snippet" ]; then
+    warn "Managed-block snippet missing, skipping reconcile: $snippet"
+    return 0
+  fi
+
+  local have_block=0
+  if [ -f "$target" ] \
+     && grep -qF "$begin" "$target" 2>/dev/null \
+     && grep -qF "$end" "$target" 2>/dev/null; then
+    have_block=1
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    if [ "$have_block" -eq 1 ]; then
+      log "DRY: reconcile (SUPERSEDE) managed block '$begin' in $target"
+    else
+      log "DRY: reconcile (CREATE) managed block '$begin' in $target"
+    fi
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target")"
+  [ -f "$target" ] || touch "$target"
+
+  local dir tmp
+  dir="$(dirname "$target")"
+  tmp="$(mktemp "$dir/.reconcile-XXXXXX" 2>/dev/null || echo "$dir/.reconcile.$$")"
+
+  if [ "$have_block" -eq 1 ]; then
+    # SUPERSEDE: at the begin line, emit the whole snippet; skip the old block up
+    # to and including the old end line; pass every other line through untouched.
+    awk -v b="$begin" -v e="$end" -v sf="$snippet" '
+      $0 == b {
+        while ((getline line < sf) > 0) print line
+        close(sf)
+        skipping = 1
+        next
+      }
+      $0 == e { skipping = 0; next }
+      skipping { next }
+      { print }
+    ' "$target" > "$tmp"
+    mv "$tmp" "$target"
+    log "Reconciled (superseded) managed block '$begin' in $target"
+  else
+    # CREATE: preserve existing content, ensure it ends with a newline, then
+    # append a blank separator + the fenced snippet.
+    cat "$target" > "$tmp"
+    [ -s "$tmp" ] && [ -n "$(tail -c 1 "$tmp" 2>/dev/null)" ] && printf '\n' >> "$tmp"
+    [ -s "$tmp" ] && printf '\n' >> "$tmp"
+    cat "$snippet" >> "$tmp"
+    mv "$tmp" "$target"
+    log "Reconciled (created) managed block '$begin' in $target"
+  fi
+}
+
+# reconcile_mcp <target-json> <deprecated-key> [deprecated-key ...]
+# Key-managed reconcile of a per-user MCP JSON (gap D3). The framework owns a set
+# of server keys; here it PRUNES the known-deprecated ones (kimigraph, kirograph,
+# and a legacy bare codegraph — the ADR-0003-removed servers that produced the
+# every-terminal startup error). User-added servers are NEVER touched. No-op if
+# the target file is absent. Uses python for a safe JSON edit (find_python), with
+# a warn-only fallback if no python — never a hand-rolled JSON edit that could
+# corrupt the file. Parse errors are fail-closed (warn + skip, never corrupt).
+reconcile_mcp() {
+  local target="$1"; shift
+  local deprecated="$*"
+
+  if [ ! -f "$target" ]; then
+    log "MCP reconcile: $target absent — nothing to prune."
+    return 0
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY: prune deprecated MCP servers [$deprecated] from $target (preserve user servers)"
+    return 0
+  fi
+
+  local py
+  py="$(find_python)"
+  if [ -n "$py" ]; then
+    if "$py" - "$target" $deprecated <<'PYEOF'
+import json, os, sys, tempfile
+path = sys.argv[1]
+deprecated = sys.argv[2:]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (ValueError, OSError) as e:
+    sys.stderr.write("reconcile_mcp: cannot parse %s (%s) — skipping\n" % (path, e))
+    sys.exit(3)
+servers = data.get("mcpServers")
+if not isinstance(servers, dict):
+    sys.exit(0)  # no managed section — nothing to prune
+removed = [k for k in deprecated if k in servers]
+for k in removed:
+    servers.pop(k, None)
+if removed:
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)  # atomic same-dir rename
+    sys.stderr.write("reconcile_mcp: pruned %s\n" % ", ".join(removed))
+PYEOF
+    then
+      log "MCP reconcile: $target checked (deprecated servers pruned if present)."
+    else
+      warn "MCP reconcile: python parse/prune failed for $target — left unchanged (fail-closed)."
+    fi
+  else
+    # No python: never hand-edit JSON. Warn if deprecated keys look present.
+    if grep -Eq '"(kimigraph|kirograph|codegraph)"' "$target" 2>/dev/null; then
+      warn "MCP reconcile: no python interpreter; $target may still contain deprecated"
+      warn "  servers (kimigraph/kirograph/codegraph). Remove them by hand, or install"
+      warn "  python and re-run the installer."
+    else
+      log "MCP reconcile: no python; no obvious deprecated servers in $target."
+    fi
+  fi
+}
+
+# Reconcile the project's Kimi hook snippet into the user-global Kimi config so
+# the guards actually fire. Kimi Code reads ~/.kimi-code/config.toml (NOT ~/.kimi/;
 # the latter is the pre-migration path — see ~/.kimi/.migrated-to-kimi-code and
-# the snippet's own SSOT header). Idempotent via a marker line, mirroring
-# merge_gitignore. Creates the dir/file if absent. POSIX-bash / Git-Bash safe.
+# the snippet's own SSOT header). Creates the dir/file if absent. POSIX-bash /
+# Git-Bash safe.
 #
-# A4 note: this is APPEND-ONCE by marker. On update (UPDATE_MODE=1) it sees the
-# existing marker and skips — it does NOT reconcile a changed snippet into the
-# already-wired block. If the template's kimi-hooks.toml changes, the target keeps
-# the stale block until manually re-applied.
-# TODO(A4-followup): reconcile ~/.kimi-code/config.toml block on snippet change
+# A4 (resolved): this is no longer APPEND-ONCE. reconcile_block SUPERSEDES the
+# fenced kimi-hooks block on every run (BEGIN/END sentinels carried by the snippet
+# itself), so a changed snippet — a new guard, a fixed path, a removed hook — now
+# propagates to an already-wired machine. User content OUTSIDE the sentinels is
+# preserved byte-for-byte. Resolves the former TODO(A4-followup).
 wire_kimi_hooks() {
   # Source the snippet from the template (SSOT, always present) rather than the
   # target: phase1's copy only lands in non-dry runs, and template == target copy.
   local snippet="$TEMPLATE_DIR/.ai/config-snippets/kimi-hooks.toml"
   local cfg="$HOME/.kimi-code/config.toml"
-  local kimi_marker="$MARKER kimi-hooks (template @ $TEMPLATE_SHA)"
 
-  if [ ! -f "$snippet" ]; then
-    warn "Kimi hook snippet missing, skipping wire: $snippet"
-    return 0
-  fi
+  reconcile_block "$cfg" \
+    "# >>> rwn-framework:kimi-hooks >>>" \
+    "# <<< rwn-framework:kimi-hooks <<<" \
+    "$snippet"
+}
 
-  if [ "$DRY_RUN" -eq 1 ]; then
-    log "DRY: append .ai/config-snippets/kimi-hooks.toml -> $cfg (marker-guarded, create if absent)"
-    return 0
-  fi
-
-  if [ -f "$cfg" ] && grep -qF "$MARKER kimi-hooks" "$cfg" 2>/dev/null; then
-    log "Kimi hooks already wired in $cfg — skipping."
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$cfg")"
-  [ -f "$cfg" ] || touch "$cfg"
-  # trailing-newline safety so the appended block starts on its own line
-  [ -n "$(tail -c 1 "$cfg" 2>/dev/null)" ] && echo "" >> "$cfg"
-  {
-    echo ""
-    echo "$kimi_marker"
-    cat "$snippet"
-  } >> "$cfg"
-  log "Wired Kimi hooks -> $cfg (appended .ai/config-snippets/kimi-hooks.toml)"
+# Prune the ADR-0003-removed MCP servers from Kimi's per-user MCP JSON. The D3
+# incident was ~/.kimi/mcp.json still registering kimigraph/kirograph/codegraph
+# after ADR-0003 removed them, producing a startup error on every terminal. Also
+# checks ~/.kimi-code/mcp.json (post-migration path). Both no-op if absent.
+reconcile_kimi_mcp() {
+  local f
+  for f in "$HOME/.kimi/mcp.json" "$HOME/.kimi-code/mcp.json"; do
+    reconcile_mcp "$f" kimigraph kirograph codegraph
+  done
 }
 
 detect_language() {
@@ -865,6 +990,7 @@ phase3() {
   merge_gitignore
   wire_mcp
   wire_kimi_hooks
+  reconcile_kimi_mcp
 
   local lang
   lang="$(detect_language)"
@@ -1118,10 +1244,15 @@ Phase 6 — follow-up (NOT executed by this script):
 
 Kimi hooks wiring:
   The Kimi CLI reads ~/.kimi-code/config.toml (user-global) for hook definitions.
-  This installer already appended .ai/config-snippets/kimi-hooks.toml to that
-  file (idempotent, marker-guarded) in phase 3 — see the wire_kimi_hooks log
-  line above. If you need to re-apply it manually (Project-level .kimi/config.toml
-  is not auto-loaded by Kimi CLI at time of writing — see .ai/known-limitations.md):
+  This installer RECONCILED the .ai/config-snippets/kimi-hooks.toml managed block
+  into that file (BEGIN/END fenced, idempotent) in phase 3 — see the wire_kimi_hooks
+  log line above. Reconcile SUPERSEDES on every run: a changed snippet now
+  propagates to an already-wired machine (no longer append-once), while your own
+  hooks OUTSIDE the >>> / <<< sentinels are preserved. It also pruned the
+  ADR-0003-removed MCP servers (kimigraph/kirograph/codegraph) from ~/.kimi/mcp.json
+  if present. If you need to re-apply the block manually (Project-level
+  .kimi/config.toml is not auto-loaded by Kimi CLI at time of writing — see
+  .ai/known-limitations.md):
 
   cat "$TARGET/.ai/config-snippets/kimi-hooks.toml" >> ~/.kimi-code/config.toml
 
