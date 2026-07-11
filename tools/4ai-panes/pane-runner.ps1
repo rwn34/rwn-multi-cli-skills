@@ -77,26 +77,37 @@ function Get-StopExitCode {
 # -- Single source of headless launch flags (mirrors dispatch-handoffs.sh) --
 # This is the ONLY place per-CLI launch flags live. If dispatch-handoffs.sh
 # headless_cmd changes, change it here too (and vice versa).
+#
+# SECURITY: returns an argv ARRAY (exe + args), never a command string. The
+# untrusted $Prompt (which embeds the handoff rel path, derived from an
+# attacker-controllable filename) is ONE array element, so the call operator
+# passes it as inert data - it is never re-parsed by a shell/PowerShell.
+# Building a string here and running it through Invoke-Expression was a
+# command-injection hole (a filename like `x$(cmd).md` executed); do NOT
+# reintroduce a string form. The leading comma-free @(...) always yields a
+# fresh array so PowerShell never unwraps a single-flag CLI's return.
 function Get-HeadlessCmd {
     param([string]$CliName, [string]$Prompt)
     switch ($CliName) {
-        'claude'   { return "claude -p `"$Prompt`" --permission-mode acceptEdits" }
-        'kimi'     { return "kimi -p `"$Prompt`"" }
-        'kiro'     { return "kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator `"$Prompt`"" }
-        'opencode' { return "opencode run --auto --agent opencode `"$Prompt`"" }
+        'claude'   { return @('claude', '-p', $Prompt, '--permission-mode', 'acceptEdits') }
+        'kimi'     { return @('kimi', '-p', $Prompt) }
+        'kiro'     { return @('kiro-cli', 'chat', '--no-interactive', '--trust-all-tools', '--agent', 'orchestrator', $Prompt) }
+        'opencode' { return @('opencode', 'run', '--auto', '--agent', 'opencode', $Prompt) }
         default    { throw "Unknown CLI: $CliName" }
     }
 }
 
 # Bare interactive form (used by the pause / manual-override escape hatch).
-# Mirrors Selector.ps1 $cliDefs[...].cmd.
+# Mirrors Selector.ps1 $cliDefs[...].cmd. Also an argv array (no untrusted
+# prompt here, but kept consistent so the call site uses the call operator, not
+# Invoke-Expression).
 function Get-InteractiveCmd {
     param([string]$CliName)
     switch ($CliName) {
-        'claude'   { return "claude --dangerously-skip-permissions" }
-        'kimi'     { return "kimi --yolo" }
-        'kiro'     { return "kiro-cli chat --trust-all-tools --agent orchestrator" }
-        'opencode' { return "opencode --agent opencode" }
+        'claude'   { return @('claude', '--dangerously-skip-permissions') }
+        'kimi'     { return @('kimi', '--yolo') }
+        'kiro'     { return @('kiro-cli', 'chat', '--trust-all-tools', '--agent', 'orchestrator') }
+        'opencode' { return @('opencode', '--agent', 'opencode') }
         default    { throw "Unknown CLI: $CliName" }
     }
 }
@@ -111,8 +122,13 @@ function Get-InteractiveCmd {
 # value; only the exit code below is returned. Returns the child's exit code.
 $script:InvokeCli = {
     param([string]$CliName, [string]$Prompt)
-    $cmd = Get-HeadlessCmd -CliName $CliName -Prompt $Prompt
-    Write-Host "  > $cmd" -ForegroundColor DarkGray
+    # argv array: [0] = exe, [1..] = args. The untrusted $Prompt is one element,
+    # invoked via the call operator (& $exe @args) so it is NEVER re-parsed as a
+    # command string (was Invoke-Expression - a filename-to-RCE hole).
+    $argv = @(Get-HeadlessCmd -CliName $CliName -Prompt $Prompt)
+    $exe  = $argv[0]
+    $rest = @($argv | Select-Object -Skip 1)
+    Write-Host "  > $exe $($rest -join ' ')" -ForegroundColor DarkGray
     # A native CLI's stderr is normal progress streaming, not a fatal error. Under
     # $ErrorActionPreference='Stop' the 2>&1-merged stderr record is promoted to a
     # terminating NativeCommandError, which would unwind the whole supervisor loop
@@ -123,7 +139,7 @@ $script:InvokeCli = {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        Invoke-Expression $cmd 2>&1 | Out-Host
+        & $exe @rest 2>&1 | Out-Host
     } finally {
         $ErrorActionPreference = $prevEAP
     }
@@ -598,7 +614,10 @@ function Start-PaneRunner {
                     if ($k.KeyChar -eq 'p') {
                         Write-Host "== PAUSED -> dropping to interactive $Cli (exit it to resume the loop) ==" -ForegroundColor Magenta
                         Push-Location $ProjectDir
-                        try { Invoke-Expression (Get-InteractiveCmd -CliName $Cli) } finally { Pop-Location }
+                        # Call operator + argv array (no Invoke-Expression): keeps the
+                        # manual-override hatch working without a re-parsed string.
+                        $icmd = @(Get-InteractiveCmd -CliName $Cli)
+                        try { & $icmd[0] @($icmd | Select-Object -Skip 1) } finally { Pop-Location }
                         Write-Host "== resumed supervisor loop ==" -ForegroundColor Magenta
                         continue
                     }

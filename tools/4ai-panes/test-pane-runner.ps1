@@ -228,8 +228,10 @@ $script:MaxHandoffAttempts = $origMax
 #     $script:InvokeCli (captured before the mock) with the call-site EAP='Stop'
 #     the supervisor loop uses. Override Get-HeadlessCmd so the spawned command is
 #     a real native process (cmd) that writes stderr and returns exit 3.
+#     Get-HeadlessCmd returns an argv ARRAY (exe + args) since the injection fix;
+#     the stub mirrors that contract (cmd, /c, <command>).
 $origHeadless = ${function:Get-HeadlessCmd}
-function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return 'cmd /c "echo boom 1>&2 & exit 3"' }
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'echo boom 1>&2 & exit 3') }
 $ErrorActionPreference = 'Stop'   # replicate the loop's call-site EAP
 $pThrew = $false
 $pCode = $null
