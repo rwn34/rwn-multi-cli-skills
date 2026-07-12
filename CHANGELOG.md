@@ -68,6 +68,22 @@ promotion happened.
   aligned), `.opencode/contract.md` + `AGENTS.md` (OpenCode is the deploy
   executor: staging fleet-authorized, production human-confirmed),
   `CLAUDE.md`, `.claude/agents/orchestrator.md`.
+- **Implementation subagents are now FALLBACK-ONLY, and using one requires a
+  written reason** (operating-prompt §14.2a, owner directive 2026-07-12). §14
+  already said "hand off as much as you can", but it stated that as an economic
+  preference with no mechanism — so it held while Claude was calm and collapsed
+  the moment it was busy. §14.2a converts it into a rule with a visible failure
+  mode: Claude MUST NOT reach for `coder`, `tester`, `refactorer`, `debugger`,
+  `doc-writer`, or `release-engineer` for work Kimi, Kiro, or OpenCode could do,
+  and any invocation must name one of exactly four legitimate exceptions in the
+  activity log — **(a)** Claude-exclusive territory (`.claude/**`, which the
+  cross-CLI guard and the ADR-0005 backstop put out of every other CLI's reach),
+  **(b)** recipient genuinely unavailable (say which, and how you know),
+  **(c)** the owner waiting live on a small fix, **(d)** the final review + merge
+  gate (Claude's by definition — author ≠ reviewer). An unexplained invocation is
+  a protocol violation, not a convenience. This mirrors ADR-0011's
+  `infra-engineer` fallback-logging rule and for the same reason: an activity log
+  filling with unexplained subagent use is the tell that the reflex has returned.
 - **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
   present.** `scripts/check-version-bump.sh` previously proved only that a
   `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time

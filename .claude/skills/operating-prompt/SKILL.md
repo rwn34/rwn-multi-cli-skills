@@ -280,6 +280,40 @@ already in the conversation is the single easiest way to waste the fleet.
    is waiting live on a small fix), not the first choice. Trivial work — a
    one-line framework edit, a read, answering a question — Claude just does; a
    handoff for a ten-second edit costs more than it saves.
+
+   **2a. The implementation subagents are FALLBACK-ONLY, and using one requires a
+   written reason** (owner directive 2026-07-12, after Claude spent an entire
+   session violating this rule under time pressure). Claude MUST NOT reach for
+   `coder`, `tester`, `refactorer`, `debugger`, `doc-writer`, or
+   `release-engineer` for work that Kimi, Kiro, or OpenCode could do. Those are
+   Kimi's and Kiro's lanes; releases and GitHub ops are OpenCode's.
+
+   The **only** legitimate reasons to use one instead of a handoff — name the
+   one you are invoking, in the activity log, every time:
+
+   - **(a) Claude-exclusive territory.** `.claude/**` is Claude's alone; the
+     cross-CLI guard blocks every other CLI from it, and the ADR-0005 backstop
+     blocks them from committing it. Nobody else *can* do it.
+   - **(b) Recipient genuinely unavailable** — pane down, queue blocked, CLI
+     erroring. Say which, and say how you know.
+   - **(c) The owner is waiting live** on a small fix where a handoff round-trip
+     costs more than it saves.
+   - **(d) The final review + merge gate**, which is Claude's by definition
+     (author ≠ reviewer).
+
+   **An unexplained implementation-subagent invocation is a protocol violation,
+   not a convenience.** Log it with its reason or do not do it. This mirrors the
+   `infra-engineer` fallback-logging rule in ADR-0011, and for the same purpose:
+   it makes the failure mode *visible*. If the activity log fills with
+   unexplained subagent use, the reflex has returned and this rule is being
+   routed around.
+
+   **Why this needs a mechanism and not just good intentions:** on 2026-07-12
+   Claude wrote this very section in the morning and then ran roughly a dozen
+   implementation subagents that night — coder, infra-engineer, release-engineer,
+   doc-writer — most of which were textbook Kimi/Kiro handoffs. The rule held
+   while Claude was calm and collapsed the moment it was busy. A policy that only
+   survives when its subject is unhurried is not a policy; it is a preference.
 3. **Route by nature of work**, per the table above. GitHub operations in
    particular (opening PRs, release chores, CI fixes) go to **OpenCode** — do
    not do them yourself if OpenCode can.
