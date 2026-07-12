@@ -36,6 +36,16 @@ promotion happened.
 
 ### Fixed
 
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.35] - 2026-07-12
+
+### Fixed
+
 - OpenCode enforcement guard restored: `.opencode/plugin/framework-guard.js` no
   longer fails to load. PR #45 had added a non-function top-level export
   (`export const WRITABLE_LANE = []`), which OpenCode's plugin host rejects with
@@ -46,11 +56,6 @@ promotion happened.
   module now exports only functions. Added load-path tests to `test-guard.mjs`
   that reproduce the host's export invariant and drive the initialized hook
   end-to-end, so a total load failure can never ship green again.
-- [TODO: bug fixes]
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.34] - 2026-07-12
 
