@@ -25,6 +25,8 @@
 #   (t) Test-HandoffQuarantined fresh record    (true  -> still quarantined)
 #   (u) Get-StopExitCode intentional stop        (Intent=$true  -> 0)
 #   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
+#   (w) Get-HeadlessCmd claude carries --dangerously-skip-permissions (F2)
+#   (x) parity guard: pane-runner vs dispatch-handoffs.sh Claude argv (F2)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -306,6 +308,39 @@ Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hexp
 # -- (u/v) exit-code contract helper: intent -> 0, crash -> non-zero --
 Assert-Equal 0 (Get-StopExitCode -Intent $true) 'u: intentional stop -> Get-StopExitCode 0'
 Assert-Equal $true ((Get-StopExitCode -Intent $false) -ne 0) 'v: crash -> Get-StopExitCode non-zero'
+
+# -- (w) F2: headless Claude argv carries --dangerously-skip-permissions, --
+# -- NOT the weaker --permission-mode acceptEdits (which auto-denies Bash    --
+# -- calls outside settings.local.json's allow-list with no human headless   --
+# -- to approve them). --
+$claudeArgv = @(Get-HeadlessCmd -CliName 'claude' -Prompt 'test-prompt')
+Assert-Equal $true ($claudeArgv -contains '--dangerously-skip-permissions') 'w: headless claude argv contains --dangerously-skip-permissions'
+Assert-Equal $false ($claudeArgv -contains '--permission-mode') 'w: headless claude argv no longer contains --permission-mode'
+
+# -- (x) F2 parity guard: pane-runner's Get-HeadlessCmd claude form MUST match --
+# -- dispatch-handoffs.sh's headless_cmd claude form. Two files stating the   --
+# -- same launch flags is exactly the class of bug that motivated this fix   --
+# -- (the two invocations had already drifted once) - so this test extracts  --
+# -- the bash HEADLESS_ARGV line for claude and fails LOUDLY on any drift.   --
+$dispatchSh = Join-Path $here '..\..\.ai\tools\dispatch-handoffs.sh'
+$dispatchSh = [System.IO.Path]::GetFullPath($dispatchSh)
+if (Test-Path $dispatchSh) {
+    $shLine = (Get-Content -Path $dispatchSh) | Where-Object { $_ -match 'claude\)\s*HEADLESS_ARGV=\(claude\s+-p\s+"\$prompt"\s+(.+)\)\s*;;' }
+    if ($shLine) {
+        $shFlags = $Matches[1].Trim()
+    } else {
+        $shFlags = $null
+    }
+    # PowerShell argv for claude, flags only (drop exe, '-p', and the prompt).
+    $psFlags = ($claudeArgv | Select-Object -Skip 3) -join ' '
+    Assert-Equal $psFlags $shFlags 'x: parity guard - pane-runner vs dispatch-handoffs.sh claude headless flags match'
+} else {
+    # dispatch-handoffs.sh not found relative to this file (e.g. running the
+    # flat install copy without the .ai/ sibling) -- do not fail loudly for a
+    # missing comparison target, but do not silently pass either.
+    $script:fail++
+    Write-Host "FAIL  x: parity guard - could not locate dispatch-handoffs.sh at $dispatchSh" -ForegroundColor Red
+}
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue

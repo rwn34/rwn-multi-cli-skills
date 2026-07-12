@@ -89,7 +89,20 @@ function Get-StopExitCode {
 function Get-HeadlessCmd {
     param([string]$CliName, [string]$Prompt)
     switch ($CliName) {
-        'claude'   { return @('claude', '-p', $Prompt, '--permission-mode', 'acceptEdits') }
+        # --dangerously-skip-permissions (not --permission-mode acceptEdits):
+        # acceptEdits auto-approves ONLY Edit/Write; Bash calls outside
+        # .claude/settings.local.json's allow-list (git/mv/rm are NOT on it)
+        # were auto-DENIED with no human available headless to approve them —
+        # the headless Claude lane was strictly weaker than every other CLI's
+        # headless invocation AND weaker than Claude's OWN interactive pane
+        # (which already runs --dangerously-skip-permissions, see
+        # Get-InteractiveCmd below). This is SAFE because permissions and
+        # hooks are different layers: this flag bypasses the permission
+        # PROMPT only — the PreToolUse guard hooks (cross-CLI dir, sensitive-
+        # file, root-file, destructive-cmd) still fire and remain the
+        # mechanical floor (F2 handoff, 2026-07-12; verified empirically, see
+        # docs/architecture/0005-commit-governance-backstop.md).
+        'claude'   { return @('claude', '-p', $Prompt, '--dangerously-skip-permissions') }
         'kimi'     { return @('kimi', '-p', $Prompt) }
         'kiro'     { return @('kiro-cli', 'chat', '--no-interactive', '--trust-all-tools', '--agent', 'orchestrator', $Prompt) }
         'opencode' { return @('opencode', 'run', '--auto', '--agent', 'opencode', $Prompt) }

@@ -30,6 +30,21 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.22] - 2026-07-12
+
+### Fixed
+
+- Headless Claude dispatch now uses `--dangerously-skip-permissions` instead of
+  `--permission-mode acceptEdits` in both `tools/4ai-panes/pane-runner.ps1`
+  (`Get-HeadlessCmd`) and `.ai/tools/dispatch-handoffs.sh` (`headless_cmd`).
+  `acceptEdits` auto-approved only Edit/Write, so a Bash call outside
+  `.claude/settings.local.json`'s allow-list was auto-denied with no human
+  available headless to approve it — the headless Claude lane was strictly
+  weaker than every other fleet CLI's headless invocation, and weaker than
+  Claude's own interactive pane. Verified empirically that the `PreToolUse`
+  guard hooks still fire under the new flag (permissions and hooks are
+  separate layers) — see F2 handoff 202607120023.
+
 ## [0.0.21] - 2026-07-12
 
 ### Fixed
