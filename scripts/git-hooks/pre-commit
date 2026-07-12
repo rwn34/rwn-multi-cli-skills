@@ -77,14 +77,20 @@ _territory_violation() {
     case "$committer" in
         claude-code)
             case "$p" in
-                # SSOT replica-steering exception (ADR-0005 amendment 2026-07-10):
-                # claude-code MAY commit a .kimi/steering/ or .kiro/steering/ path
-                # ONLY when that exact path is a replica listed in .ai/sync.md.
-                # Hand-authored non-replicas (e.g. 00-ai-contract.md) stay blocked.
-                .kimi/steering/*|.kiro/steering/*)
-                    _is_sync_replica "$p" && return 1
+                # SSOT replica exception (ADR-0005 amendment 2026-07-10, WIDENED
+                # 2026-07-12): claude-code MAY commit ANY path under another CLI's
+                # dir ONLY when that exact path is a replica registered in
+                # .ai/sync.md. Originally steering-only; widened to the full replica
+                # set so the two non-steering replicas
+                # (.kimi/resource/karpathy-guidelines-examples.md,
+                # .kiro/skills/karpathy-guidelines/SKILL.md) land in the same atomic
+                # SSOT commit. Hand-authored non-replicas (00-ai-contract.md, hooks,
+                # agents) stay blocked. The lookup uses the ORIGINAL-case path ($2),
+                # not the lowercased $p, so an uppercase SKILL.md matches the registry
+                # verbatim and any case-variant fails CLOSED (blocked).
+                .kimi/*|.kiro/*)
+                    _is_sync_replica "$2" && return 1
                     return 0 ;;
-                .kimi/*|.kiro/*) return 0 ;;
             esac ;;
         kimi-cli)
             case "$p" in .claude/*|.kiro/*|.opencode/*|opencode.json) return 0 ;; esac ;;
@@ -205,6 +211,68 @@ fail_closed() {
     echo "pre-commit (ADR-0005): $1 — refusing to fail open. Fix or use 'git commit --no-verify'." >&2
     exit 1
 }
+
+# ---- SSOT auto-sync (ADR-0005 second amendment, 2026-07-12) -----------------
+# A staged change to an SSOT source (.ai/instructions/**) must land ATOMICALLY
+# with its regenerated replicas, or the drift gate (.ai/tools/check-ssot-drift.sh)
+# goes red in CI and throttles the Tier-B auto-merge. sync-replicas.sh is the ONE
+# generator; the drift checker calls the same code, so they cannot disagree.
+#
+#   * committer claude-code (the fleet git operator): regenerate IN PLACE and
+#     stage the replicas into THIS commit — the autonomy the owner approved. The
+#     widened territory exception (above) lets those replica paths through.
+#   * any other identity (human / unknown): NEVER silently mutate the commit.
+#     Regenerate into a throwaway tree, compare against what is staged, and REFUSE
+#     with a clear hint if any replica is missing/stale.
+ssot_staged="$(git diff --cached --name-only -- .ai/instructions/ 2>/dev/null)"
+if [ -n "$ssot_staged" ]; then
+    gen=".ai/tools/sync-replicas.sh"
+    [ -r "$gen" ] || fail_closed "SSOT source staged but generator missing ($gen)"
+
+    if [ "$committer" = "claude-code" ]; then
+        manifest="$(bash "$gen" 2>/dev/null)" || fail_closed "sync-replicas.sh failed regenerating replicas"
+        while IFS="$(printf '\t')" read -r _src dst; do
+            [ -n "$dst" ] || continue
+            git add -- "$dst" 2>/dev/null || fail_closed "could not stage regenerated replica: $dst"
+        done <<EOF
+$manifest
+EOF
+    else
+        gtmp="$(mktemp -d)" || fail_closed "mktemp failed"
+        manifest="$(bash "$gen" --dest-root "$gtmp" 2>/dev/null)" \
+            || { rm -rf "$gtmp"; fail_closed "sync-replicas.sh failed regenerating replicas"; }
+        stale=""
+        while IFS="$(printf '\t')" read -r _src dst; do
+            [ -n "$dst" ] || continue
+            # Compare the STAGED (index) content against the freshly generated one.
+            if ! git show ":$dst" 2>/dev/null | diff -q - "$gtmp/$dst" >/dev/null 2>&1; then
+                stale="${stale}  - ${dst}
+"
+            fi
+        done <<EOF
+$manifest
+EOF
+        rm -rf "$gtmp"
+        if [ -n "$stale" ]; then
+            {
+                echo "=============================================================================="
+                echo "COMMIT REJECTED — SSOT changed without matching replicas (ADR-0005)"
+                echo "=============================================================================="
+                echo "Committer (git config user.name): ${committer_raw:-<unset>}  →  policy identity: '$committer'"
+                echo
+                echo "You staged a change under .ai/instructions/ (the SSOT), but these CLI-native"
+                echo "replicas are missing or stale in the commit:"
+                printf '%s' "$stale"
+                echo "SSOT changed; run 'bash .ai/tools/sync-replicas.sh' and re-stage the replicas,"
+                echo "or commit as claude-code (the fleet operator auto-stages them)."
+                echo
+                echo "Owner override (in a pinch):  git commit --no-verify"
+                echo "=============================================================================="
+            } >&2
+            exit 1
+        fi
+    fi
+fi
 
 # Gather staged paths (NUL-delimited). Fail CLOSED if git cannot enumerate them.
 tmp_all="$(mktemp)" || fail_closed "mktemp failed"

@@ -28,6 +28,54 @@ CLI's dir stay blocked. This section is the enforcement contract that the
 task):** `scripts/git-hooks/pre-commit` and `scripts/git-hooks/test-pre-commit.sh`
 MUST be updated to implement and cover this exception.
 
+## Amendment (2026-07-12): atomic SSOT sync — one generator, committer-keyed auto-stage, widened replica exception
+
+The 2026-07-10 amendment carved a narrow exception so `claude-code` could commit
+`.kimi/steering/` and `.kiro/steering/` replicas. It left three gaps that
+together *throttled* the new Tier-B SSOT auto-merge: an SSOT edit under
+`.ai/instructions/**` regenerated only some replicas, the two non-steering
+replicas still could not be committed by `claude-code`, and the drift checker
+carried its own copy of the source→replica transform (a second place to drift).
+Because Claude may only write its own config dir, an SSOT edit left the Kimi/Kiro
+replicas stale until each CLI processed a sync handoff — reding
+`check-ssot-drift.sh` in CI in the meantime and blocking the auto-merge. The
+owner approved closing this. Four coordinated changes:
+
+1. **One deterministic generator.** `.ai/tools/sync-replicas.sh` regenerates every
+   replica in `.ai/sync.md` from its `.ai/instructions/**` source — byte-copy for
+   pure replicas, preamble-preserving body-replace for `SKILL.md` files. It is the
+   single owner of the transform, the registry parse, and LF normalization; it is
+   idempotent and fails closed on an unreadable/malformed registry.
+
+2. **The checker regenerates-and-diffs.** `check-ssot-drift.sh` now invokes
+   `sync-replicas.sh` into a temp dest-root and diffs the committed replicas
+   against that output. It holds NO separate copy of the transform — same code for
+   generate and check, so the two can never disagree. Its output format, exit
+   codes, and `Checked: N replicas, Drift: M` summary are preserved.
+
+3. **Committer-keyed auto-stage.** When a staged change touches `.ai/instructions/**`,
+   `pre-commit` runs the generator. For committer `claude-code` (the fleet git
+   operator) it regenerates in place and **auto-stages** the replicas into the same
+   commit — the autonomy the owner wants. For a human or any other/unknown identity
+   it **refuses** with a hint (`run bash .ai/tools/sync-replicas.sh and re-stage, or
+   commit as claude-code`) rather than silently mutating their commit, and it fails
+   closed if the generator errors.
+
+4. **Widened territory exception.** The `claude-code` carve-out in
+   `_territory_violation` widens from steering-only to **any `.ai/sync.md`-registered
+   replica path** (reusing the fail-closed `_is_sync_replica` helper), so the two
+   non-steering replicas — `.kimi/resource/karpathy-guidelines-examples.md` and
+   `.kiro/skills/karpathy-guidelines/SKILL.md` — commit in the same atomic commit.
+   It stays replica-only: an unregistered path under another CLI's dir is still
+   blocked, and the registry lookup uses the original-case path so a case-variant
+   fails closed.
+
+**Accepted residual (loud, never silent):** `core.hooksPath` is per-clone, so a
+clone that skips the installer — or any `git commit --no-verify` — can still commit
+a stale SSOT tree. That is caught RED by `check-ssot-drift.sh` in CI, exactly as
+before. The backstop is defense-in-depth, not the only net. Net effect: Tier-B
+SSOT changes land atomically on the fleet path; the drift-gate throttle is closed.
+
 ## Context
 
 The framework advertised a "hard block" enforcement layer: per-CLI hooks
@@ -132,5 +180,6 @@ The owner may bypass in a pinch with git's standard `git commit --no-verify`.
 - `docs/architecture/0001-root-file-exceptions.md` — root-file allowlist (reused verbatim)
 - `docs/architecture/0002-*` / `0003-*` / `0004-*` — CLI lanes, graph removal, worktree topology
 - `.claude/hooks/pretool-write-edit.sh` — the python-independent extraction pattern this hook mirrors
-- `scripts/git-hooks/pre-commit`, `scripts/git-hooks/test-pre-commit.sh` — the implementation + tests. *[2026-07-10] These MUST be updated to implement the SSOT-replica-steering exception (see Amendment above) — separate follow-up task.*
-- `.ai/sync.md` — the SSOT source → replica registry that scopes the 2026-07-10 exception
+- `scripts/git-hooks/pre-commit`, `scripts/git-hooks/test-pre-commit.sh` — the implementation + tests. *[2026-07-10 follow-up CLOSED 2026-07-12] The SSOT-replica exception is implemented and covered; the 2026-07-12 amendment widens it to the full replica set and adds the committer-keyed auto-stage.*
+- `.ai/tools/sync-replicas.sh` — the single generator (2026-07-12); `.ai/tools/check-ssot-drift.sh` calls it to regenerate-and-diff
+- `.ai/sync.md` — the SSOT source → replica registry that scopes the exception

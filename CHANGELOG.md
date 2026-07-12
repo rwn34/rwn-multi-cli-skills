@@ -42,6 +42,35 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.31] - 2026-07-12
+
+### Added
+
+- **`sync-replicas.sh` — one deterministic generator for every SSOT replica.**
+  `.ai/tools/sync-replicas.sh` reads the `.ai/sync.md` registry and regenerates
+  each CLI-native replica from its `.ai/instructions/**` source: byte-copy for
+  pure replicas, preamble-preserving body-replace for `SKILL.md` files (the exact
+  inverse of the drift checker's `strip_preamble`). LF-normalized, idempotent,
+  fails closed on an unreadable/malformed registry.
+
+### Changed
+
+- **The drift checker now regenerates-and-diffs instead of re-implementing the
+  transform.** `.ai/tools/check-ssot-drift.sh` invokes `sync-replicas.sh` into a
+  temp dest-root and diffs the committed replicas against that fresh output —
+  same code for generate and check, so they can never disagree. Output format,
+  exit codes, and the `Checked: N replicas, Drift: M` summary are unchanged.
+- **Pre-commit now lands SSOT changes atomically (ADR-0005 second amendment).**
+  When a staged change touches `.ai/instructions/**`, `scripts/git-hooks/pre-commit`
+  runs the generator; committer `claude-code` (the fleet git operator) auto-stages
+  the regenerated replicas into the same commit, while a human/other identity is
+  refused with a hint (never a silently-mutated commit). The ADR-0005 territory
+  exception widens from steering-only to ANY `.ai/sync.md`-registered replica
+  (adds `.kimi/resource/*` and `.kiro/skills/*/SKILL.md`), still replica-only and
+  fail-closed. `.gitattributes` pins `*.md` to `eol=lf` so byte-diffs are stable
+  cross-OS. This closes the drift-gate throttle that red-lit CI whenever an SSOT
+  edit outran the Kimi/Kiro replica syncs.
+
 ## [0.0.30] - 2026-07-12
 
 ### Changed
