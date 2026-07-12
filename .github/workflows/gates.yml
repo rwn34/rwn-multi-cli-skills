@@ -36,17 +36,6 @@ jobs:
       - name: SSOT drift check
         run: bash .ai/tools/check-ssot-drift.sh
 
-      # The tier table also lives in two HAND-WRITTEN restatements (CLAUDE.md and
-      # .claude/agents/orchestrator.md) that paraphrase it rather than replicate it,
-      # so the byte-for-byte drift check above structurally cannot cover them — they
-      # silently drifted through PR #54. This asserts the load-bearing tier concepts
-      # are present in both, and are still where the SSOT says they are.
-      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
-        run: bash .ai/tools/check-tier-restatements.sh
-
-      - name: Tier restatement checker self-test
-        run: bash .ai/tools/test-check-tier-restatements.sh
-
       - name: Claude hooks test suite
         run: bash .claude/hooks/test_hooks.sh
 
@@ -79,6 +68,23 @@ jobs:
       - name: Installer typecheck + tests
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
+
+      # The tier table also lives in two HAND-WRITTEN restatements (CLAUDE.md and
+      # .claude/agents/orchestrator.md) that paraphrase it rather than replicate it,
+      # so the byte-for-byte SSOT drift check above structurally cannot cover them —
+      # they silently drifted through PR #54. This asserts the load-bearing tier
+      # concepts are present in both, and are still where the SSOT says they are.
+      #
+      # Placed LAST alongside the version-bump check, for the same reason given
+      # below: it is a policy-TEXT check, so a failure here must never skip the
+      # substantive suites (hooks / backstop / installer) and mask a real defect.
+      # Ordering this early did exactly that on the first push of this branch —
+      # one prose failure skipped 13 steps.
+      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        run: bash .ai/tools/check-tier-restatements.sh
+
+      - name: Tier restatement checker self-test
+        run: bash .ai/tools/test-check-tier-restatements.sh
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
       # branches, so this is a DETECTIVE check on the resulting master push —
