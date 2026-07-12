@@ -30,6 +30,43 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.21] - 2026-07-12
+
+### Fixed
+
+- **`.ai/tools/dispatch-handoffs.sh`: headless dispatch no longer runs every CLI in the
+  shared primary checkout.** The dispatcher used to `cd` into the repo root and launch the
+  recipient CLI there, so two concurrently dispatched CLIs shared one HEAD and one working
+  tree — either could clobber the other's in-flight files with a `git checkout` (the
+  ADR-0004 "2026-07-11 near-miss"). Each dispatched CLI now runs inside its **own git
+  worktree** at `<parent>/.wt/<project>/<cli>/`, resolved by `worktree_path_for()` and
+  created/reused by `ensure_cli_worktree()`. Worktree creation reuses
+  `scripts/wt-bootstrap.sh` (single implementation); a healthy existing worktree is reused,
+  never destroyed. Worktree setup failure **fails that dispatch** — the handoff stays
+  `OPEN` and a failure report is written. Falling back to the primary checkout is forbidden,
+  so the race cannot silently reappear.
+- **`.ai/tools/dispatch-handoffs.sh`: per-handoff branches are cut from a declared base, not
+  ambient HEAD.** A dispatch used to branch from whatever HEAD happened to be, so a handoff
+  could inherit unrelated in-flight work from a previous dispatch. `ensure_declared_base_branch()`
+  now cuts (or reuses) `exec/<cli>/<slug>` from an explicitly declared base: the handoff's
+  optional `Base:` field, else `origin/master`. This is a second, independent defect from the
+  shared-HEAD one and is fixed independently.
+
+### Added
+
+- **`.ai/handoffs/` `Base:` field (optional).** A handoff may declare the branch its exec
+  branch is cut from; read by `base_for()` from the status block. Absent, dispatch falls back
+  to `origin/master`.
+- **`.ai/tests/test-dispatch-worktree.sh` — 24 assertions** covering worktree path resolution,
+  create-vs-reuse, the no-fallback-to-primary-checkout contract, declared-base branch cuts
+  (`Base:` honored, `origin/master` default), and the failure path leaving the handoff `OPEN`.
+
+### Changed
+
+- **`docs/architecture/0004-worktree-multi-project-topology.md` amended (2026-07-11)** to make
+  worktree-per-CLI the dispatch contract rather than a manual convention, and to record the
+  near-miss that motivated it.
+
 ## [0.0.19] - 2026-07-11
 
 ### Fixed
