@@ -58,6 +58,47 @@ adheres to [Semantic Versioning](https://semver.org).
   tree and fails on any byte-divergence from its source — no hardcoded file
   list, so new files are covered automatically. Proven both directions:
   53 failures on the real stale tree, PASS once regenerated.
+## [0.0.23] - 2026-07-12
+
+### Added
+
+- **OpenCode's two enforcement layers now accept `.ai/activity/entries/**`** — the
+  entry-per-file activity-log spool of ADR-0010. Both layers hardcoded the log path
+  as an **exact string** (`scripts/git-hooks/pre-commit` L96
+  `case "$p" in .ai/activity/log.md|…`; `.opencode/plugin/framework-guard.js`
+  `WRITABLE_LANE`), so the first spool entry OpenCode ever wrote would have been
+  **blocked by its own guard** and its commit **rejected by the hook** — silently,
+  with no error a human would see. This is **permission plumbing only**: it makes the
+  spool landable later. Nothing is migrated, `entries/` is not created, no contract's
+  logging prose changed, and `.ai/tools/activity-append.sh` is untouched.
+  `.ai/activity/log.md` keeps working exactly as before — it is still the live log.
+
+### Fixed
+
+- **OpenCode could write `.github/**` but not commit it.** The 0.0.22 repo-ops
+  widening (PR #45) added `.github/**` to the *write* guard and to the contract
+  ("you own … CI config/workflow fixes … opening PRs"), but never to the *commit*
+  hook's OpenCode whitelist. The result was the same defect class it set out to fix,
+  one layer down: OpenCode could produce the workflow fix and then be rejected at
+  `git commit`. `.github/*` is now in the pre-commit lane too, so the two layers agree.
+
+### Security
+
+- The spool widening is asserted **not to leak**: the guard suite grew 96 → 133
+  assertions and the pre-commit backstop suite 54 → 86, covering relative,
+  Windows-absolute, backslash, `./`-prefixed, MSYS `/c/…`, traversal-escape and
+  mixed-case forms. Project source, `.claude/**`, `.kimi/**`, `.kiro/**`,
+  `.opencode/**`, `.ai/instructions/**` (SSOT), `docs/architecture/**` (ADRs),
+  `scripts/**` and secrets remain blocked from OpenCode, and rule 5 (secrets) still
+  outranks the lane *inside* the spool (`.ai/activity/entries/id_rsa` is denied).
+  `.ai/activity/archive/**` was deliberately **not** granted.
+- **Documented, not fixed:** the pre-commit hook matches the lowercased path (`_lc`),
+  which makes OpenCode's *whitelist* branch case-INSENSITIVE (fail-**open**) while
+  the guard's lane is case-SENSITIVE (fail-**closed**) — the two disagree on
+  `.AI/Activity/Entries/x.md`. The leak **cannot escalate** (no case variant reaches
+  another CLI's territory, source, or a secret — now asserted), and tightening it
+  risks false-blocking a real entry, which is the exact "OpenCode goes silent"
+  failure this change prevents. The assertions pin the contract for whoever revisits it.
 
 ## [0.0.22] - 2026-07-12
 

@@ -78,6 +78,75 @@ assert_allow "claude -> .claude"         _territory_violation claude-code ".clau
 assert_allow "kimi -> .kimi"             _territory_violation kimi-cli ".kimi/steering/x.md"
 assert_allow "kimi -> source"            _territory_violation kimi-cli "backend/main.rs"
 
+echo "== OpenCode lane: activity-log entry spool (ADR-0010 blocker, 2026-07-12) =="
+# The commit-time half of the guard's WRITABLE_LANE. If these two disagree, OpenCode
+# can write an entry and then have the commit rejected — silently, with no error a
+# human sees. Keep in lockstep with .opencode/plugin/framework-guard.js.
+#
+# ALLOW: the spool.
+assert_allow "opencode -> spool entry"     _territory_violation opencode ".ai/activity/entries/20260712T101500Z-opencode-x-a1b2.md"
+assert_allow "opencode -> spool nested"    _territory_violation opencode ".ai/activity/entries/2026-07/x.md"
+# NO REGRESSION: the old path is still the live log and must still commit.
+assert_allow "opencode -> log.md (no regression)" _territory_violation opencode ".ai/activity/log.md"
+# ALLOW: .github/* — the commit-time half of the repo-ops lane the guard granted
+# in PR #45. The contract assigns OpenCode "CI config/workflow fixes" and "opening
+# PRs"; without this it could WRITE the workflow fix and then be REJECTED at commit.
+assert_allow "opencode -> .github workflow" _territory_violation opencode ".github/workflows/gates.yml"
+assert_allow "opencode -> .github nested"   _territory_violation opencode ".github/actions/setup/action.yml"
+#
+# DENY: the widening is ONE subtree, not `.ai/activity`, and not `.ai/`.
+assert_block "opencode -> activity sibling"  _territory_violation opencode ".ai/activity/other.md"
+assert_block "opencode -> activity archive"  _territory_violation opencode ".ai/activity/archive/2026-04.md"
+assert_block "opencode -> near-miss entriesfoo" _territory_violation opencode ".ai/activity/entriesfoo/x.md"
+assert_block "opencode -> bare 'entries'"    _territory_violation opencode ".ai/activity/entries"
+assert_block "opencode -> .ai/instructions"  _territory_violation opencode ".ai/instructions/operating-prompt/principles.md"
+assert_block "opencode -> .ai/sync.md"       _territory_violation opencode ".ai/sync.md"
+assert_block "opencode -> .ai root file"     _territory_violation opencode ".ai/known-limitations.md"
+# DENY: the widening must not leak into source or any other CLI's territory.
+assert_block "opencode -> src (post-widen)"  _territory_violation opencode "src/index.js"
+assert_block "opencode -> scripts/"          _territory_violation opencode "scripts/git-hooks/pre-commit"
+assert_block "opencode -> .claude (post-widen)" _territory_violation opencode ".claude/hooks/stop-reminder.sh"
+assert_block "opencode -> .kimi"             _territory_violation opencode ".kimi/steering/00-ai-contract.md"
+assert_block "opencode -> .kiro"             _territory_violation opencode ".kiro/agents/coder.json"
+assert_block "opencode -> .opencode (own)"   _territory_violation opencode ".opencode/plugin/framework-guard.js"
+assert_block "opencode -> docs/architecture" _territory_violation opencode "docs/architecture/0010-x.md"
+assert_block "opencode -> CLAUDE.md"         _territory_violation opencode "CLAUDE.md"
+# Secrets are caught by _is_sensitive (pass 1 runs it BEFORE the territory rule), so
+# the lane never licenses one even inside the spool. Assert the composition, not just
+# the parts — a lane entry that allowed a key would be the worst kind of leak.
+assert_block "secret inside the spool"       _is_sensitive ".ai/activity/entries/id_rsa"
+assert_block ".env inside the spool"         _is_sensitive ".ai/activity/entries/.env.prod"
+assert_block "key inside .github/"           _is_sensitive ".github/deploy.key"
+# Absolute / MSYS forms FAIL-CLOSED (blocked). git diff --cached only ever emits
+# repo-relative POSIX paths, so the hook body never sees these — asserted so that a
+# future refactor cannot turn an absolute path into a lane bypass.
+assert_block "opencode -> absolute spool (fail-closed)" _territory_violation opencode "/c/proj/.ai/activity/entries/x.md"
+assert_block "opencode -> C:\\ spool (fail-closed)"     _territory_violation opencode "c:/proj/.ai/activity/entries/x.md"
+
+# KNOWN ASYMMETRY, documented not fixed (2026-07-12). _territory_violation matches on
+# the LOWERCASED path (_lc). That is correct-and-fail-CLOSED for the four DENYLIST
+# branches (claude/kimi/kiro/unknown), but it makes OpenCode's WHITELIST branch
+# case-INSENSITIVE, i.e. fail-OPEN: on a case-sensitive filesystem `.AI/Activity/
+# Entries/x.md` is a DIFFERENT file yet still matches the lane. The guard
+# (framework-guard.js) is case-SENSITIVE and blocks the same path — the two layers
+# disagree.
+#
+# Not "fixed" here, deliberately: the leak CANNOT ESCALATE (asserted below — no case
+# variant reaches another CLI's territory, source, or a secret; the worst case is
+# OpenCode committing junk at a case-variant path inside its own lane). Tightening it
+# risks FALSE-BLOCKING a legitimate entry, which is the precise failure this change
+# exists to prevent — OpenCode going silent with no error a human sees. If someone
+# tightens it later, these assertions are the contract to preserve.
+assert_allow "KNOWN: hook lane is case-insensitive (fails open, in-lane only)" \
+    _territory_violation opencode ".AI/Activity/Entries/x.md"
+# ...but it must NEVER escalate out of the lane. These are the load-bearing ones.
+assert_block "case variant cannot reach .claude/" _territory_violation opencode ".CLAUDE/agents/x.md"
+assert_block "case variant cannot reach .kimi/"   _territory_violation opencode ".Kimi/steering/x.md"
+assert_block "case variant cannot reach .kiro/"   _territory_violation opencode ".KIRO/agents/x.json"
+assert_block "case variant cannot reach source"   _territory_violation opencode "SRC/index.js"
+assert_block "case variant cannot reach SSOT"     _territory_violation opencode ".AI/Instructions/x.md"
+assert_block "case variant cannot reach a secret" _is_sensitive ".AI/Activity/Entries/ID_RSA"
+
 echo "== SSOT replica-steering exception (claude-code only, ADR-0005 2026-07-10) =="
 # sync.md replicas -> claude-code may fleet-commit them.
 assert_allow "claude -> .kimi replica"   _territory_violation claude-code ".kimi/steering/operating-prompt.md"

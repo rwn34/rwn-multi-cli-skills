@@ -91,9 +91,19 @@ _territory_violation() {
         kiro-cli)
             case "$p" in .claude/*|.kimi/*|.opencode/*|opencode.json) return 0 ;; esac ;;
         opencode)
-            # OpenCode's lane is a whitelist: activity log, reports, handoffs ONLY.
+            # OpenCode's lane is a whitelist — it must stay in lockstep with
+            # WRITABLE_LANE in .opencode/plugin/framework-guard.js (the write-time
+            # half of the same rule; this is the commit-time half).
+            #
+            # .ai/activity/entries/* added 2026-07-12 (ADR-0010 blocker): the
+            # activity log becomes an entry-per-file spool. Additive — log.md stays
+            # committable, because the migration has not happened yet. Without this,
+            # OpenCode's very first spool entry would be REJECTED at commit.
+            # Deliberately NOT added: .ai/activity/archive/* — archival is a `git mv`
+            # run by Claude/the owner, not OpenCode's job. Add it when someone needs it.
             case "$p" in
-                .ai/activity/log.md|.ai/reports/*|.ai/handoffs/*) return 1 ;;
+                .ai/activity/log.md|.ai/activity/entries/*) return 1 ;;
+                .ai/reports/*|.ai/handoffs/*|.github/*)     return 1 ;;
                 *) return 0 ;;
             esac ;;
         *)

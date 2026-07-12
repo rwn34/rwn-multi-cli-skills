@@ -60,6 +60,7 @@ written rules are the intent behind those guards:
 
    <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
    - `.ai/activity/log.md`
+   - `.ai/activity/entries/**`
    - `.ai/reports/**`
    - `.ai/handoffs/**`
    - `.github/**`
@@ -70,6 +71,12 @@ written rules are the intent behind those guards:
    config half of your GitHub / repo-ops lane (workflows, actions, issue
    templates) — added 2026-07-12, because the lane above assigns you CI/workflow
    fixes and the guard used to block them (handoff 202607120021).
+
+   `.ai/activity/entries/**` is the future entry-per-file activity spool
+   (ADR-0010) — added 2026-07-12 as **permission plumbing only**, so the spool is
+   landable. **Nothing has migrated yet: keep logging exactly as you do today, by
+   prepending to `.ai/activity/log.md`.** The day the protocol flips, the lane
+   will already allow it instead of silently swallowing your entries.
 
    **`.github/**` is the ONLY source-adjacent path you may write.** `infra/`,
    `scripts/`, `Dockerfile`, `docker-compose*` are *not* in your lane even though
