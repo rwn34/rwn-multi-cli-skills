@@ -200,6 +200,74 @@ check("block absolute .env", write(path.join(ROOT, ".env")), false);
 check("block bash redirect to .env", bash("echo K=v > .env"), false);
 check("allow ordinary .yml in .github (not a secret)", write(".github/workflows/keys.yml"), true);
 
+// ===========================================================================
+// Activity-log entry spool (ADR-0010 blocker, 2026-07-12) — .ai/activity/entries/**
+// is writable. Without this the FIRST spool entry OpenCode ever writes is blocked
+// by its own guard, silently, on day one. Additive: log.md must keep working, the
+// migration has not happened yet.
+// ===========================================================================
+
+// --- ALLOW: the spool, in every path shape a tool might hand us ---
+const ENTRY = "20260712T101500Z-opencode-blockers-a1b2.md";
+check("allow spool entry (relative)", write(`.ai/activity/entries/${ENTRY}`), true);
+check("allow spool entry (backslash)", write(`.ai\\activity\\entries\\${ENTRY}`), true);
+check("allow spool entry (absolute)", write(path.join(ROOT, ".ai", "activity", "entries", ENTRY)), true);
+check(
+  "allow spool entry (absolute backslash)",
+  write(path.join(ROOT, ".ai", "activity", "entries", ENTRY).replace(/[/\\]/g, "\\")),
+  true
+);
+check("allow spool entry (./ prefix)", write(`./.ai/activity/entries/${ENTRY}`), true);
+check("allow spool entry (via in-lane traversal)", write(`.ai/reports/../activity/entries/${ENTRY}`), true);
+check("allow spool entry inside worktree", write(`.ai/activity/entries/${ENTRY}`, WT_ROOT), true);
+check("allow spool entry nested subdir", write(".ai/activity/entries/2026-07/x.md"), true);
+check("allow bash redirect into spool", bash(`echo x > .ai/activity/entries/${ENTRY}`), true);
+check("allow bash tee into spool", bash(`cat e.md | tee .ai/activity/entries/${ENTRY}`), true);
+
+// --- NO REGRESSION: the old path still works (it is still the live log) ---
+check("allow .ai/activity/log.md (unchanged)", write(".ai/activity/log.md"), true);
+check("allow .ai/activity/log.md backslash (unchanged)", write(".ai\\activity\\log.md"), true);
+check("allow .ai/activity/log.md absolute (unchanged)", write(path.join(ROOT, ".ai", "activity", "log.md")), true);
+check("allow bash redirect to log.md (unchanged)", bash("echo x >> .ai/activity/log.md"), true);
+
+// --- DENY: the spool widening must not leak. It is ONE subtree, not `.ai/activity`. ---
+check("block .ai/activity sibling file (not entries/)", write(".ai/activity/other.md"), false);
+check("block .ai/activity/archive/ (deliberately NOT in lane)", write(".ai/activity/archive/2026-04.md"), false);
+check("block near-miss '.ai/activity/entriesfoo/'", write(".ai/activity/entriesfoo/x.md"), false);
+check("block '.ai/activity/entries' as a bare file", write(".ai/activity/entries"), false);
+check("block .ai/ root file via spool sibling", write(".ai/known-limitations.md"), false);
+check("block spool traversal escape to source", write(".ai/activity/entries/../../../src/evil.js"), false);
+check(
+  "block spool traversal escape to .claude",
+  write(".ai/activity/entries/x/../../../../.claude/agents/x.md"),
+  false
+);
+check("block spool traversal escape to SSOT", write(".ai/activity/entries/../../instructions/x.md"), false);
+check("block mixed-case .ai/Activity/Entries/ (fail-closed)", write(".ai/Activity/Entries/x.md"), false);
+check("block bash redirect to .ai/activity/archive/", bash("echo x > .ai/activity/archive/x.md"), false);
+check("block secret inside the spool (rule 5 outranks the lane)", write(".ai/activity/entries/id_rsa"), false);
+check("block .env inside the spool", write(".ai/activity/entries/.env.prod"), false);
+
+// MSYS /c/... form: FAIL-CLOSED (blocked), not a bypass. path.resolve cannot map
+// an MSYS drive path onto a Windows root, so it lands outside the project root and
+// is denied. This is pre-existing behaviour shared by EVERY lane entry (`.ai/reports/**`
+// behaves identically) — asserted here so a future "fix" that maps /c/ must prove it
+// does not open a bypass. OpenCode emits repo-relative paths, so this is never hit
+// in practice. See the report accompanying this change.
+check("MSYS /c/ spool form is blocked (fail-closed, not a bypass)", write(`/c/proj/.ai/activity/entries/${ENTRY}`), false);
+check("MSYS /c/ reports form blocked identically (pre-existing)", write("/c/proj/.ai/reports/r.md"), false);
+
+// --- DENY: everything the widening must still keep out (re-asserted post-widening) ---
+check("post-widening: still block src/", write("src/index.js"), false);
+check("post-widening: still block .claude/", write(".claude/hooks/pretool-write-edit.sh"), false);
+check("post-widening: still block .kimi/", write(".kimi/steering/00-ai-contract.md"), false);
+check("post-widening: still block .kiro/", write(".kiro/agents/coder.json"), false);
+check("post-widening: still block .ai/instructions/ (SSOT)", write(".ai/instructions/operating-prompt/principles.md"), false);
+check("post-widening: still block docs/architecture/ (ADRs)", write("docs/architecture/0010-activity-log-entry-spool.md"), false);
+check("post-widening: still block .opencode/", write(".opencode/plugin/framework-guard.js"), false);
+check("post-widening: still block scripts/", write("scripts/git-hooks/pre-commit"), false);
+check("post-widening: still block .env", write(".env"), false);
+
 // --- ANTI-DRIFT: the lane in the docs must equal the lane in the guard. ---
 // The doc/enforcement divergence IS the bug being fixed (contract promised the
 // repo-ops lane, guard denied it). If they ever diverge again, this fails loudly.

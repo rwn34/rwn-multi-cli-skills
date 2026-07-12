@@ -48,10 +48,14 @@ environment, merges to main remain Tier C (human-gated).
 
 <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
 - `.ai/activity/log.md`
+- `.ai/activity/entries/**`
 - `.ai/reports/**`
 - `.ai/handoffs/**`
 - `.github/**`
 <!-- LANE:END -->
+
+`.ai/activity/entries/**` is permission plumbing for the ADR-0010 activity-log
+spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today.
 
 `.github/**` is the only source-adjacent path in the lane. Project source,
 `.claude/`, `.kimi/`, `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/`
