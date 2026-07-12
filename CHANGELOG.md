@@ -20,7 +20,16 @@ promotion happened.
 
 ### Added
 
-- [TODO: new features]
+- Tests for the branch-cut fix below, in the failure class that burned the fleet
+  all night: `test-pane-runner.ps1` (av)–(av4) reproduce the landmine in a REAL
+  sandbox worktree with a REAL `mklink /J` junction — a raw `git checkout -b`
+  is asserted to FAIL in the stale-HEAD + live-`.ai/` state (prove-the-bug, so
+  the test can never pass vacuously), then both dispatch paths are asserted to
+  cut the declared-base branch and preserve the live `.ai/` byte-for-byte
+  (prove-the-fix). Non-`.ai/` dirt still refuses the cut; a degraded real-dir
+  `.ai/` fails `wt-bootstrap.sh` loud. The bash twin is driven end-to-end
+  through a real `dispatch-handoffs.sh --exec` invocation (stub CLI binary),
+  keeping the two implementations in behavioral lockstep.
 
 ### Changed
 
@@ -36,7 +45,33 @@ promotion happened.
 
 ### Fixed
 
-- [TODO: bug fixes]
+- **Fleet outage: the shared `.ai/` junction broke every executor worktree
+  branch cut.** `.ai/` is a single directory junctioned into every worktree
+  (ADR-0004), so a worktree whose HEAD is stale relative to `origin/master`
+  sees the live coordination-plane churn (`.ai/activity/log.md` and friends)
+  as "local changes". The dispatchers' dirty-check filters `.ai/` BY DESIGN —
+  concluding the tree is clean — but `git checkout -b exec/<cli>/<slug>
+  origin/master` then REFUSES to overwrite those same files. One rule with two
+  contradictory surfaces: every auto-dispatch hit `WORKTREE_FAIL`, three
+  strikes, quarantine — kimi, kiro, and opencode all stalled within hours.
+- `tools/4ai-panes/pane-runner.ps1` `Ensure-DeclaredBaseBranchReal` and
+  `.ai/tools/dispatch-handoffs.sh` `ensure_declared_base_branch()` (kept 1:1):
+  the branch cut no longer uses `git checkout` at all. `symbolic-ref` moves
+  HEAD without rewriting a single file; `git restore --source=<branch>
+  --staged --worktree -- . ':!.ai'` converges everything EXCEPT the junctioned
+  `.ai/` onto the branch tip, and a second index-only restore for `.ai/`
+  leaves `git status` showing genuine plane churn instead of staged phantoms.
+  The live `.ai/` is never written by git in a worktree — the append-only
+  coordination plane cannot be clobbered by a dispatch again.
+- `scripts/wt-bootstrap.sh` `link_ai()`: a worktree `.ai/` degraded from a
+  junction into a real directory used to be silently `rm -rf`'d and replaced —
+  destroying any fleet state that existed only there. A real dir now dies loud
+  when it holds uncommitted content (split-brain guard), re-junctions cleanly
+  when it matches the index (fresh `worktree add` state), and the link is
+  verified post-creation. **Deployment: the post-commit hook syncs
+  `tools/4ai-panes/*` to the live launcher, but pane-runners hold the script
+  in memory — the owner must restart the panes after this merges, then clear
+  `.ai/handoffs/.quarantine/` (8 records) so the stalled queue retries.**
 
 ### Security
 

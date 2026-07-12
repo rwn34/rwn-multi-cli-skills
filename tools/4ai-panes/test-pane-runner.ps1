@@ -60,6 +60,16 @@
 #   (al) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
 #   (am) real InvokeCli honors BOTH the worktree cwd AND AI_HANDOFF_DISPATCH=1
 #        in the SAME child invocation (the interleave this rebase must prove)
+#   (av) JUNCTION LANDMINE regression: stale-HEAD worktree + live junctioned
+#        .ai/ — raw `git checkout -b` FAILS (prove-the-bug), then
+#        Ensure-DeclaredBaseBranchReal succeeds, cuts from the declared base,
+#        and preserves the live .ai/ byte-for-byte (prove-the-fix). Real
+#        worktree, real mklink /J junction — no mocks.
+#   (av2) non-.ai dirt with .ai churn present -> still refuses (safety intact)
+#   (av3) PARITY: bash twin (dispatch-handoffs.sh
+#        ensure_declared_base_branch) survives the same landmine state
+#   (av4) wt-bootstrap junction-degradation guard: degraded real-dir .ai with
+#        uncommitted content dies loud; clean real dir re-junctions
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -485,6 +495,8 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         git config user.email 'test@example.com'
         git config user.name 'test'
         New-Item -ItemType Directory -Path (Join-Path $primary '.ai/handoffs/to-kiro/open') -Force | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $primary '.ai/activity') -Force | Out-Null
+        'log v1' | Set-Content -Path (Join-Path $primary '.ai/activity/log.md')
         'seed' | Set-Content -Path (Join-Path $primary 'seed.txt')
         git add -A
         git commit --quiet -m seed
@@ -665,6 +677,140 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
             }
             return 0
         }
+
+        # -- (av) THE JUNCTION LANDMINE (2026-07-12/13 fleet outage; handoff  --
+        # -- 202607122330): a worktree whose HEAD is STALE and whose only     --
+        # -- dirt is the live, junctioned .ai/ must still get its declared-   --
+        # -- base branch. In this exact state the dirty-check reads "clean"   --
+        # -- (.ai/ filtered by design) but `git checkout` refuses to touch    --
+        # -- the "locally modified" junction files -> WORKTREE_FAIL x3 ->     --
+        # -- quarantine, fleet-wide. Prove the landmine exists (a raw         --
+        # -- checkout FAILS here — if git ever changes, this assertion fails  --
+        # -- loudly instead of the test passing vacuously), then prove the    --
+        # -- fix: Ensure-DeclaredBaseBranchReal succeeds, the live .ai/ is    --
+        # -- preserved byte-for-byte, and everything else converges on the    --
+        # -- base. Uses the REAL sandbox worktree with its REAL mklink /J     --
+        # -- junction — no mocks (mocking the worktree path is how PR #51     --
+        # -- shipped this bug).                                               --
+        # EAP=Continue for the block: raw `git fetch` here writes ordinary
+        # progress to STDERR, which the suite's script-level EAP=Stop would
+        # promote to a terminating NativeCommandError (same hazard
+        # Ensure-DeclaredBaseBranchReal guards internally — test code is not
+        # inside that guard).
+        $avPrevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $seedSha = git -C $primary rev-parse HEAD
+
+        # Advance origin/master behind the worktree's back: v2 of the
+        # junctioned log (committed at the base) + a non-.ai change.
+        $avClone = Join-Path $sandboxParent 'av-mover'
+        git clone --quiet $originBare $avClone
+        Push-Location $avClone
+        git config user.email 'test@example.com'
+        git config user.name 'test'
+        'log v2 (committed at base)' | Set-Content -Path (Join-Path $avClone '.ai/activity/log.md')
+        'seed v2' | Set-Content -Path (Join-Path $avClone 'seed.txt')
+        git add -A
+        git commit --quiet -m 'advance base: .ai log v2 + seed v2'
+        git push --quiet origin master
+        Pop-Location
+
+        # Stale-HEAD worktree + LIVE uncommitted .ai churn: detach the kiro
+        # worktree at the seed commit, then append an uncommitted line to the
+        # canonical log. Through the junction the worktree sees
+        # .ai/activity/log.md as locally modified AND different at the base —
+        # the exact 2026-07-12/13 outage state.
+        Remove-Item -Path (Join-Path $realWt1 'marker-kiro.txt') -Force -ErrorAction SilentlyContinue
+        git -C $realWt1 checkout --quiet --detach $seedSha 2>$null
+        Add-Content -Path (Join-Path $primary '.ai/activity/log.md') -Value 'log v3 (LIVE, uncommitted — appended by another CLI)'
+        $logLiveBefore = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
+
+        git -C $realWt1 fetch origin *> $null
+        git -C $realWt1 checkout --quiet -b 'av-raw-probe' 'origin/master' *> $null
+        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av: PROVE-THE-BUG - raw git checkout -b FAILS in the stale-HEAD + live-.ai state (the landmine)'
+
+        $avOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av-junction' -Base 'origin/master'
+        Assert-Equal $true $avOk 'av: PROVE-THE-FIX - Ensure-DeclaredBaseBranchReal succeeds in the landmine state'
+        $avBranch = git -C $realWt1 branch --show-current
+        Assert-Equal 'exec/kiro/av-junction' $avBranch 'av: HEAD is on exec/<cli>/<slug>'
+        $avHead = git -C $realWt1 rev-parse HEAD
+        $avBase = git -C $realWt1 rev-parse origin/master
+        Assert-Equal $avBase $avHead 'av: branch tip == origin/master (cut from the DECLARED base)'
+        $logLiveAfter = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
+        Assert-Equal $logLiveBefore $logLiveAfter 'av: live junctioned .ai/activity/log.md preserved byte-for-byte (git never writes it)'
+        $seedTxt = Get-Content -Path (Join-Path $realWt1 'seed.txt') -Raw
+        Assert-Equal 'seed v2' ($seedTxt.Trim()) 'av: non-.ai files converged onto the base (seed.txt v2)'
+        $avDirt = git -C $realWt1 status --porcelain | Where-Object { $_ -notmatch '\s\.ai/' }
+        Assert-Equal $null $avDirt 'av: no phantom non-.ai dirt after the cut (only live .ai churn remains)'
+
+        # (av2) the safety must NOT weaken with the tolerance: genuine non-.ai
+        # dirt still refuses the cut even while .ai churn is present.
+        Add-Content -Path (Join-Path $realWt1 'seed.txt') -Value 'local uncommitted work'
+        $av2Ok = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av2-should-not-cut' -Base 'origin/master'
+        Assert-Equal $true $av2Ok 'av2: non-.ai dirt -> WARN-and-reuse (returns true)'
+        $av2Branch = git -C $realWt1 branch --show-current
+        Assert-Equal 'exec/kiro/av-junction' $av2Branch 'av2: branch NOT changed over uncommitted non-.ai work'
+        git -C $realWt1 show-ref --verify --quiet 'refs/heads/exec/kiro/av2-should-not-cut' *> $null
+        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av2: no new branch was cut over non-.ai dirt'
+        git -C $realWt1 checkout --quiet -- seed.txt 2>$null
+
+        # (av3) PARITY: the bash twin (dispatch-handoffs.sh
+        # ensure_declared_base_branch) must survive the SAME landmine state.
+        # Drive the REAL script end-to-end: a stub 'kimi' binary on PATH
+        # satisfies bin_for()/command -v (the real headless CLI is never
+        # launched — the stub exits 0 instantly); the branch cut happens
+        # BEFORE the invocation. Assert on OUTCOME (branch + preserved log),
+        # not exit code (post-launch bookkeeping varies).
+        $av3Tools = Join-Path $primary '.ai/tools'
+        New-Item -ItemType Directory -Path $av3Tools -Force | Out-Null
+        Copy-Item -Path (Join-Path $here '..\..\.ai\tools\dispatch-handoffs.sh') -Destination $av3Tools
+        $av3Scripts = Join-Path $primary 'scripts'
+        New-Item -ItemType Directory -Path $av3Scripts -Force | Out-Null
+        Copy-Item -Path $wtBootstrapPath -Destination $av3Scripts
+        $av3Open = Join-Path $primary '.ai/handoffs/to-kimi/open'
+        New-Item -ItemType Directory -Path $av3Open -Force | Out-Null
+        $av3Handoff = Join-Path $av3Open 'av3-parity.md'
+        @("# av3-parity", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-13 00:00", "Auto: yes", "Risk: A", "", "## Goal", "parity probe") -join "`n" | Set-Content -Path $av3Handoff -Encoding utf8
+        $av3StubDir = Join-Path $sandboxParent 'bin-stub'
+        New-Item -ItemType Directory -Path $av3StubDir -Force | Out-Null
+        "#!/bin/sh`nexit 0" | Set-Content -Path (Join-Path $av3StubDir 'kimi') -Encoding ascii -NoNewline
+        $av3OldPath = $env:PATH
+        $env:PATH = "$av3StubDir;$av3OldPath"
+        $av3Dispatch = Join-Path $primary '.ai/tools/dispatch-handoffs.sh'
+        Push-Location $primary
+        try {
+            $av3Out = & $bashCmd $av3Dispatch --exec --only kimi 2>&1 | Out-String
+        } finally {
+            Pop-Location
+            $env:PATH = $av3OldPath
+        }
+        $av3Wt = Join-Path $sandboxParent '.wt/proj/kimi'
+        $av3Branch = git -C $av3Wt branch --show-current
+        Assert-Equal 'exec/kimi/av3-parity' $av3Branch 'av3: PARITY - bash twin cut the declared-base branch in the same landmine state'
+        Assert-Equal $false ($av3Out -match 'could not establish declared-base branch') 'av3: bash twin did NOT hit the declared-base failure'
+        $logLiveAfterAv3 = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
+        Assert-Equal $logLiveBefore $logLiveAfterAv3 'av3: bash twin preserved the live junctioned log'
+
+        # (av4) wt-bootstrap.sh junction-degradation guard: a worktree whose
+        # .ai/ has degraded into a REAL directory holding uncommitted content
+        # must make the bootstrap DIE LOUD (a CLI reading the wrong queue is a
+        # coordination-plane split-brain); a clean real dir (the fresh
+        # worktree-add state) must re-junction without complaint.
+        $av4Ai = Join-Path $realWt1 '.ai'
+        cmd /c rmdir "$av4Ai" *> $null
+        New-Item -ItemType Directory -Path $av4Ai -Force | Out-Null
+        'live state that exists only here' | Set-Content -Path (Join-Path $av4Ai 'orphaned-report.md')
+        $av4Out = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
+        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av4: DEGRADED .ai (real dir + uncommitted content) -> wt-bootstrap dies loud'
+        Assert-Equal $true ($av4Out -match 'DEGRADED') 'av4: failure message names the degradation'
+        Remove-Item -Path $av4Ai -Recurse -Force
+        git -C $realWt1 checkout --quiet -- .ai 2>$null   # clean real dir matching the index
+        $av4Out2 = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
+        Assert-Equal 0 $LASTEXITCODE 'av4: clean real dir -> re-junction succeeds'
+        Assert-Equal $true ($av4Out2 -match 'Done\.') 'av4: bootstrap completed'
+        $av4Relinked = (Get-Item $av4Ai).Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        Assert-Equal $true ($av4Relinked -ne 0) 'av4: .ai is a reparse point (junction) again'
+        $ErrorActionPreference = $avPrevEAP
     } finally {
         Pop-Location
         try { git -C $primary worktree prune 2>$null | Out-Null } catch {}

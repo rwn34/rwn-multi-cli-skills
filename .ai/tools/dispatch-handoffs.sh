@@ -281,19 +281,41 @@ ensure_declared_base_branch() {
         return 1
     fi
 
-    if git -C "$wt_path" show-ref --verify --quiet "refs/heads/$branch"; then
-        # Branch already exists (a retried/resumed dispatch for this exact
-        # handoff) — reuse it in place. Do not reset/rebase it onto the base;
-        # that would discard any commits already made on it.
-        if ! git -C "$wt_path" checkout --quiet "$branch" 2>/dev/null; then
-            echo "ERROR: could not check out existing branch $branch in $wt_path" >&2
+    # Attach HEAD to exec/<cli>/<slug> WITHOUT a checkout. A plain `git
+    # checkout` (or `checkout -b`) ABORTS in every executor worktree the moment
+    # the junctioned .ai/ holds live coordination-plane state that differs from
+    # this worktree's (often stale) HEAD: git reads that as "local changes" and
+    # refuses to touch the files (2026-07-12/13 fleet outage — every
+    # auto-dispatch WORKTREE_FAIL -> quarantine; see handoff
+    # 202607122330-fix-ai-junction-branch-cut-landmine). The dirty check above
+    # excludes .ai/ BY DESIGN, so checkout's refusal was the contradictory
+    # second half of one rule. symbolic-ref moves HEAD without rewriting a
+    # single file; the restores then converge worktree+index onto the branch
+    # tip for everything EXCEPT .ai/ — which is LIVE through the junction and
+    # must never be written by git in a worktree — and the index alone for
+    # .ai/, so `git status` shows genuine plane churn instead of staged
+    # phantoms. `git restore` with an explicit --source defaults to
+    # --no-overlay: files absent on the branch are removed from the worktree
+    # too (verified empirically). Keep in lockstep with
+    # tools/4ai-panes/pane-runner.ps1 Ensure-DeclaredBaseBranchReal (parity
+    # guard: test-pane-runner.ps1 (av3)).
+    if ! git -C "$wt_path" show-ref --verify --quiet "refs/heads/$branch"; then
+        if ! git -C "$wt_path" branch "$branch" "$base" 2>/dev/null; then
+            echo "ERROR: could not create branch $branch at $base in $wt_path" >&2
             return 1
         fi
-    else
-        if ! git -C "$wt_path" checkout --quiet -b "$branch" "$base" 2>/dev/null; then
-            echo "ERROR: could not cut $branch from $base in $wt_path" >&2
-            return 1
-        fi
+    fi
+    if ! git -C "$wt_path" symbolic-ref HEAD "refs/heads/$branch" 2>/dev/null; then
+        echo "ERROR: could not attach HEAD to $branch in $wt_path" >&2
+        return 1
+    fi
+    if ! git -C "$wt_path" restore --source="$branch" --staged --worktree -- . ':!.ai' 2>/dev/null; then
+        echo "ERROR: could not sync $wt_path to $branch (excluding .ai/)" >&2
+        return 1
+    fi
+    if ! git -C "$wt_path" restore --source="$branch" --staged -- .ai 2>/dev/null; then
+        echo "ERROR: could not sync the .ai/ index entries in $wt_path" >&2
+        return 1
     fi
     return 0
 }
