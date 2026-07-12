@@ -1,7 +1,9 @@
 // Standalone test harness for framework-guard's decision function.
 // Run: node .opencode/plugin/test-guard.mjs
-import { decide } from "./framework-guard.js";
+import { decide, WRITABLE_LANE } from "./framework-guard.js";
 import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // Sandbox roots derived via path.resolve so they are genuinely absolute on the
 // running OS (POSIX on CI + Windows locally). Hardcoded `C:\...` literals are
@@ -115,6 +117,188 @@ check("allow edit-tool alias 'patch' still lane-restricted", decide({ tool: "pat
 
 // --- non-write tools pass through ---
 check("allow read-ish tool (no filePath)", decide({ tool: "grep", args: { pattern: "x" }, root: ROOT }), true);
+
+// ===========================================================================
+// GitHub / repo-ops lane (2026-07-12) — .github/** is writable.
+// The bug this closes: docs assigned OpenCode "CI config/workflow fixes"
+// (operating-prompt §14, ADR-0011) while the guard denied .github/ — handoff
+// 202607120021 was mechanically impossible. See .ai/reports/opencode-2026-07-12-gates-blocked.md.
+// ===========================================================================
+
+// --- ALLOW: .github/** in every path shape ---
+check("allow .github/workflows/gates.yml (the blocked handoff)", write(".github/workflows/gates.yml"), true);
+check("allow .github top-level file", write(".github/CODEOWNERS"), true);
+check("allow .github nested action", write(".github/actions/setup/action.yml"), true);
+check("allow .github issue template", write(".github/ISSUE_TEMPLATE/bug.md"), true);
+check("allow .github backslash form", write(".github\\workflows\\gates.yml"), true);
+check("allow .github absolute form", write(path.join(ROOT, ".github", "workflows", "gates.yml")), true);
+check(
+  "allow .github absolute backslash form",
+  write(path.join(ROOT, ".github", "workflows", "gates.yml").replace(/[/\\]/g, "\\")),
+  true
+);
+check("allow .github via ./ prefix", write("./.github/workflows/gates.yml"), true);
+check("allow .github via in-lane traversal", write(".ai/reports/../../.github/workflows/gates.yml"), true);
+check("allow .github write inside worktree", write(".github/workflows/gates.yml", WT_ROOT), true);
+check("allow bash redirect into .github", bash("echo x > .github/workflows/gates.yml"), true);
+check("allow bash tee into .github", bash("cat t.yml | tee .github/workflows/gates.yml"), true);
+
+// --- DENY: the widening must not leak. Source + other CLIs + SSOT + ADRs. ---
+// Relative form.
+check("block source .js", write("src/index.js"), false);
+check("block source at root", write("main.rs"), false);
+check("block tests/", write("tests/e2e/spec.ts"), false);
+check("block .claude/", write(".claude/hooks/pretool-write-edit.sh"), false);
+check("block .kimi/", write(".kimi/config.toml"), false);
+check("block .kiro/", write(".kiro/steering/operating-prompt.md"), false);
+check("block .ai/instructions/ (SSOT)", write(".ai/instructions/operating-prompt/principles.md"), false);
+check("block docs/architecture/ (ADRs)", write("docs/architecture/0011-git-ops.md"), false);
+check("block .opencode/ (own contract — Claude is custodian)", write(".opencode/contract.md"), false);
+check("block package.json", write("package.json"), false);
+check("block near-miss '.githubfoo/'", write(".githubfoo/x.yml"), false);
+check("block '.github' as a bare file", write(".github"), false);
+check("block .github traversal escape to source", write(".github/../src/evil.js"), false);
+check("block .github traversal escape to .claude", write(".github/workflows/../../.claude/agents/x.md"), false);
+
+// Absolute form — the Claude write-guard was found (2026-07-11) to compare a
+// `$(pwd)` prefix that never matched Windows absolutes, so an absolute path
+// bypassed its territorial rules while its suite stayed green on relative paths
+// only. These assert the same hole does not exist here.
+check("block absolute source", write(path.join(ROOT, "src", "index.js")), false);
+check("block absolute .claude/", write(path.join(ROOT, ".claude", "agents", "x.md")), false);
+check("block absolute .kimi/", write(path.join(ROOT, ".kimi", "config.toml")), false);
+check("block absolute .kiro/", write(path.join(ROOT, ".kiro", "steering", "x.md")), false);
+check("block absolute .ai/instructions/", write(path.join(ROOT, ".ai", "instructions", "x.md")), false);
+check("block absolute docs/architecture/", write(path.join(ROOT, "docs", "architecture", "x.md")), false);
+
+// Backslash form (absolute + relative).
+check(
+  "block absolute backslash .claude/",
+  write(path.join(ROOT, ".claude", "agents", "x.md").replace(/[/\\]/g, "\\")),
+  false
+);
+check("block backslash .kimi/", write(".kimi\\config.toml"), false);
+check("block backslash .ai/instructions/", write(".ai\\instructions\\x.md"), false);
+
+// Mixed case — lane matching is case-SENSITIVE, so a case variant fails CLOSED
+// (blocked) rather than sneaking into an allow rule. Asserted in both directions.
+check("block mixed-case .GitHub/ (fail-closed)", write(".GitHub/workflows/gates.yml"), false);
+check("block mixed-case .AI/reports/ (fail-closed)", write(".AI/Reports/r.md"), false);
+check("block mixed-case .Claude/", write(".Claude/agents/x.md"), false);
+check("block mixed-case SRC/", write("SRC/index.js"), false);
+check("block bash redirect to mixed-case .GITHUB/", bash("echo x > .GITHUB/workflows/y.yml"), false);
+
+// --- DENY: secrets (contract rule 5) — outranks every allow rule, including
+// the newly widened .github/** subtree. ---
+check("block .env at root", write(".env"), false);
+check("block .env.production", write(".env.production"), false);
+check("block secret inside .github/ (lane must not license it)", write(".github/deploy.key"), false);
+check("block .pem inside .github/", write(".github/workflows/ci.pem"), false);
+check("block id_rsa inside .ai/reports/", write(".ai/reports/id_rsa"), false);
+check("block credentials.json inside .ai/handoffs/", write(".ai/handoffs/to-claude/open/credentials.json"), false);
+check("block absolute .env", write(path.join(ROOT, ".env")), false);
+check("block bash redirect to .env", bash("echo K=v > .env"), false);
+check("allow ordinary .yml in .github (not a secret)", write(".github/workflows/keys.yml"), true);
+
+// ===========================================================================
+// Activity-log entry spool (ADR-0010 blocker, 2026-07-12) — .ai/activity/entries/**
+// is writable. Without this the FIRST spool entry OpenCode ever writes is blocked
+// by its own guard, silently, on day one. Additive: log.md must keep working, the
+// migration has not happened yet.
+// ===========================================================================
+
+// --- ALLOW: the spool, in every path shape a tool might hand us ---
+const ENTRY = "20260712T101500Z-opencode-blockers-a1b2.md";
+check("allow spool entry (relative)", write(`.ai/activity/entries/${ENTRY}`), true);
+check("allow spool entry (backslash)", write(`.ai\\activity\\entries\\${ENTRY}`), true);
+check("allow spool entry (absolute)", write(path.join(ROOT, ".ai", "activity", "entries", ENTRY)), true);
+check(
+  "allow spool entry (absolute backslash)",
+  write(path.join(ROOT, ".ai", "activity", "entries", ENTRY).replace(/[/\\]/g, "\\")),
+  true
+);
+check("allow spool entry (./ prefix)", write(`./.ai/activity/entries/${ENTRY}`), true);
+check("allow spool entry (via in-lane traversal)", write(`.ai/reports/../activity/entries/${ENTRY}`), true);
+check("allow spool entry inside worktree", write(`.ai/activity/entries/${ENTRY}`, WT_ROOT), true);
+check("allow spool entry nested subdir", write(".ai/activity/entries/2026-07/x.md"), true);
+check("allow bash redirect into spool", bash(`echo x > .ai/activity/entries/${ENTRY}`), true);
+check("allow bash tee into spool", bash(`cat e.md | tee .ai/activity/entries/${ENTRY}`), true);
+
+// --- NO REGRESSION: the old path still works (it is still the live log) ---
+check("allow .ai/activity/log.md (unchanged)", write(".ai/activity/log.md"), true);
+check("allow .ai/activity/log.md backslash (unchanged)", write(".ai\\activity\\log.md"), true);
+check("allow .ai/activity/log.md absolute (unchanged)", write(path.join(ROOT, ".ai", "activity", "log.md")), true);
+check("allow bash redirect to log.md (unchanged)", bash("echo x >> .ai/activity/log.md"), true);
+
+// --- DENY: the spool widening must not leak. It is ONE subtree, not `.ai/activity`. ---
+check("block .ai/activity sibling file (not entries/)", write(".ai/activity/other.md"), false);
+check("block .ai/activity/archive/ (deliberately NOT in lane)", write(".ai/activity/archive/2026-04.md"), false);
+check("block near-miss '.ai/activity/entriesfoo/'", write(".ai/activity/entriesfoo/x.md"), false);
+check("block '.ai/activity/entries' as a bare file", write(".ai/activity/entries"), false);
+check("block .ai/ root file via spool sibling", write(".ai/known-limitations.md"), false);
+check("block spool traversal escape to source", write(".ai/activity/entries/../../../src/evil.js"), false);
+check(
+  "block spool traversal escape to .claude",
+  write(".ai/activity/entries/x/../../../../.claude/agents/x.md"),
+  false
+);
+check("block spool traversal escape to SSOT", write(".ai/activity/entries/../../instructions/x.md"), false);
+check("block mixed-case .ai/Activity/Entries/ (fail-closed)", write(".ai/Activity/Entries/x.md"), false);
+check("block bash redirect to .ai/activity/archive/", bash("echo x > .ai/activity/archive/x.md"), false);
+check("block secret inside the spool (rule 5 outranks the lane)", write(".ai/activity/entries/id_rsa"), false);
+check("block .env inside the spool", write(".ai/activity/entries/.env.prod"), false);
+
+// MSYS /c/... form: FAIL-CLOSED (blocked), not a bypass. path.resolve cannot map
+// an MSYS drive path onto a Windows root, so it lands outside the project root and
+// is denied. This is pre-existing behaviour shared by EVERY lane entry (`.ai/reports/**`
+// behaves identically) — asserted here so a future "fix" that maps /c/ must prove it
+// does not open a bypass. OpenCode emits repo-relative paths, so this is never hit
+// in practice. See the report accompanying this change.
+check("MSYS /c/ spool form is blocked (fail-closed, not a bypass)", write(`/c/proj/.ai/activity/entries/${ENTRY}`), false);
+check("MSYS /c/ reports form blocked identically (pre-existing)", write("/c/proj/.ai/reports/r.md"), false);
+
+// --- DENY: everything the widening must still keep out (re-asserted post-widening) ---
+check("post-widening: still block src/", write("src/index.js"), false);
+check("post-widening: still block .claude/", write(".claude/hooks/pretool-write-edit.sh"), false);
+check("post-widening: still block .kimi/", write(".kimi/steering/00-ai-contract.md"), false);
+check("post-widening: still block .kiro/", write(".kiro/agents/coder.json"), false);
+check("post-widening: still block .ai/instructions/ (SSOT)", write(".ai/instructions/operating-prompt/principles.md"), false);
+check("post-widening: still block docs/architecture/ (ADRs)", write("docs/architecture/0010-activity-log-entry-spool.md"), false);
+check("post-widening: still block .opencode/", write(".opencode/plugin/framework-guard.js"), false);
+check("post-widening: still block scripts/", write("scripts/git-hooks/pre-commit"), false);
+check("post-widening: still block .env", write(".env"), false);
+
+// --- ANTI-DRIFT: the lane in the docs must equal the lane in the guard. ---
+// The doc/enforcement divergence IS the bug being fixed (contract promised the
+// repo-ops lane, guard denied it). If they ever diverge again, this fails loudly.
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+function documentedLane(file) {
+  const src = fs.readFileSync(path.join(REPO, file), "utf8");
+  const block = src.match(/<!--\s*LANE:BEGIN[\s\S]*?-->\n([\s\S]*?)<!--\s*LANE:END\s*-->/);
+  if (!block) return null;
+  return block[1]
+    .split("\n")
+    .map((l) => l.match(/^\s*-\s*`([^`]+)`\s*$/))
+    .filter(Boolean)
+    .map((m) => m[1]);
+}
+
+for (const file of [".opencode/contract.md", "AGENTS.md"]) {
+  let documented = null;
+  try {
+    documented = documentedLane(file);
+  } catch (e) {
+    documented = null;
+  }
+  const enforced = WRITABLE_LANE.join(", ");
+  const found = documented ? documented.join(", ") : "<no LANE:BEGIN/LANE:END block found>";
+  check(
+    `lane in ${file} matches WRITABLE_LANE in framework-guard.js`,
+    { allow: found === enforced, reason: `documented [${found}] != enforced [${enforced}]` },
+    true
+  );
+}
 
 console.log(`PASS ${pass} / FAIL ${fail} (total ${pass + fail})`);
 if (fail > 0) {

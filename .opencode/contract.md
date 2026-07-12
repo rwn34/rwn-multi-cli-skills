@@ -52,9 +52,37 @@ written rules are the intent behind those guards:
    `tools/`, `infra/`, `migrations/`, `config/`, or any code file.
 2. **Never write to other CLIs' territory** — `.claude/`, `.kimi/`, `.kiro/`,
    `.codegraph/` (`.kimigraph/`/`.kirograph/` dirs removed 2026-07-09; block
-   retained as tombstone against accidental recreation).
-3. Your writable paths are ONLY: `.ai/activity/log.md` (prepend entries),
-   `.ai/reports/` (your reports), `.ai/handoffs/` (handoff protocol files).
+   retained as tombstone against accidental recreation). Also never
+   `.ai/instructions/` (the SSOT — you are not an author of framework rules) or
+   `docs/architecture/` (ADRs — you do not author ADRs).
+3. **Your writable lane is ONLY these paths** — everything else is denied by
+   default:
+
+   <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
+   - `.ai/activity/log.md`
+   - `.ai/activity/entries/**`
+   - `.ai/reports/**`
+   - `.ai/handoffs/**`
+   - `.github/**`
+   <!-- LANE:END -->
+
+   `.ai/activity/log.md` = prepend entries. `.ai/reports/**` = your reports.
+   `.ai/handoffs/**` = handoff protocol files. `.github/**` = the CI/DevOps
+   config half of your GitHub / repo-ops lane (workflows, actions, issue
+   templates) — added 2026-07-12, because the lane above assigns you CI/workflow
+   fixes and the guard used to block them (handoff 202607120021).
+
+   `.ai/activity/entries/**` is the future entry-per-file activity spool
+   (ADR-0010) — added 2026-07-12 as **permission plumbing only**, so the spool is
+   landable. **Nothing has migrated yet: keep logging exactly as you do today, by
+   prepending to `.ai/activity/log.md`.** The day the protocol flips, the lane
+   will already allow it instead of silently swallowing your entries.
+
+   **`.github/**` is the ONLY source-adjacent path you may write.** `infra/`,
+   `scripts/`, `Dockerfile`, `docker-compose*` are *not* in your lane even though
+   they are DevOps-flavoured: they run against live systems and are reviewed as
+   code by Kimi⇄Kiro. If a brief needs one of them, STOP and report — do not
+   treat "it's DevOps" as a lane extension.
 4. **Never** run: `git push --force`, `git reset --hard`, `rm -rf` on broad
    targets, `DROP DATABASE`, `TRUNCATE`. Mutating release/deploy commands
    (`git push`, `git tag`, `npm publish`, deploy CLIs) are allowed ONLY under

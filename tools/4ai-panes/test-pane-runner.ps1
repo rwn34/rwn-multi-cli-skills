@@ -41,6 +41,16 @@
 #        Invoke-HandoffRun calls for two different CLIs, each in its own real
 #        worktree, never perturb each other's HEAD or working files, and the
 #        PRIMARY checkout's HEAD is unchanged throughout
+#   (ae) idle heartbeat on first idle poll         (emits; line has CLI name + time)
+#   (af) heartbeat is throttled                    (10 rapid polls -> exactly 1 emit)
+#   (ag) heartbeat re-emits after the interval     (true)
+#   (ah) heartbeat is idle-only                    (one call site, null-handoff branch)
+#   (ai) picked-up line on idle->busy              (present, printed after claim won)
+#   (aj) Enable/Restore-DispatchGuardEnv          (sets 1, returns+restores prior)
+#   (ak) real InvokeCli child env                 (child sees AI_HANDOFF_DISPATCH=1)
+#   (al) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
+#   (am) real InvokeCli honors BOTH the worktree cwd AND AI_HANDOFF_DISPATCH=1
+#        in the SAME child invocation (the interleave this rebase must prove)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -591,6 +601,109 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
     }
 } else {
     Write-Host "SKIP  ac/ad: no USABLE bash for wt-bootstrap.sh (present bash may be WSL, which cannot see Windows paths - see README's documented gotcha) - skipping real-sandbox worktree tests" -ForegroundColor DarkGray
+}
+
+# -- (ae/af/ag) idle heartbeat (F1) --
+# Shadow the Write-Host cmdlet with a capturing function for these tests only;
+# Write-IdleHeartbeat's boolean return carries the emit/throttle decision, and
+# the captured line carries the content. Removed again right after (ag).
+$script:hostLines = @()
+function Write-Host {
+    param([object]$Object, $ForegroundColor)
+    $script:hostLines += [string]$Object
+    # Forward to the real cmdlet so test PASS/FAIL lines stay visible while the
+    # heartbeat line is captured for assertion.
+    if ($ForegroundColor) { Microsoft.PowerShell.Utility\Write-Host -Object $Object -ForegroundColor $ForegroundColor } else { Microsoft.PowerShell.Utility\Write-Host -Object $Object }
+}
+
+# (ae) first idle poll emits immediately, and the line names the CLI + a timestamp
+$script:hostLines = @()
+$hbLast = $null
+$emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast)
+Assert-Equal $true $emitted 'ae: first idle poll emits the heartbeat'
+Assert-Equal $true ($script:hostLines[0] -match '\[kimi\]') 'ae: heartbeat line contains the CLI name'
+Assert-Equal $true ($script:hostLines[0] -match '\(\d{2}:\d{2}:\d{2}\)') 'ae: heartbeat line contains a timestamp'
+
+# (af) throttled: 10 rapid idle polls emit exactly ONE heartbeat, not one per poll
+$script:hostLines = @()
+$hbLast2 = $null
+$emitCount = 0
+for ($i = 0; $i -lt 10; $i++) { if (Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)) { $emitCount++ } }
+Assert-Equal 1 $emitCount 'af: 10 rapid idle polls -> exactly 1 heartbeat (throttled, not every poll)'
+
+# (ag) once the interval has elapsed, the next idle poll emits again
+$hbLast2 = (Get-Date).AddSeconds(-($script:IdleHeartbeatSeconds + 1))
+$emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)
+Assert-Equal $true $emitted 'ag: heartbeat re-emits once IdleHeartbeatSeconds has elapsed'
+
+Remove-Item -Path function:Write-Host -Force
+
+# -- (ah/ai) structural guards on the supervisor loop (F1) --
+$runnerSrc = Get-Content -Path $runner -Raw
+# (ah) the heartbeat is idle-only: exactly one call site, inside the null-handoff branch
+$hbRefs = ([regex]::Matches($runnerSrc, 'Write-IdleHeartbeat -CliName')).Count
+Assert-Equal 1 $hbRefs 'ah: Write-IdleHeartbeat has exactly one call site'
+Assert-Equal $true ($runnerSrc -match 'if \(\$null -eq \$handoff\) \{\s*Write-IdleHeartbeat') 'ah: heartbeat fires only in the no-handoff (idle) branch'
+# (ai) the idle->busy transition prints a picked-up line, AFTER the claim is won
+$idxPick = $runnerSrc.IndexOf('-- picked up')
+$idxClaim = $runnerSrc.IndexOf('if (-not (Claim-Handoff')
+Assert-Equal $true ($idxPick -ge 0) 'ai: picked-up line present on the idle->busy transition'
+Assert-Equal $true ($idxPick -gt $idxClaim) 'ai: picked-up line prints only after the claim is won'
+
+# -- (aj) Enable/Restore-DispatchGuardEnv round trip (F3) --
+$env:AI_HANDOFF_DISPATCH = 'outer-value'
+$prev = Enable-DispatchGuardEnv
+Assert-Equal 'outer-value' $prev 'aj: Enable-DispatchGuardEnv returns the prior value'
+Assert-Equal '1' $env:AI_HANDOFF_DISPATCH 'aj: Enable-DispatchGuardEnv sets AI_HANDOFF_DISPATCH=1'
+Restore-DispatchGuardEnv -Previous $prev
+Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'aj: Restore-DispatchGuardEnv restores the prior value'
+Remove-Item -Path Env:\AI_HANDOFF_DISPATCH
+$prevUnset = Enable-DispatchGuardEnv
+Assert-Equal $true ($null -eq $prevUnset) 'aj: prior value is $null when the var was unset'
+Restore-DispatchGuardEnv -Previous $prevUnset
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'aj: restore removes the var when it was previously unset'
+
+# -- (ak) REAL invoke path: the spawned child actually inherits AI_HANDOFF_DISPATCH=1 --
+#     Stub Get-HeadlessCmd with a real native child (cmd, like test p - never a
+#     real CLI) that exits 7 ONLY if the guard var reached its environment.
+#     InvokeCli returns the child exit code, so the env assertion needs no
+#     output capture. Also proves the runner env is cleaned up afterwards, AND
+#     (the point of this rebase) that the worktree-cwd param does not disturb
+#     the env-guard behavior when both are exercised through the SAME call.
+$origHeadlessCc = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (exit 7) else (exit 9)') }
+$ccCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+${function:Get-HeadlessCmd} = $origHeadlessCc
+Assert-Equal 7 $ccCode 'ak: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 (exit 7)'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'ak: AI_HANDOFF_DISPATCH removed from runner env after the call'
+
+# -- (al) GUARD: the assignment must never silently disappear from the source --
+#     Removing AI_HANDOFF_DISPATCH from the child env re-arms the nested
+#     self-dispatch race (F3); if it is ever dropped, this test fails loudly.
+Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_DISPATCH = ''1''')) 'al: GUARD - AI_HANDOFF_DISPATCH=1 assignment present in pane-runner source'
+
+# -- (am) THE INTERLEAVE PROOF (this rebase's own acceptance test): a single --
+# -- real InvokeCli call must honor BOTH the worktree cwd param AND the      --
+# -- AI_HANDOFF_DISPATCH env guard AT THE SAME TIME. Prior tests (y)/(ad)    --
+# -- prove cwd alone; (ak) proves the env guard alone with the DEFAULT cwd.  --
+# -- This proves neither wrapper silently drops or reorders the other.      --
+$amDir = Join-Path $env:TEMP ("pane-runner-interleave-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $amDir -Force | Out-Null
+try {
+    $origHeadlessAm = ${function:Get-HeadlessCmd}
+    function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (echo %CD%>cwd.txt & exit 7) else (exit 9)') }
+    $amCode = & $script:RealInvokeCli 'claude' 'ignored-prompt' $amDir
+    ${function:Get-HeadlessCmd} = $origHeadlessAm
+    Assert-Equal 7 $amCode 'am: interleave - env guard fires (exit 7) with an explicit non-default cwd passed too'
+    $amCwdFile = Join-Path $amDir 'cwd.txt'
+    Assert-Equal $true (Test-Path $amCwdFile) 'am: interleave - child actually ran IN $amDir (cwd.txt written there, not elsewhere)'
+    if (Test-Path $amCwdFile) {
+        $amSeenCwd = (Get-Content -Path $amCwdFile -Raw).Trim().TrimEnd('\')
+        Assert-Equal ($amDir.TrimEnd('\')) $amSeenCwd 'am: interleave - child process cwd (%CD%) equals the Cwd param, not the caller location'
+    }
+    Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'am: interleave - AI_HANDOFF_DISPATCH still cleaned up from runner env with a non-default cwd too'
+} finally {
+    Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # -- cleanup + summary --

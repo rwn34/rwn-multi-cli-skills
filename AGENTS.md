@@ -33,6 +33,35 @@ Each CLI reads its own contract from its native always-loaded path:
 A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 `.claude/` can locate Claude's contract without knowing Claude's conventions.
 
+## OpenCode's lane (OpenCode only — other CLIs skip this section)
+
+**GitHub / repo-ops lane** (owner directive 2026-07-11, operating-prompt §14):
+OpenCode owns GitHub and DevOps *operations* — opening PRs, release chores, **CI
+config / workflow fixes**, tag/version consistency, repo housekeeping. Claude's
+budget is the smallest in the fleet, so it routes this work to OpenCode as
+handoffs in `.ai/handoffs/to-opencode/open/`. Guardrails are unchanged: no
+source-code edits, dry-run-then-confirm for anything mutating a remote or a live
+environment, merges to main remain Tier C (human-gated).
+
+**OpenCode's writable lane** — enforced mechanically by
+`.opencode/plugin/framework-guard.js`; everything not listed is denied:
+
+<!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
+- `.ai/activity/log.md`
+- `.ai/activity/entries/**`
+- `.ai/reports/**`
+- `.ai/handoffs/**`
+- `.github/**`
+<!-- LANE:END -->
+
+`.ai/activity/entries/**` is permission plumbing for the ADR-0010 activity-log
+spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today.
+
+`.github/**` is the only source-adjacent path in the lane. Project source,
+`.claude/`, `.kimi/`, `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/`
+(ADRs), `infra/`, `scripts/` and secrets files are all blocked. Full contract:
+`.opencode/contract.md`.
+
 ## Activity log protocol (same for all CLIs)
 
 - **Read** `.ai/activity/log.md` at the start of non-trivial work. Newest entries on top.
