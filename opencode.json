@@ -13,7 +13,7 @@
       }
     }
   },
-  "model": "zhipu-coding/glm-4.7",
+  "model": "zhipu-coding/glm-4.7-flash",
   "permission": {
     "edit": "allow",
     "bash": "allow"
@@ -22,7 +22,7 @@
     "opencode": {
       "mode": "primary",
       "description": "OpenCode — 4th CLI of this framework: general helper + DevOps deployment operator (ADR-0002 Stage 2, Crush replacement per owner decision 2026-07-09). Contract: .opencode/contract.md.",
-      "model": "zhipu-coding/glm-4.7",
+      "model": "zhipu-coding/glm-4.7-flash",
       "prompt": "{file:./.opencode/contract.md}"
     }
   }
