@@ -133,6 +133,19 @@ execute for the main agent (orchestrator) session.
 | Root-file policy (ADR-0001 allowlist) | ✓ `root-file-guard.sh` | ✗ **not enforced** |
 | Destructive bash (`rm -rf /`, `DROP DATABASE`, `git push --force`) | ✓ `destructive-cmd-guard.sh` | ✗ **not enforced** (for subagents with `execute_bash`) |
 
+**Update (v0.0.27, Claude surface):** the *territorial / sensitive / root* write
+dimension for bash write-commands is now **enforced on Claude's Bash tool**.
+`.claude/hooks/pretool-bash.sh` extracts each write TARGET (`cp`/`mv`/`install`/
+`ln`/`dd`/`tee`/`sed -i` and `>`/`>>`/`>|` redirects) and routes it through the
+same `path-policy.sh` classifier as the Write/Edit guard, so a bash write into
+`.kimi/**`/`.kiro/**`/`.claude/hooks/**`/`.env`/non-allowlisted root now blocks
+(exit 2). This is a **path-target** guarantee and is scoped to statically
+parseable commands — `$(...)`, `eval`, `sh -c`, base64/variable-built paths fail
+CLOSED as unparseable or remain out of scope. The **destructive-command** row
+above (`rm -rf`, `DROP DATABASE`) is a separate dimension and is unchanged; the
+Kiro-subagent `execute_bash` gap it describes is likewise unchanged (this fix is
+on the Claude hook surface, not Kiro's tool layer).
+
 **Mitigations applied (Wave 4d, handoff to-kiro/017):**
 
 1. **Prompt hardening** — every Kiro subagent prompt carries explicit
