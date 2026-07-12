@@ -20,7 +20,22 @@ promotion happened.
 
 ### Added
 
-- [TODO: new features]
+- **Tier-restatement drift gate (`.ai/tools/check-tier-restatements.sh`).** The
+  autonomy-tier table lives in six places: the SSOT (operating-prompt §8), three
+  generated replicas, and two HAND-WRITTEN restatements — `CLAUDE.md` and
+  `.claude/agents/orchestrator.md`. The replicas are byte-diffed by
+  `check-ssot-drift.sh`, but the two restatements paraphrase the tiers in their own
+  voice, so a byte-diff structurally cannot cover them. They had no mechanical check
+  at all and silently drifted through PR #54. The new gate asserts the load-bearing
+  tier concepts (`deploy to PRODUCTION`, `deploy to STAGING`, merge-to-main, ADR
+  authorship, worktree cleanup, the two no-auto-deploy couplings, …) appear in both
+  restatements, and — critically — that each concept is still present in the SSOT
+  §8 section it is tracking, so moving or deleting a tier item upstream fails the
+  build instead of leaving the check quietly tracking a stale copy. Placement
+  assertions additionally pin staging-deploy to Tier B and production-deploy to
+  Tier C. Wired into `gates`, with a hermetic self-test
+  (`.ai/tools/test-check-tier-restatements.sh`) that proves the check goes red on
+  each failure mode.
 
 ### Changed
 

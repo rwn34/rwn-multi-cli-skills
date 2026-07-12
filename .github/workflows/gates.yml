@@ -36,6 +36,17 @@ jobs:
       - name: SSOT drift check
         run: bash .ai/tools/check-ssot-drift.sh
 
+      # The tier table also lives in two HAND-WRITTEN restatements (CLAUDE.md and
+      # .claude/agents/orchestrator.md) that paraphrase it rather than replicate it,
+      # so the byte-for-byte drift check above structurally cannot cover them — they
+      # silently drifted through PR #54. This asserts the load-bearing tier concepts
+      # are present in both, and are still where the SSOT says they are.
+      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        run: bash .ai/tools/check-tier-restatements.sh
+
+      - name: Tier restatement checker self-test
+        run: bash .ai/tools/test-check-tier-restatements.sh
+
       - name: Claude hooks test suite
         run: bash .claude/hooks/test_hooks.sh
 
