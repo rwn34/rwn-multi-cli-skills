@@ -224,6 +224,68 @@ function Resolve-WtBootstrapPath {
     return $null
 }
 
+# --- Git Bash resolution (the 2026-07-12 outage) ----------------------------
+# The panes launch from a plain Windows context (vbs -> powershell) whose
+# persisted Machine+User PATH puts C:\WINDOWS\system32 FIRST and ships Git only
+# as C:\Program Files\Git\cmd — which holds git.exe but NO bash.exe. So a naive
+# `Get-Command bash` resolves to the WSL launcher C:\Windows\System32\bash.exe.
+#
+# WSL bash re-parses its arguments as a shell string, so the backslashes in a
+# Windows path are eaten as escapes:
+#   C:\Users\rwn34\...\wt-bootstrap.sh  ->  C:Usersrwn34...wt-bootstrap.sh  (exit 127)
+# Git Bash runs that SAME backslash path fine, so the fix is NOT path conversion —
+# it is pinning Git Bash and REFUSING WSL. Even if WSL bash could find the script,
+# running it there would be wrong: `git worktree` and mklink /J junctions are
+# Windows-side operations.
+#
+# The hazard was already documented in test-pane-runner.ps1 (the suite SKIPS on
+# WSL bash) but the production resolver never got the same guard — the knowledge
+# was in the repo; only the test acted on it.
+#
+# Overridable ($script:) so tests can drive the probe order without a real install.
+$script:GitBashProbePaths = @(
+    'C:\Program Files\Git\bin\bash.exe'
+    'C:\Program Files\Git\usr\bin\bash.exe'
+    'C:\Program Files (x86)\Git\bin\bash.exe'
+)
+
+# Reject WSL (System32\bash.exe) and Microsoft Store (WindowsApps) launchers.
+# Kept inline-free of helpers so the function stays self-contained and liftable.
+function Resolve-GitBash {
+    param([string[]]$ProbePaths = $script:GitBashProbePaths)
+
+    $windir = if ($env:WINDIR) { $env:WINDIR } else { 'C:\Windows' }
+    $sys32 = [System.IO.Path]::Combine($windir, 'System32')
+    $isDisallowed = {
+        param([string]$p)
+        if ([string]::IsNullOrWhiteSpace($p)) { return $true }
+        $n = $p -replace '/', '\'
+        if ($n.StartsWith($sys32, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        return ($n -match '(?i)WindowsApps')
+    }
+
+    # 1. Well-known Git for Windows locations.
+    foreach ($p in $ProbePaths) {
+        if ((& $isDisallowed $p)) { continue }
+        if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+    }
+    # 2. Derive from git.exe: ...\Git\cmd\git.exe -> ...\Git\{bin,usr\bin}\bash.exe
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        $gitHome = Split-Path -Parent (Split-Path -Parent $git.Source)
+        foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+            $c = Join-Path $gitHome $rel
+            if ((& $isDisallowed $c)) { continue }
+            if (Test-Path -LiteralPath $c -PathType Leaf) { return $c }
+        }
+    }
+    # 3. Last resort: whatever is on PATH — but ONLY if it is not WSL/Store.
+    $onPath = Get-Command bash -ErrorAction SilentlyContinue
+    if ($onPath -and -not (& $isDisallowed $onPath.Source)) { return $onPath.Source }
+
+    return $null
+}
+
 # Overridable so tests can stub out the real bash/wt-bootstrap.sh call. Returns
 # $true on success (worktree present + usable), $false on failure. NEVER prints
 # or returns the primary checkout as a substitute on failure — callers MUST
@@ -240,9 +302,9 @@ $script:InvokeWtBootstrap = {
         Write-Host "  Fix: ship scripts/wt-bootstrap.sh into the project, or set RWN_FRAMEWORK_REPO to the framework checkout." -ForegroundColor Red
         return $false
     }
-    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    $bash = Resolve-GitBash
     if (-not $bash) {
-        Write-Host "  ERROR: 'bash' not found on PATH - cannot run scripts/wt-bootstrap.sh" -ForegroundColor Red
+        Write-Host "  ERROR: Git Bash not found (WSL bash cannot run wt-bootstrap.sh) - install Git for Windows or set PATH" -ForegroundColor Red
         return $false
     }
     # wt-bootstrap.sh's normal informational logging goes to stdout AND its
@@ -254,7 +316,7 @@ $script:InvokeWtBootstrap = {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        & $bash.Source $bootstrap $ProjectDir $CliName 2>&1 | ForEach-Object { Write-Host "  [wt-bootstrap] $_" -ForegroundColor DarkGray }
+        & $bash $bootstrap $ProjectDir $CliName 2>&1 | ForEach-Object { Write-Host "  [wt-bootstrap] $_" -ForegroundColor DarkGray }
     } finally {
         $ErrorActionPreference = $prevEAP
     }

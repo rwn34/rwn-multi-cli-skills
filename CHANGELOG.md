@@ -42,6 +42,42 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.37] - 2026-07-12
+
+### Fixed
+
+- **Fleet outage: the panes' `bash` was WSL's `C:\Windows\System32\bash.exe`, not
+  Git Bash.** The panes launch from a plain Windows context (vbs -> PowerShell)
+  whose persisted PATH puts `C:\WINDOWS\system32` first and contributes Git only
+  as `C:\Program Files\Git\cmd` — which holds `git.exe` but **no `bash.exe`**. So
+  `Get-Command bash` resolved to the WSL launcher, which re-parses its arguments
+  as a shell string and eats the backslashes of the Windows path it is handed
+  (`C:\Users\...\wt-bootstrap.sh` -> `C:Users...wt-bootstrap.sh`, exit 127). Every
+  headless dispatch failed worktree setup, tripped three strikes, and the whole
+  fleet quarantined itself.
+- `tools/4ai-panes/pane-runner.ps1`: new `Resolve-GitBash` — probes the well-known
+  Git for Windows locations, then derives `bash.exe` from `git.exe`'s install root,
+  and only then accepts a PATH hit; **rejects** any candidate under
+  `%WINDIR%\System32` or `WindowsApps` (WSL / Store launchers). Fails loud and
+  returns `$false` when nothing resolves — it never silently proceeds, and never
+  falls back to the primary checkout.
+- `tools/4ai-panes/Selector.ps1`: `Find-Bash` had the identical defect (trusted
+  `Get-Command bash` first) and is hardened the same way.
+- **Not** fixed by path conversion: Git Bash executes the same backslash Windows
+  path correctly. Running `wt-bootstrap.sh` under WSL would be wrong regardless —
+  `git worktree` and `mklink /J` junctions are Windows-side operations.
+
+### Added
+
+- Tests for the above, closing the gap that let this ship green: the hazard was
+  already documented in `test-pane-runner.ps1` (the suite *skipped* on WSL bash)
+  but the production resolver never got the same guard. Now covered by
+  resolver-rejection cases, anti-rot source guards, and — critically — **real,
+  non-stubbed bash invocations** (`wt-bootstrap.sh --help` via the resolved Git
+  Bash; a backslash-path execution probe under the reconstructed pane `PATH`).
+  `test-pane-runner.ps1`'s own bash probe now uses `Resolve-GitBash`, so its
+  real-worktree tests no longer silently skip in the environment the panes run in.
+
 ## [0.0.36] - 2026-07-12
 
 ### Changed

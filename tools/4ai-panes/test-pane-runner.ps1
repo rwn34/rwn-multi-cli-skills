@@ -456,20 +456,21 @@ Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
 # -- arithmetic matches production. Skips (does not fail) if bash/git are      --
 # -- unavailable, matching the fail-open posture of other environment-gated    --
 # -- checks in this suite.
-$bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+# Resolve bash the way PRODUCTION now does (Resolve-GitBash), not via a bare
+# `Get-Command bash`. The old probe here trusted PATH and then SKIPPED when it got
+# WSL bash — so in the very environment the panes run in, this block quietly
+# tested nothing. Pinning Git Bash means these real-worktree tests actually RUN
+# there. A genuinely bash-less box still skips (never crashes the suite).
+$bashCmd = Resolve-GitBash
 $gitCmd  = Get-Command git -ErrorAction SilentlyContinue
 $wtBootstrapPath = Join-Path $here '..\..\scripts\wt-bootstrap.sh'
 $wtBootstrapPath = [System.IO.Path]::GetFullPath($wtBootstrapPath)
-# A 'bash' on PATH is not necessarily USABLE for this: on Windows it may resolve
-# to WSL bash (System32\bash.exe), which cannot see Windows-style paths the way
-# Git Bash does (README.md's own documented gotcha: WSL bash wants /mnt/c/...,
-# Git Bash wants /c/...). wt-bootstrap.sh takes Windows paths as arguments, so
-# probe with a real (harmless, --help) invocation rather than trusting presence
-# on PATH — a WSL bash here must SKIP this block, not crash the whole suite.
+# Still prove it by a real (harmless, --help) invocation rather than trusting the
+# resolver's word for it — wt-bootstrap.sh takes Windows paths as arguments.
 $bashUsable = $false
 if ($bashCmd -and (Test-Path $wtBootstrapPath)) {
     try {
-        & $bashCmd.Source $wtBootstrapPath --help *> $null
+        & $bashCmd $wtBootstrapPath --help *> $null
         $bashUsable = ($LASTEXITCODE -eq 0)
     } catch { $bashUsable = $false }
 }
@@ -892,6 +893,80 @@ try {
     else { $env:RWN_FRAMEWORK_REPO = $origFrameworkEnv }
     Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# ---------------------------------------------------------------------------
+# (au-ax) GIT BASH PINNING — the 2026-07-12 fleet outage.
+#
+# The panes' `bash` resolved to WSL's C:\Windows\System32\bash.exe (persisted
+# PATH puts system32 first; Git ships only ...\Git\cmd, which has git.exe but NO
+# bash.exe). WSL bash re-parses its args as a shell string, eating the
+# backslashes of the Windows path it is handed:
+#   C:\Users\...\wt-bootstrap.sh -> C:Users...wt-bootstrap.sh  (exit 127)
+# Every headless dispatch died there, three strikes, whole fleet quarantined.
+#
+# The bitter part: the hazard is documented at ~line 463 of THIS file and the
+# (ac)/(ad) block SKIPS on WSL bash — but the PRODUCTION resolver never got the
+# same guard. Knowledge in the repo, acted on only by the test. These cases put
+# the guard where it belongs: on the resolver itself.
+# ---------------------------------------------------------------------------
+
+# (au) prove-the-bug / prove-the-fix: even when a WSL-shaped path is the ONLY
+# probe candidate, the resolver must REJECT it and fall through to real Git Bash.
+# The old code (`Get-Command bash` first, no rejection) returned it.
+$wslShaped = Join-Path $env:WINDIR 'System32\bash.exe'
+$resolvedWithWslProbe = Resolve-GitBash -ProbePaths @($wslShaped)
+Assert-Equal $false ($resolvedWithWslProbe -eq $wslShaped) `
+    'au: Resolve-GitBash REJECTS a WSL System32\bash.exe candidate'
+Assert-Equal $true ($null -eq $resolvedWithWslProbe -or $resolvedWithWslProbe -notmatch '(?i)System32') `
+    'au2: Resolve-GitBash never returns anything under System32'
+
+# (av) Store/WindowsApps alias is rejected the same way.
+$storeShaped = 'C:\Users\x\AppData\Local\Microsoft\WindowsApps\bash.exe'
+Assert-Equal $false ((Resolve-GitBash -ProbePaths @($storeShaped)) -eq $storeShaped) `
+    'av: Resolve-GitBash REJECTS a WindowsApps (Store alias) candidate'
+
+# (aw) preference: on a box with Git for Windows, the resolver finds Git Bash —
+# by probe, or derived from git.exe — even with a poisoned probe list.
+$gitBashResolved = Resolve-GitBash -ProbePaths @($wslShaped)
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    Assert-Equal $true ($null -ne $gitBashResolved) 'aw: Git present -> Resolve-GitBash resolves a bash'
+    Assert-Equal $true ($gitBashResolved -match '(?i)bash\.exe$') 'aw2: resolved candidate is a bash.exe'
+    Assert-Equal $true ($gitBashResolved -notmatch '(?i)System32|WindowsApps') 'aw3: resolved bash is NOT WSL/Store'
+} else {
+    Write-Host "  SKIP aw: git not on PATH" -ForegroundColor Yellow
+}
+
+# (ax) THE PROOF THE OLD TESTS NEVER HAD: a REAL, non-stubbed invocation. Every
+# existing bash assertion in this suite stubs $script:InvokeWtBootstrap — which
+# is precisely why a resolver that could never launch bash shipped green. Run
+# the ACTUAL resolved Git Bash against the ACTUAL wt-bootstrap.sh and require
+# exit 0 + a usage banner, with the Windows backslash path UNCONVERTED (proving
+# path conversion was never the fix).
+$axBootstrap = [System.IO.Path]::GetFullPath((Join-Path $here '..\..\scripts\wt-bootstrap.sh'))
+$axBash = Resolve-GitBash
+if ($axBash -and (Test-Path $axBootstrap)) {
+    $prevEAPax = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $axOut = & $axBash $axBootstrap --help 2>&1 | Out-String
+        $axExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $prevEAPax }
+    Assert-Equal 0 $axExit 'ax: REAL invocation - resolved Git Bash runs wt-bootstrap.sh --help, exit 0'
+    Assert-Equal $true ($axOut -match 'wt-bootstrap\.sh') 'ax2: REAL invocation - usage banner came back'
+    Assert-Equal $false ($axOut -match 'No such file or directory') `
+        'ax3: REAL invocation - no WSL backslash-eating "No such file" failure'
+} else {
+    Write-Host "  SKIP ax: no Git Bash or wt-bootstrap.sh on this box" -ForegroundColor Yellow
+}
+
+# (ay) ANTI-ROT: InvokeWtBootstrap must go through Resolve-GitBash, and the old
+# unguarded `Get-Command bash` must never come back. Source-level, same technique
+# as (at) — a future "simplification" back to Get-Command bash re-breaks the fleet.
+$wtSrc2 = $script:InvokeWtBootstrap.ToString()
+Assert-Equal $true ($wtSrc2 -match 'Resolve-GitBash') `
+    'ay: anti-rot - InvokeWtBootstrap resolves bash via Resolve-GitBash'
+Assert-Equal $false ($wtSrc2 -match 'Get-Command\s+bash') `
+    'ay2: anti-rot - the unguarded `Get-Command bash` is gone from InvokeWtBootstrap'
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
