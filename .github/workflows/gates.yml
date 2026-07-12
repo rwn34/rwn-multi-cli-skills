@@ -69,6 +69,27 @@ jobs:
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
 
+      # The tier table also lives in two HAND-WRITTEN restatements (CLAUDE.md and
+      # .claude/agents/orchestrator.md) that paraphrase it rather than replicate it,
+      # so the byte-for-byte SSOT drift check above structurally cannot cover them —
+      # they silently drifted through PR #54. This asserts the load-bearing tier
+      # concepts are present in both, and are still where the SSOT says they are.
+      #
+      # Placed LAST alongside the version-bump check, for the same reason given
+      # below: it is a policy-TEXT check, so a failure here must never skip the
+      # substantive suites (hooks / backstop / installer) and mask a real defect.
+      # Ordering this early did exactly that on the first push of this branch —
+      # one prose failure skipped 13 steps.
+      # Self-test FIRST: it is hermetic (temp-dir fixtures, never reads the live
+      # tree) and proves the checker still detects each failure mode. Running it
+      # before the repo assertion means a non-compliant tree cannot skip it and
+      # hide a checker that has quietly stopped biting.
+      - name: Tier restatement checker self-test
+        run: bash .ai/tools/test-check-tier-restatements.sh
+
+      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        run: bash .ai/tools/check-tier-restatements.sh
+
       # ADR-0012: the framework version is assigned at MERGE, not on feature
       # branches, so this is a DETECTIVE check on the resulting master push —
       # comparing the previous master tip (github.event.before) to the new one.

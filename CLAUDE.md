@@ -11,12 +11,19 @@ content, `opencode.json`, `.opencode/`) per ADR-0001 (amended 2026-07-09;
 deprecation window until task-10 deletion).
 
 **Autonomy tiers (operating-prompt SSOT §8):** work autonomously on the
-reversible (Tier A: tests, reviews, reports, delegated edits, commits and
-pushes on feature branches, Risk-A/B handoff dispatch); act-then-notify on
-Tier B (including merging a peer-reviewed, CI-green PR to main — the fleet
-merges and notifies the owner after; a merge must never auto-trigger a deploy);
-hard-gate Tier C (deploy, publish, destructive ops, ADR changes, secrets). The
-human is a gate, not a relay.
+reversible (Tier A: tests, reviews, reports, delegated edits, commits, pushes,
+branch creation, Risk-A/B handoff dispatch); act-then-notify on Tier B —
+**all git/GitHub mechanics are yours** (owner directive 2026-07-12: "Committing
+tree, merge, cleanup, push, or any activity related to GitHub is yours to make"),
+so opening PRs, merging a peer-reviewed CI-green PR to main, branch deletion and
+repo/tree/worktree cleanup, **ADR authorship or amendment** (author it, then
+surface it prominently — no pre-approval), and **deploy to STAGING** (dry-run
+first; refuse on a dirty tree or failing tests) are all act-then-notify.
+Hard-gate Tier C: **deploy to PRODUCTION** (the owner's only release-path gate —
+per-deploy confirmation, all guardrails intact), publish, tag/release, destructive
+ops on shared history, secrets, production data. A merge must never auto-trigger a
+deploy, and a staging deploy must never auto-promote to production. The human is a
+gate, not a relay.
 
 **Owner interaction preference (owner directive 2026-07-11):** the owner is
 optimizing their *answering time*, not token spend (they are fine with tokens).

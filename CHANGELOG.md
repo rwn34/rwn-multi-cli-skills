@@ -24,21 +24,7 @@ promotion happened.
 
 ### Changed
 
-- **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
-  present.** `scripts/check-version-bump.sh` previously proved only that a
-  `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
-  and made the release-engineer *manually* promote the `## [Unreleased]` bullets
-  into that heading — so an empty section, or one holding nothing but the
-  Keep-a-Changelog scaffolding (`[TODO: …]`, TBD, WIP, `...`, an empty `-`
-  bullet, comments only), sailed through and shipped a version documented by
-  nothing. The gate now requires at least one real content line between the
-  heading and the next `## `, fails closed on a section it cannot parse, and
-  says which promotion did not happen. `## [Unreleased]` is exempt by
-  construction (the gate only inspects the section named by the new semver
-  version), so an empty Unreleased right after a promotion is fine. Scope: this
-  closes the EMPTY/PLACEHOLDER hole, **not** the WRONG-CONTENT one — bullets
-  describing a different PR than the one that bumped the version still pass, and
-  a human still reads the entry at release.
+- [TODO: changes in existing functionality]
 
 ### Deprecated
 
@@ -55,6 +41,90 @@ promotion happened.
 ### Security
 
 - [TODO: vulnerabilities addressed]
+
+## [0.0.32] - 2026-07-12
+
+### Added
+
+- **Tier-restatement drift gate (`.ai/tools/check-tier-restatements.sh`).** The
+  autonomy-tier table lives in six places: the SSOT (operating-prompt §8), three
+  generated replicas, and two HAND-WRITTEN restatements — `CLAUDE.md` and
+  `.claude/agents/orchestrator.md`. The replicas are byte-diffed by
+  `check-ssot-drift.sh`, but the two restatements paraphrase the tiers in their own
+  voice, so a byte-diff structurally cannot cover them. They had no mechanical check
+  at all and silently drifted through PR #54. The new gate asserts the load-bearing
+  tier concepts (`deploy to PRODUCTION`, `deploy to STAGING`, merge-to-main, ADR
+  authorship, worktree cleanup, the two no-auto-deploy couplings, …) appear in both
+  restatements, and — critically — that each concept is still present in the SSOT
+  §8 section it is tracking, so moving or deleting a tier item upstream fails the
+  build instead of leaving the check quietly tracking a stale copy. Placement
+  assertions additionally pin staging-deploy to Tier B and production-deploy to
+  Tier C. Wired into `gates`, with a hermetic self-test
+  (`.ai/tools/test-check-tier-restatements.sh`) that proves the check goes red on
+  each failure mode.
+
+### Changed
+
+- **Full git/GitHub authority to the fleet.** Operating-prompt §8 now states
+  that ALL git/GitHub mechanics are fleet-executed — commit, branch, push
+  (Tier A); open PR, merge to main, branch deletion, repo/tree/worktree cleanup
+  (Tier B). None of them is an owner ask. Per owner directive 2026-07-12:
+  *"Committing tree, merge, cleanup, push, or any activity related to GitHub is
+  yours to make."* Previously §8 named only commits and pushes, leaving cleanup
+  and PR/branch hygiene in an unclassified grey zone that drifted toward asking.
+- **Deploy split into STAGING (Tier B) and PRODUCTION (Tier C).** This
+  distinction did not previously exist anywhere in the framework — §8,
+  `.opencode/contract.md` and ADR-0002 all treated every deploy as an
+  undifferentiated Tier-C gate. Staging deploys are now the fleet's call
+  (act-then-notify) while keeping every operational guardrail: dry-run first,
+  brief-only commands, refuse on a dirty tree or failing tests. **Production
+  deploys are unchanged and no guardrail is weakened** — per-deploy human
+  confirmation on every mutating command, all four Stage-2 conditions intact.
+  New prohibited coupling: a staging deploy must never auto-promote to
+  production (sibling of the existing merge-never-auto-deploys rule).
+- **ADR authorship/amendment moved Tier C → Tier B**, resolving a live
+  contradiction: §4 says Claude Code *owns* ADRs (architect lane) while §8
+  required owner pre-approval before writing one. Authorship is now
+  act-then-notify; the requirement to surface it prominently (PR + summary +
+  activity log) is retained — only the pre-approval gate is removed.
+- Files: `.ai/instructions/operating-prompt/principles.md` (§4, §8, §13),
+  `.claude/skills/operating-prompt/SKILL.md` (replica),
+  `docs/architecture/0011-git-ops-execution-to-opencode.md` (Amendment
+  2026-07-12b), `docs/architecture/0002-cli-role-topology.md` (deploy language
+  aligned), `.opencode/contract.md` + `AGENTS.md` (OpenCode is the deploy
+  executor: staging fleet-authorized, production human-confirmed),
+  `CLAUDE.md`, `.claude/agents/orchestrator.md`.
+- **Implementation subagents are now FALLBACK-ONLY, and using one requires a
+  written reason** (operating-prompt §14.2a, owner directive 2026-07-12). §14
+  already said "hand off as much as you can", but it stated that as an economic
+  preference with no mechanism — so it held while Claude was calm and collapsed
+  the moment it was busy. §14.2a converts it into a rule with a visible failure
+  mode: Claude MUST NOT reach for `coder`, `tester`, `refactorer`, `debugger`,
+  `doc-writer`, or `release-engineer` for work Kimi, Kiro, or OpenCode could do,
+  and any invocation must name one of exactly four legitimate exceptions in the
+  activity log — **(a)** Claude-exclusive territory (`.claude/**`, which the
+  cross-CLI guard and the ADR-0005 backstop put out of every other CLI's reach),
+  **(b)** recipient genuinely unavailable (say which, and how you know),
+  **(c)** the owner waiting live on a small fix, **(d)** the final review + merge
+  gate (Claude's by definition — author ≠ reviewer). An unexplained invocation is
+  a protocol violation, not a convenience. This mirrors ADR-0011's
+  `infra-engineer` fallback-logging rule and for the same reason: an activity log
+  filling with unexplained subagent use is the tell that the reflex has returned.
+- **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
+  present.** `scripts/check-version-bump.sh` previously proved only that a
+  `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
+  and made the release-engineer *manually* promote the `## [Unreleased]` bullets
+  into that heading — so an empty section, or one holding nothing but the
+  Keep-a-Changelog scaffolding (`[TODO: …]`, TBD, WIP, `...`, an empty `-`
+  bullet, comments only), sailed through and shipped a version documented by
+  nothing. The gate now requires at least one real content line between the
+  heading and the next `## `, fails closed on a section it cannot parse, and
+  says which promotion did not happen. `## [Unreleased]` is exempt by
+  construction (the gate only inspects the section named by the new semver
+  version), so an empty Unreleased right after a promotion is fine. Scope: this
+  closes the EMPTY/PLACEHOLDER hole, **not** the WRONG-CONTENT one — bullets
+  describing a different PR than the one that bumped the version still pass, and
+  a human still reads the entry at release.
 
 ## [0.0.31] - 2026-07-12
 

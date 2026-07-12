@@ -5,6 +5,9 @@
 Accepted (owner-directed 2026-07-11). **Amended 2026-07-12** (see "Amendment
 (2026-07-12)" below): merge-to-main reclassified Tier C (owner-gated) → Tier B
 (fleet act-then-notify); deploy remains the owner's Tier-C gate.
+**Amended 2026-07-12b** (see "Amendment (2026-07-12b)" below): full git/GitHub
+authority to the fleet; deploy splits into STAGING (Tier B, fleet) and
+PRODUCTION (Tier C, owner-gated); ADR authorship/amendment moves Tier C → Tier B.
 
 **Conditionally effective — see "Sequencing precondition" in the Decision.** This
 ADR is accepted as policy but does NOT take effect until OpenCode has completed
@@ -16,6 +19,112 @@ This ADR **narrows the execution half of Claude's lane** in
 § "GitHub/release pipeline"). It does not alter ADR-0002's separation-of-duties
 principle — it strengthens it. It also **amends the handoff protocol v3 rule**
 that Risk-C handoffs are never auto-dispatched (`.ai/handoffs/README.md` step 2b).
+
+## Amendment (2026-07-12b) — full git/GitHub authority + staging/production deploy split + ADR authorship to Tier B
+
+Owner directive, 2026-07-12 (verbatim):
+
+> "merge doesn't have to be my gate — this is yours and it has to be in the
+> steering. Committing tree, merge, cleanup, push, or any activity related to
+> GitHub is yours to make. Deploy to prod would be mine to decide. Deploy to
+> staging is still your call, not me."
+
+The 2026-07-12 amendment (below) moved *merge* to Tier B. It stopped there. The
+owner's intent is broader than the one action that was encoded, and three gaps
+remained. This amendment closes all three.
+
+### 1. All git/GitHub mechanics are fleet-executed
+
+Operating-prompt §8 named "commits, pushes to feature/exec branches" and (after
+the first amendment) merge. It never said that the *whole class* of git/GitHub
+work belongs to the fleet, so every action not on the list — deleting a merged
+branch, pruning a worktree, cleaning stale refs, closing or re-titling a PR —
+fell into an unclassified grey zone and, under the "when in doubt take the more
+restrictive tier" rule, drifted toward asking the owner. The directive resolves
+it: **committing, branching, pushing, opening PRs, merging, branch deletion,
+worktree/tree cleanup and every other repo-housekeeping action are the fleet's
+to execute.** They are Tier A (commit, push, branch creation) or Tier B (PR,
+merge, cleanup) — never an owner ask.
+
+### 2. Deploy splits: STAGING is Tier B, PRODUCTION is Tier C
+
+This distinction did not exist anywhere in the framework before this amendment.
+§8 listed a bare, undifferentiated "deploy" under Tier C; `.opencode/contract.md`
+and ADR-0002's Stage-2 conditions likewise treated every deploy identically —
+"Deploys are Tier-C hard-gated no matter who executes them." The owner has now
+drawn the line where irreversibility actually is:
+
+- **Deploy to STAGING → Tier B (the fleet's call, act-then-notify).** Staging is
+  a disposable environment; a bad staging deploy is fixed by another staging
+  deploy. **The operational guardrails are retained in full: dry-run first and
+  paste the output, refuse on a dirty working tree, refuse on failing tests, and
+  execute only commands enumerated in the brief.** What is removed is the
+  *per-deploy human confirmation*, and nothing else.
+- **Deploy to PRODUCTION → Tier C (the owner's gate, per deploy).** Unchanged in
+  every respect.
+
+**This amendment weakens NO production guardrail.** Production deploys keep all
+four Stage-2 conditions verbatim: (1) mandatory dry-run first with pasted
+output, (2) per-deploy human confirmation of every mutating command, (3) only
+commands enumerated in an approved deploy brief, (4) refuse on a dirty tree or
+failing tests. A production deploy brief remains `Risk: C` and remains
+subject to the `Approved-by:` rules in §3 of this ADR.
+
+**New prohibited coupling: a staging deploy must never auto-promote to
+production.** Staging deploy is Tier B *because* it stops at staging. If a
+staging deploy can cascade into production — a promotion pipeline, an
+auto-promote-on-green stage, a shared deploy target — then the staging deploy is
+in substance a production deploy and it re-tightens to Tier C. This is the exact
+sibling of the merge/deploy decoupling rule the first amendment introduced, and
+it is what keeps the Tier-B classification honest.
+
+### 3. ADR authorship and amendment move to Tier B
+
+Operating-prompt §8 listed "ADR creation or amendment" as Tier C — ask the owner
+*before* writing. §4 simultaneously states that Claude Code **owns** ADRs as its
+architect lane. Those two rules contradict each other: the CLI whose designated
+job is authoring ADRs had to obtain permission before doing its job, while Kimi
+and Kiro were barred from ADR authorship outright by lane. The Tier-C entry was
+therefore either a no-op or an obstacle, never a safeguard.
+
+**ADR authorship and amendment are now Tier B: author it, then notify
+prominently.** The surfacing requirement is *not* removed — an ADR lands in a PR
+the owner sees, is called out in the summary and in the activity log, and is
+revertible like any other file. What is removed is the *pre-approval gate* on
+writing it down. The owner remains free to reject any ADR at the PR; an
+unwritten ADR is simply an undocumented decision, which is worse.
+
+### What this supersedes
+
+- **Operating-prompt §8** — the Tier-A/B/C lists, replaced by the tables above.
+  Superseded specifically: the bare "deploy" entry in Tier C (now "deploy to
+  PRODUCTION"), and "ADR creation or amendment" in Tier C (now Tier B).
+- **`.opencode/contract.md`** — Stage-2 condition 2 ("Per-deploy human
+  confirmation ... Deploys are Tier-C hard-gated no matter who executes them")
+  now applies to **production** deploys only. Staging deploys are Tier B and
+  fleet-authorized; conditions 1, 3 and 4 (dry-run, brief-only, refuse on
+  dirty/failing) apply to **both** environments, unchanged.
+- **ADR-0002 § "Per-CLI roles" → OpenCode → Deploy execution (Stage 2), and
+  § "GitHub/release pipeline" step 6** — same split: read "deploy" there as
+  "production deploy" wherever a per-deploy human gate is asserted; staging
+  deploy is Tier B under this amendment. ADR-0002's separation-of-duties
+  principle (author ≠ reviewer ≠ deployer) is untouched.
+- **This ADR's own § "Decision → 3 → What OpenCode must verify", item 4**
+  ("Deploys keep their own per-deploy guardrails ... a per-deploy human
+  confirmation, every time") — now scoped to **production** deploys. A staging
+  deploy brief needs no `Approved-by:` line and no per-deploy confirmation; it
+  still needs the dry-run, the clean tree, the green tests, and the brief.
+- **This ADR's own § "Consequences → Neutral"** first bullet ("Merge, deploy,
+  publish, tag, destructive ops: the owner still approves each one") — merge was
+  already removed by the first amendment; staging deploy is removed by this one.
+  Read it as: production deploy, publish, tag and destructive ops.
+
+Everything else in Tier C is unchanged and unweakened: publish to a public
+registry, tag/release cuts, force-push and destructive operations on shared
+history, `git reset --hard` on shared state, data deletion, `DROP`/`TRUNCATE`,
+secrets and credentials, spending money, production data of any kind, and writes
+into another CLI's territory outside the handoff protocol. The
+"when in doubt, take the more restrictive tier and say so" rule survives intact.
 
 ## Amendment (2026-07-12) — merge-to-main is Tier B (fleet-executed), not owner-gated
 

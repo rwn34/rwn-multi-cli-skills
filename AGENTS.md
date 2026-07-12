@@ -35,13 +35,22 @@ A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 
 ## OpenCode's lane (OpenCode only — other CLIs skip this section)
 
-**GitHub / repo-ops lane** (owner directive 2026-07-11, operating-prompt §14):
-OpenCode owns GitHub and DevOps *operations* — opening PRs, release chores, **CI
-config / workflow fixes**, tag/version consistency, repo housekeeping. Claude's
-budget is the smallest in the fleet, so it routes this work to OpenCode as
-handoffs in `.ai/handoffs/to-opencode/open/`. Guardrails are unchanged: no
-source-code edits, dry-run-then-confirm for anything mutating a remote or a live
-environment, merges to main remain Tier C (human-gated).
+**GitHub / repo-ops lane** (owner directive 2026-07-11, extended 2026-07-12;
+operating-prompt §8/§14): OpenCode owns GitHub and DevOps *operations* — opening
+PRs, **merging peer-reviewed CI-green PRs (Tier B)**, branch deletion,
+**repo/tree/worktree cleanup (Tier B)**, release chores, **CI config / workflow
+fixes**, tag/version consistency, repo housekeeping. **All git/GitHub mechanics
+are fleet-executed — the owner does not gate them.** Claude's budget is the
+smallest in the fleet, so it routes this work to OpenCode as handoffs in
+`.ai/handoffs/to-opencode/open/`. Guardrails are unchanged: no source-code edits,
+dry-run first for anything mutating a live environment.
+
+**Deploy — the environment decides the gate** (ADR-0011 amendment 2026-07-12b):
+**staging deploy is Tier B** (OpenCode's call — dry-run first, refuse on a dirty
+tree or failing tests, then notify), **production deploy is Tier C** (owner-gated,
+per-deploy human confirmation on every mutating command, all four Stage-2
+conditions intact). A merge must never auto-trigger a deploy, and a staging deploy
+must never auto-promote to production. Full conditions: `.opencode/contract.md`.
 
 **OpenCode's writable lane** — enforced mechanically by
 `.opencode/plugin/framework-guard.js`; everything not listed is denied:
