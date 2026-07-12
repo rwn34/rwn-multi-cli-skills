@@ -36,6 +36,16 @@ promotion happened.
 
 ### Fixed
 
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.34] - 2026-07-12
+
+### Fixed
+
 - **Fleet still down after 0.0.33: the declared-base branch cut threw on a
   successful `git fetch` (`pane-runner.ps1` `Ensure-DeclaredBaseBranchReal`).**
   Second-order regression, unmasked by the 0.0.33 flat-install fix. git writes
@@ -61,10 +71,6 @@ promotion happened.
   behind the worktree's back, then cuts a branch under a real `EAP='Stop'`, so it
   reproduces the live `RemoteException` against the unguarded function and passes
   against the guarded one, plus anti-rot guards that the EAP guard stays put.
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.33] - 2026-07-12
 
