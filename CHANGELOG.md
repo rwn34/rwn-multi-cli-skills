@@ -30,6 +30,55 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.25] - 2026-07-12
+
+### Security
+
+- **The Claude territorial guard never fired on absolute paths — and the test suite was
+  certifying the bypass.** `.claude/hooks/pretool-write-edit.sh` computed
+  `project_root=$(pwd)`, which under Git Bash yields the MSYS form (`/c/Users/...`),
+  while the Write/Edit tools emit the Windows form (`C:\Users\...`). The prefix test
+  never matched, so `rel` stayed **absolute** and every territorial `case "$rel" in
+  .kimi|.kimi/*)` arm silently missed. A subagent — which under the orchestrator pattern
+  is who does all the writing — could write into any other CLI's territory just by using
+  an absolute path:
+
+      SUBAGENT + relative   .kimi/foo.md            -> exit=2  BLOCKED
+      SUBAGENT + absolute   C:\...\.kimi\foo.md     -> exit=0  ALLOWED
+
+  Reproduced against the pre-fix hook in a **normal (non-worktree) checkout**, which is
+  what every onboarded project has. Inside a `.wt/` executor worktree the escape was
+  *incidentally* caught by the later ADR-0004 worktree-confinement arm (with a misleading
+  "escaping the worktree" reason) — which is why the bug survived: it looked blocked
+  wherever the executors actually ran.
+- **Paths are now normalized before any rule runs**, by a deliberately **lexical**
+  converter (no `realpath`, no `cygpath`). `realpath`/`cygpath -a` resolve symlinks and
+  Windows junction reparse points — which would *reintroduce* an escape, since `.ai/` is
+  a junction. `cygpath -u` was tried and **fails open**: it canonicalizes the two shapes
+  we deliberately refuse (bare drive `C:`, drive-relative `C:foo`) instead of erroring.
+- **Normalization fails CLOSED.** An un-canonicalizable `file_path` (bare drive,
+  drive-relative, unrecognized shape) is now `exit 2`. A guard that cannot understand its
+  input must deny.
+
+### Fixed
+
+- **`test_hooks.sh` fixtures only ever used RELATIVE paths**, so the tests and the runtime
+  disagreed about the input domain and the suite had been green *because* it never fed the
+  hook what the tools actually send. Fixture set now covers relative, Windows-absolute
+  (forward- **and** back-slash), MSYS `/c/` form, mixed case, and the fail-closed shapes.
+  **17 → 98 assertions.**
+- **`.claude/hooks/README.md` documented the broken behavior.** It advertised
+  `PASS: 17/17`, omitted normalization entirely, and — load-bearing — instructed hook
+  authors to *"prefer **fail-open** (exit 0 on unexpected input)"*, which is precisely the
+  guidance that produced this bug class. Enforcement hooks are now documented as
+  fail-**closed**; only advisory hooks may fail open.
+
+### Known gap
+
+- **The Bash tool is NOT path-checked.** `pretool-bash.sh` screens for destructive command
+  *shapes* but does no path matching, so `cp`/`mv`/`sed -i`/`tee`/`>` can still write any
+  protected path. This change raises the wall; the door beside it is still open. Tracked
+  separately — do not treat protected paths as unreachable.
 ## [0.0.24] - 2026-07-12
 
 ### Fixed

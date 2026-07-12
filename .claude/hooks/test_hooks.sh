@@ -6,7 +6,7 @@
 WE=".claude/hooks/pretool-write-edit.sh"
 BH=".claude/hooks/pretool-bash.sh"
 
-pass=0; fail=0; fails=()
+pass=0; fail=0; skip=0; fails=(); skips=()
 
 run_test() {
   local name="$1" hook="$2" payload="$3" expected="$4"
@@ -91,24 +91,29 @@ run_test "t31 subagent .kimi still blocked" "$WE" '{"agent_type":"coder","tool_i
 # --- write-edit: ADR-0004 worktree confinement (Rule 2.6) + fleet whitelist (Rule 2.7) ---
 # Fixtures in a temp dir; cleaned up below regardless of pass/fail.
 T=$(mktemp -d)
-PROJ_NAME=$(basename "$PWD")
+# The fleet tests must run from a NON-worktree cwd: Rule 2.6 (worktree confinement)
+# is evaluated BEFORE Rule 2.7, so if the suite itself happens to be run from inside
+# an executor worktree (.wt/<project>/<cli>/ — the normal case for a dispatched CLI),
+# the absolute fleet-fixture paths are legitimately blocked as worktree escapes and
+# t32/t35 fail for environmental reasons. Pinning cwd to a scratch primary-shaped
+# root makes the suite hermetic wherever it is run from.
+PROJ_NAME=proj
+mkdir -p "$T/proj"
 # fleet fixture 1: registry whitelists this project -> proj-b only
 mkdir -p "$T/f1/.fleet/handoffs/to-proj-b/open" "$T/f1/.fleet/handoffs/to-proj-c/open" "$T/f1/.fleet/activity"
 printf '{"projects":{"%s":{"path":"x","talks_to":["proj-b"]}}}' "$PROJ_NAME" > "$T/f1/.fleet/registry.json"
 # fleet fixture 2: no registry at all
 mkdir -p "$T/f2/.fleet/handoffs/to-proj-b/open"
 # worktree fixture: simulated executor worktree at .wt/projA/kiro
-mkdir -p "$T/.wt/projA/kiro/src"
+mkdir -p "$T/.wt/projA/kiro/src" "$T/.wt/projA/kiro/.kimi" "$T/.wt/projA/kiro/.ai"
 
-run_test "t32 fleet whitelisted target allowed"  "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-b/open/x.md\"}}" 0
-run_test "t33 fleet non-whitelisted blocked"     "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-c/open/x.md\"}}" 2
-run_test "t34 fleet missing registry blocked"    "$WE" "{\"tool_input\":{\"file_path\":\"$T/f2/.fleet/handoffs/to-proj-b/open/x.md\"}}" 2
-run_test "t35 fleet activity log allowed"        "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/activity/log.md\"}}" 0
+run_test_cd "t32 fleet whitelisted target allowed"  "$T/proj" "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-b/open/x.md\"}}" 0
+run_test_cd "t33 fleet non-whitelisted blocked"     "$T/proj" "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/handoffs/to-proj-c/open/x.md\"}}" 2
+run_test_cd "t34 fleet missing registry blocked"    "$T/proj" "$WE" "{\"tool_input\":{\"file_path\":\"$T/f2/.fleet/handoffs/to-proj-b/open/x.md\"}}" 2
+run_test_cd "t35 fleet activity log allowed"        "$T/proj" "$WE" "{\"tool_input\":{\"file_path\":\"$T/f1/.fleet/activity/log.md\"}}" 0
 run_test_cd "t36 worktree absolute escape blocked" "$T/.wt/projA/kiro" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$T/projA/src/x.ts\"}}" 2
 run_test_cd "t37 worktree ../ escape blocked"      "$T/.wt/projA/kiro" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"../kimi/src/x.ts"}}' 2
 run_test_cd "t38 worktree in-tree subagent write allowed" "$T/.wt/projA/kiro" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"src/x.ts"}}' 0
-
-rm -rf "$T"
 
 # --- write-edit: python-less environment must NOT fail open (validation campaign 2026-07-09) ---
 # In the live Claude hook runtime python3 can be a Windows Store alias stub that prints
@@ -147,7 +152,140 @@ run_test_nopy "t49 no-python empty stdin allowed"             "$BH" ''          
 run_test      "t50 bash non-empty unparseable stdin blocked"  "$BH" '{"tool_input":{"garbage":true}}'              2
 run_test_nopy "t51 no-python unparseable stdin blocked"       "$BH" '{"tool_input":{"garbage":true}}'              2
 
+# ===========================================================================
+# ABSOLUTE-PATH CANONICALIZATION (regression: subagent abs-path territorial bypass)
+# ===========================================================================
+# Root cause (2026-07-12): the hook did `project_root=$(pwd)` — Git Bash yields the
+# MSYS form (/c/Users/...) — and prefix-compared it against file_path, which the
+# Write/Edit tools emit as a WINDOWS absolute path (C:\Users\...). The compare never
+# matched, `rel` stayed absolute, and every territorial `case "$rel" in .kimi|.kimi/*)`
+# arm silently missed. A SUBAGENT could write into .kimi/ or .kiro/ via an absolute
+# path — exit 0, ALLOWED. The main thread was saved only incidentally by Rule 2.5.
+#
+# THE SUITE WAS THE REASON THIS SURVIVED: every fixture above feeds a RELATIVE path,
+# so the suite's input domain was strictly narrower than the runtime's and it
+# certified the hole 54/54 green. The fixtures below close that gap PERMANENTLY —
+# every territorial rule, in every path shape the runtime can emit, on both the
+# subagent and the main-thread path.
+#
+# All of these run with cwd = a scratch project root that is NOT under .wt/, because
+# Rule 2.6 (worktree confinement) blocks absolute paths outright and would mask the
+# bug: it is only observable from a primary checkout.
+#
+# Platform note: the hook's canonicalizer is pure lexical bash, so Windows-shaped
+# inputs (C:\..., C:/..., /C/...) are meaningful on Linux CI too — there they simply
+# resolve OUTSIDE the scratch root, and every one of them targets a rule whose verdict
+# is BLOCK either way. Only the drive-letter-form-UNDER-the-root ALLOW case cannot be
+# constructed off Windows; it is skipped loudly, never silently (see SKIPPED below).
+
+P="$T/proj"                                   # scratch primary-shaped root (from fixture block above)
+mkdir -p "$P/.kimi" "$P/.kiro" "$P/.claude" "$P/.ai" "$P/src" "$P/docs"
+
+bs()  { printf '%s' "$1" | tr '/' '\\'; }                       # /a/b -> \a\b
+jbs() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }                 # escape backslashes for JSON
+# /c/x -> C:/x. Empty when no Windows form exists (Linux CI) -> loud skip, never silent.
+# NOTE the asymmetry, and that it is deliberate: the TEST may lean on cygpath, the HOOK
+# may not. The hook is an enforcement point and must canonicalize with bash alone (an
+# earlier draft's cygpath fallback failed OPEN on 'C:' / 'C:foo' — fixtures t81/t82).
+# A test harness has no such constraint: here cygpath is just a convenience for building
+# a Windows-shaped fixture out of an MSYS temp dir (/tmp/... is not under a drive letter
+# even on Git Bash, so the lexical branch alone would skip these on Windows too).
+root_win() {
+  case "$1" in
+    /[A-Za-z]/*) printf '%s:/%s' "$(printf '%s' "${1:1:1}" | tr 'a-z' 'A-Z')" "${1:3}" ; return ;;
+  esac
+  command -v cygpath >/dev/null 2>&1 && cygpath -m "$1" 2>/dev/null
+}
+PBS=$(bs "$P")                 # \tmp\...\proj   (on Windows: the true backslash form)
+PWIN=$(root_win "$P")          # C:/tmp/.../proj  or empty off-Windows
+PUP=$(printf '%s' "$P" | tr 'a-z' 'A-Z')   # case-variant of the root
+
+# w <name> <expected> <json-payload>  — always run from the scratch root $P
+w() { run_test_cd "$1" "$P" "$WE" "$3" "$2"; }
+
+# --- SUBAGENT -> .kimi/ : every path shape must BLOCK (this is the bypass itself) ---
+w "t52 abs native .kimi (subagent)"        2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.kimi/evil.md\"}}"
+w "t53 abs backslash .kimi (subagent)"     2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\.kimi\\evil.md")\"}}"
+w "t54 abs mixed separators .kimi"         2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS")/.kimi\\\\evil.md\"}}"
+w "t55 abs doubled slashes .kimi"          2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P//.kimi//evil.md\"}}"
+w "t56 dot-segment .kimi"                  2 '{"agent_type":"coder","tool_input":{"file_path":"./.kimi/./evil.md"}}'
+w "t57 dotdot laundering via .claude"      2 '{"agent_type":"coder","tool_input":{"file_path":".claude/../.kimi/evil.md"}}'
+w "t58 case-variant root .kimi"            2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$PUP/.kimi/evil.md\"}}"
+w "t59 win drive abs .kimi (C:\\)"         2 '{"agent_type":"coder","tool_input":{"file_path":"C:\\Users\\x\\proj\\.kimi\\evil.md"}}'
+w "t60 win drive abs .kimi (c:/ lower)"    2 '{"agent_type":"coder","tool_input":{"file_path":"c:/Users/x/proj/.kimi/evil.md"}}'
+w "t61 msys drive abs .kimi (/C/ upper)"   2 '{"agent_type":"coder","tool_input":{"file_path":"/C/Users/x/proj/.kimi/evil.md"}}'
+
+# --- SUBAGENT -> the other territorial dirs, absolute forms ---
+w "t62 abs .kiro (subagent)"               2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.kiro/agents/x.json\"}}"
+w "t63 abs backslash .kiro (subagent)"     2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\.kiro\\agents\\x.json")\"}}"
+w "t64 abs .kimigraph (subagent)"          2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.kimigraph/x.db\"}}"
+w "t65 abs .kirograph (subagent)"          2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.kirograph/x.db\"}}"
+w "t66 win drive abs .kiro"                2 '{"agent_type":"coder","tool_input":{"file_path":"C:\\Users\\x\\proj\\.kiro\\x.json"}}'
+w "t67 dotdot laundering to .kiro"         2 '{"agent_type":"coder","tool_input":{"file_path":".ai/../.kiro/evil.md"}}'
+
+# --- MAIN THREAD -> same targets (Rule 2.5 must not be the only thing saving us) ---
+w "t68 main-thread abs .kimi"              2 "{\"tool_input\":{\"file_path\":\"$P/.kimi/evil.md\"}}"
+w "t69 main-thread abs backslash .kimi"    2 "{\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\.kimi\\evil.md")\"}}"
+w "t70 main-thread dotdot via .claude"     2 '{"tool_input":{"file_path":".claude/../.kimi/evil.md"}}'
+w "t71 main-thread dotdot via .ai"         2 '{"tool_input":{"file_path":".ai/../.kiro/evil.md"}}'
+w "t72 main-thread abs src (delegate)"     2 "{\"tool_input\":{\"file_path\":\"$P/src/main.rs\"}}"
+w "t73 main-thread abs docs (delegate)"    2 "{\"tool_input\":{\"file_path\":\"$P/docs/x.md\"}}"
+
+# --- sensitive-file rule, absolute forms (Rule 2) ---
+w "t74 abs .env (subagent)"                2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.env\"}}"
+w "t75 abs backslash server.key"           2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\server.key")\"}}"
+w "t76 abs id_rsa (subagent)"              2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/id_rsa\"}}"
+w "t77 abs .KIMI uppercase (subagent)"     2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.KIMI/evil.md\"}}"
+
+# --- root-file policy, absolute forms (Rule 3) ---
+w "t78 abs root non-allowlisted"           2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/evil.txt\"}}"
+w "t79 abs backslash root non-allowlisted" 2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\evil.txt")\"}}"
+
+# --- root-prefix BOUNDARY: a sibling dir whose name merely starts with the root name
+# must NOT be treated as living under the root. Without the "/" boundary guard,
+# "<root>.ai/evil.txt" strips to ".ai/evil.txt" and the main thread is ALLOWED to
+# write it — a genuine bypass into a directory outside the project.
+w "t80 root-prefix boundary not under root" 2 "{\"tool_input\":{\"file_path\":\"$P.ai/evil.txt\"}}"
+
+# --- fail-CLOSED on path shapes the canonicalizer cannot understand ---
+w "t81 drive-relative C:foo blocked"       2 '{"agent_type":"coder","tool_input":{"file_path":"C:foo\\bar.txt"}}'
+w "t82 bare drive C: blocked"              2 '{"agent_type":"coder","tool_input":{"file_path":"C:"}}'
+w "t83 path == project root blocked"       2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P\"}}"
+
+# --- must STILL be allowed: absolute paths that are genuinely legal (no over-blocking) ---
+w "t84 abs src (subagent) allowed"         0 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/src/main.rs\"}}"
+w "t85 abs backslash src (subagent)"       0 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\src\\main.rs")\"}}"
+w "t86 main-thread abs .ai allowed"        0 "{\"tool_input\":{\"file_path\":\"$P/.ai/research/x.md\"}}"
+w "t87 main-thread abs .claude allowed"    0 "{\"tool_input\":{\"file_path\":\"$P/.claude/hooks/x.sh\"}}"
+w "t88 main-thread abs .ai dot-segments"   0 "{\"tool_input\":{\"file_path\":\"$P/./.ai/./research/../research/x.md\"}}"
+
+# --- drive-letter form UNDER the root: only constructible on a Windows-ish shell ---
+if [ -n "$PWIN" ]; then
+  w "t89 win drive abs src under root allowed" 0 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$PWIN/src/main.rs\"}}"
+  w "t90 win drive abs .kimi under root blocked" 2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$PWIN/.kimi/evil.md\"}}"
+else
+  skip=$((skip+2))
+  skips+=("t89/t90 drive-letter-form-under-root: cwd '$P' has no /<drive>/ prefix (non-Windows shell) — the Windows form of the project root cannot be constructed here. Their BLOCK-direction twins (t59/t60/t61/t66) run on every platform.")
+fi
+
+# --- Rule 2.6 worktree confinement must survive canonicalization (ADR-0004) ---
+# In a worktree, an absolute path UNDER the worktree is legal and now normalizes to a
+# relative one (before the fix it was blocked as an "escape" — Rule 2.6 was
+# load-bearing while broken: it blocked ALL absolute writes, legal ones included).
+WT="$T/.wt/projA/kiro"
+run_test_cd "t91 worktree abs in-tree write allowed"   "$WT" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$WT/src/x.ts\"}}" 0
+run_test_cd "t92 worktree abs .kimi in-tree blocked"   "$WT" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$WT/.kimi/x.md\"}}" 2
+run_test_cd "t93 worktree abs backslash escape blocked" "$WT" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$(bs "$T")\\projA\\src\\x.ts")\"}}" 2
+run_test_cd "t94 worktree dotdot escape blocked"        "$WT" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"../../../projA/src/x.ts"}}' 2
+run_test_cd "t95 worktree junctioned .ai write allowed" "$WT" "$WE" '{"tool_input":{"file_path":".ai/handoffs/to-claude/open/x.md"}}' 0
+
+rm -rf "$T"
+
 total=$((pass+fail))
+if [ "$skip" -gt 0 ]; then
+  echo "SKIPPED: $skip"
+  for s in "${skips[@]}"; do echo "  - $s"; done
+fi
 if [ $fail -eq 0 ]; then
   echo "PASS: $pass/$total"
   exit 0
