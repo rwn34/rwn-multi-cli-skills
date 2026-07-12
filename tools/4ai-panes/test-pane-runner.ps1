@@ -27,6 +27,15 @@
 #   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
 #   (w) Get-HeadlessCmd claude carries --dangerously-skip-permissions (F2)
 #   (x) parity guard: pane-runner vs dispatch-handoffs.sh Claude argv (F2)
+#   (an-at) FLAT-INSTALL TOPOLOGY (the shape we actually DEPLOY, previously
+#           untested — see the block at the bottom of this file):
+#     (an) prove-the-bug: old single-candidate path fails under a flat $ScriptRoot
+#     (ao) prove-the-fix: flat install resolves via $ProjectDir/scripts
+#     (ap) flat install + bare project resolves via $RWN_FRAMEWORK_REPO
+#     (aq) repo-tree checkout still resolves via ../../scripts (no regression)
+#     (ar) candidate order: project copy beats framework repo
+#     (as) fail-loud: nothing found -> $null, all 3 candidates reportable
+#     (at) anti-rot: InvokeWtBootstrap goes through the multi-candidate resolver
 #   (y) Invoke-HandoffRun resolves the worktree BEFORE invoking the CLI, and the
 #       CLI is invoked with cwd == that worktree (NOT $ProjectDir)
 #   (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to
@@ -704,6 +713,123 @@ try {
     Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'am: interleave - AI_HANDOFF_DISPATCH still cleaned up from runner env with a non-default cwd too'
 } finally {
     Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# -- (an-at) FLAT-INSTALL TOPOLOGY: the deployed shape, which was NEVER tested. --
+#
+# THE REGRESSION THIS GUARDS (2026-07-12, total fleet outage): the resolver had a
+# single candidate, $PSScriptRoot/../../scripts/wt-bootstrap.sh, on the assumption
+# that $PSScriptRoot is always <repo>/tools/4ai-panes/. sync-4ai-panes-install.ps1
+# deploys the pane tools FLAT into ~/.rwn-auto/rwn-4AI-panes/, where that resolves
+# to ~/scripts/ — nonexistent. Every pane-runner failed worktree setup and
+# quarantined every handoff: kimi, kiro, opencode and claude-auto, all of them.
+#
+# The old test suite passed the whole time, because every worktree test mocks
+# $script:GetCliWorktreePath and therefore never reaches the resolver — and the
+# suite only ever ran FROM the repo tree, where the broken path happens to
+# resolve. A test that only runs in the repo tree is not testing what we ship.
+#
+# So these tests build a synthetic sandbox with each topology and drive the
+# resolver DIRECTLY, with $ScriptRoot as a parameter (never a read of the real
+# $PSScriptRoot). (an) is the prove-the-bug assertion: it asserts the OLD
+# single-candidate expression finds NOTHING under a flat $ScriptRoot — i.e. it
+# reproduces the outage — and the rest assert the new resolver survives it.
+$sandbox = Join-Path $env:TEMP ("pane-runner-flatinstall-" + [guid]::NewGuid().ToString('N'))
+$origFrameworkEnv = $env:RWN_FRAMEWORK_REPO
+try {
+    # Flat install dir (the DEPLOYED shape): siblings only, no ../../scripts/.
+    # $sandbox/install/rwn-4AI-panes -> ../../ = $sandbox, and we never create
+    # $sandbox/scripts, so candidate #2 is guaranteed absent for this $ScriptRoot.
+    $flatRoot = Join-Path $sandbox 'install/rwn-4AI-panes'
+    New-Item -ItemType Directory -Path $flatRoot -Force | Out-Null
+
+    # A project that HAS its own scripts/wt-bootstrap.sh (candidate #1).
+    $projWith = Join-Path $sandbox 'project-with-scripts'
+    New-Item -ItemType Directory -Path (Join-Path $projWith 'scripts') -Force | Out-Null
+    $projBootstrap = Join-Path $projWith 'scripts/wt-bootstrap.sh'
+    Set-Content -Path $projBootstrap -Value '#!/usr/bin/env bash' -Encoding utf8
+
+    # A project that does NOT (an adopter today: install-template.sh did not ship it).
+    $projBare = Join-Path $sandbox 'project-bare'
+    New-Item -ItemType Directory -Path $projBare -Force | Out-Null
+
+    # A framework source repo (candidate #3, reached via RWN_FRAMEWORK_REPO).
+    $fwRepo = Join-Path $sandbox 'framework-repo'
+    New-Item -ItemType Directory -Path (Join-Path $fwRepo 'scripts') -Force | Out-Null
+    $fwBootstrap = Join-Path $fwRepo 'scripts/wt-bootstrap.sh'
+    Set-Content -Path $fwBootstrap -Value '#!/usr/bin/env bash' -Encoding utf8
+
+    # A repo-tree checkout: <repo>/tools/4ai-panes -> ../../scripts EXISTS (candidate #2).
+    $repoTreeRoot = Join-Path $sandbox 'repo-tree/tools/4ai-panes'
+    New-Item -ItemType Directory -Path $repoTreeRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $sandbox 'repo-tree/scripts') -Force | Out-Null
+    $repoTreeBootstrap = Join-Path $sandbox 'repo-tree/scripts/wt-bootstrap.sh'
+    Set-Content -Path $repoTreeBootstrap -Value '#!/usr/bin/env bash' -Encoding utf8
+
+    # A framework repo path that does NOT exist (to prove the fail-loud path).
+    $fwMissing = Join-Path $sandbox 'no-such-framework-repo'
+
+    # (an) PROVE THE BUG: the OLD resolver's one and only candidate, evaluated
+    # against the flat-install $ScriptRoot, does not exist. This is the outage.
+    $oldResolverPath = Join-Path $flatRoot '../../scripts/wt-bootstrap.sh'
+    Assert-Equal $false (Test-Path -LiteralPath $oldResolverPath) `
+        'an: PROVE-THE-BUG - old single-candidate ($ScriptRoot/../../scripts) does NOT resolve under the flat install dir'
+
+    # (ao) PROVE THE FIX: same flat $ScriptRoot, and the new resolver still finds
+    # the bootstrap via the target project's own copy (candidate #1).
+    $env:RWN_FRAMEWORK_REPO = $fwMissing
+    $resolvedProj = Resolve-WtBootstrapPath -ProjectDir $projWith -ScriptRoot $flatRoot
+    Assert-Equal $true ($null -ne $resolvedProj -and (Test-Path -LiteralPath $resolvedProj)) `
+        'ao: PROVE-THE-FIX - flat install resolves wt-bootstrap.sh via $ProjectDir/scripts (candidate #1)'
+    Assert-Equal (Resolve-Path -LiteralPath $projBootstrap).Path (Resolve-Path -LiteralPath $resolvedProj).Path `
+        'ao2: flat install picks the TARGET PROJECT copy specifically'
+
+    # (ap) Flat install + a project with NO scripts/ (an adopter): falls through
+    # to the framework repo via RWN_FRAMEWORK_REPO (candidate #3). This is the
+    # case that actually carries the deployed launcher for adopter projects.
+    $env:RWN_FRAMEWORK_REPO = $fwRepo
+    $resolvedFw = Resolve-WtBootstrapPath -ProjectDir $projBare -ScriptRoot $flatRoot
+    Assert-Equal (Resolve-Path -LiteralPath $fwBootstrap).Path (Resolve-Path -LiteralPath $resolvedFw).Path `
+        'ap: flat install + bare project resolves via $RWN_FRAMEWORK_REPO (candidate #3)'
+
+    # (aq) The repo-tree/dev case (candidate #2) must still work — no regression
+    # on the topology that worked before. Bare project, framework env -> missing.
+    $env:RWN_FRAMEWORK_REPO = $fwMissing
+    $resolvedRepo = Resolve-WtBootstrapPath -ProjectDir $projBare -ScriptRoot $repoTreeRoot
+    Assert-Equal (Resolve-Path -LiteralPath $repoTreeBootstrap).Path (Resolve-Path -LiteralPath $resolvedRepo).Path `
+        'aq: repo-tree checkout still resolves via $ScriptRoot/../../scripts (candidate #2, no regression)'
+
+    # (ar) Candidate ORDER: the target project's own copy beats the framework repo.
+    $env:RWN_FRAMEWORK_REPO = $fwRepo
+    $resolvedOrder = Resolve-WtBootstrapPath -ProjectDir $projWith -ScriptRoot $flatRoot
+    Assert-Equal (Resolve-Path -LiteralPath $projBootstrap).Path (Resolve-Path -LiteralPath $resolvedOrder).Path `
+        'ar: candidate order - the target project''s own copy wins over the framework repo'
+
+    # (as) FAIL LOUD: nothing exists anywhere -> $null (never a silent guess).
+    $env:RWN_FRAMEWORK_REPO = $fwMissing
+    $resolvedNone = Resolve-WtBootstrapPath -ProjectDir $projBare -ScriptRoot $flatRoot
+    Assert-Equal $null $resolvedNone `
+        'as: fail-loud - no candidate exists anywhere -> $null (no silent fallback)'
+    $candidates = @(Get-WtBootstrapCandidates -ProjectDir $projBare -ScriptRoot $flatRoot)
+    Assert-Equal 3 $candidates.Count 'as2: fail-loud - all 3 candidates are reportable to the operator'
+
+    # (at) ANTI-ROT WIRING GUARD: $script:InvokeWtBootstrap must go THROUGH the
+    # multi-candidate resolver, not re-hardcode a single path. This cannot be
+    # asserted by calling it (it reads the REAL $PSScriptRoot, where candidate #2
+    # exists in the repo tree and would shell out to bash), so assert on its
+    # source — the same technique test-selector-e2e.ps1's "Guard 0" uses for the
+    # RWN_FRAMEWORK_REPO contract. Without this, someone "simplifies" the resolver
+    # back to one hardcoded path and the suite still passes from the repo tree,
+    # which is exactly how the 2026-07-12 outage shipped green.
+    $wtSrc = $script:InvokeWtBootstrap.ToString()
+    Assert-Equal $true ($wtSrc -match 'Resolve-WtBootstrapPath') `
+        'at: anti-rot - InvokeWtBootstrap resolves via Resolve-WtBootstrapPath (not a hardcoded path)'
+    Assert-Equal $false ($wtSrc -match '\$bootstrap\s*=\s*Join-Path\s+\$PSScriptRoot') `
+        'at2: anti-rot - the old single-candidate $PSScriptRoot/../../scripts assignment is gone'
+} finally {
+    if ($null -eq $origFrameworkEnv) { Remove-Item Env:RWN_FRAMEWORK_REPO -ErrorAction SilentlyContinue }
+    else { $env:RWN_FRAMEWORK_REPO = $origFrameworkEnv }
+    Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # -- cleanup + summary --

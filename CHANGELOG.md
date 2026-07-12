@@ -42,6 +42,47 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.33] - 2026-07-12
+
+### Fixed
+
+- **Total auto-fleet outage: `pane-runner.ps1` could not find `wt-bootstrap.sh` in
+  the deployed launcher (regression from PR #51).** The worktree-bootstrap resolver
+  had a single candidate, `$PSScriptRoot/../../scripts/wt-bootstrap.sh`, on the
+  assumption that `$PSScriptRoot` is always `<repo>/tools/4ai-panes/`. That is true
+  in the repo tree and **false in the shape we actually deploy**:
+  `scripts/sync-4ai-panes-install.ps1` installs the pane tools FLAT into
+  `~/.rwn-auto/rwn-4AI-panes/`, where `../../scripts/` resolves to `~/scripts/` —
+  which does not exist. Every pane-runner took that path, so **all four CLIs**
+  (kimi, kiro, opencode, claude-auto) failed worktree setup and quarantined every
+  handoff they picked up. Sibling dot-sources (`fleet-clis.ps1`, `notify.ps1`) were
+  unaffected because they ARE installed flat beside the runner; only the
+  repo-relative path broke. `wt-bootstrap.sh` belongs to the **project being operated
+  on**, not to the tool's install location, so it is now resolved through an ordered
+  multi-candidate resolver (`Resolve-WtBootstrapPath`): (1) `$ProjectDir/scripts/`,
+  (2) `$PSScriptRoot/../../scripts/` (repo-tree/dev), (3) `$RWN_FRAMEWORK_REPO/scripts/`
+  (same env var + default as `Selector.ps1`). If none exist it fails loud, listing
+  every path tried. The never-fall-back-to-the-primary-checkout contract is
+  unchanged — that behavior is what turned this into a visible quarantine instead of
+  four CLIs silently trampling each other in the primary checkout.
+- **`scripts/wt-bootstrap.sh` is now shipped to onboarded projects
+  (`scripts/install-template.sh`).** The already-shipped `.ai/tools/dispatch-handoffs.sh`
+  resolves it as `<project>/scripts/wt-bootstrap.sh`, so without this copy that
+  reference dangled in **every adopted project** and worktree setup could never
+  succeed there — the same class of break as the pane-fleet outage above, latent in
+  the adopter path.
+- **The deployed topology is now under test (`tools/4ai-panes/test-pane-runner.ps1`,
+  cases `an`–`at`).** The suite passed all through this outage because every worktree
+  test mocks `$script:GetCliWorktreePath` (so the resolver was never reached) and the
+  suite only ever ran *from the repo tree*, where the broken path happens to resolve.
+  A test that only runs in the repo tree is not testing what we ship. The new cases
+  build a synthetic flat-install sandbox and drive the resolver directly with
+  `$ScriptRoot` as a parameter: they reproduce the outage against the old
+  single-candidate expression, assert the new resolver survives it via the project
+  copy and via `RWN_FRAMEWORK_REPO`, assert the repo-tree case still works, assert
+  fail-loud when nothing resolves, and add an anti-rot guard so nobody "simplifies"
+  the resolver back to one hardcoded path.
+
 ## [0.0.32] - 2026-07-12
 
 ### Added

@@ -437,13 +437,24 @@ phase1() {
   #                                        post-commit/post-merge) set SYNC_SCRIPT
   #                                        to it
   #   - docs/specs/4ai-panes-install-sync.md   those same git hooks cite it
+  #   - scripts/wt-bootstrap.sh            .ai/tools/dispatch-handoffs.sh (COPIED
+  #                                        below, and the pane-runner's candidate
+  #                                        #1) resolves it as
+  #                                        <project>/scripts/wt-bootstrap.sh.
+  #                                        Without this copy that reference dangles
+  #                                        in every adopted project and worktree
+  #                                        setup fails — the exact class of break
+  #                                        that took the whole pane fleet down on
+  #                                        2026-07-12 (flat-install topology).
   copy_file "scripts/fleet-init.sh"
   copy_file "scripts/sync-4ai-panes-install.ps1"
+  copy_file "scripts/wt-bootstrap.sh"
   copy_file "docs/specs/4ai-panes-install-sync.md"
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "DRY: chmod +x scripts/fleet-init.sh"
+    log "DRY: chmod +x scripts/fleet-init.sh scripts/wt-bootstrap.sh"
   else
     chmod +x "$TARGET/scripts/fleet-init.sh" 2>/dev/null || true
+    chmod +x "$TARGET/scripts/wt-bootstrap.sh" 2>/dev/null || true
   fi
 
   # STUB / FLAG (A5, owner decision pending): the tools/4ai-panes/ pane fleet is

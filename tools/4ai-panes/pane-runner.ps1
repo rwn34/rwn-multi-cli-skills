@@ -175,6 +175,55 @@ function Get-CliWorktreePathFor {
     return (Join-Path (Join-Path (Join-Path $parentDir '.wt') $projectName) $CliName)
 }
 
+# -- wt-bootstrap.sh resolution (regression fix 2026-07-12) --
+#
+# wt-bootstrap.sh belongs to the PROJECT BEING OPERATED ON, not to the tool's
+# install location. The previous single-candidate resolver assumed $PSScriptRoot
+# is always <repo>/tools/4ai-panes/, so the repo root is two levels up. That is
+# TRUE in the repo tree and FALSE in the DEPLOYED launcher: scripts/sync-4ai-panes-install.ps1
+# installs the pane tools into a FLAT dir (~/.rwn-auto/rwn-4AI-panes/), where
+# ../../scripts/ resolves to ~/scripts/ — which does not exist. Every pane-runner
+# (kimi, kiro, opencode, claude-auto) took that path, so the WHOLE fleet failed
+# worktree setup and quarantined every handoff. Sibling dot-sources (fleet-clis.ps1,
+# notify.ps1) are fine because they ARE installed flat beside us; only the
+# repo-relative path broke.
+#
+# Candidates, in order — first that exists wins:
+#   1. $ProjectDir/scripts/wt-bootstrap.sh   the target project's own copy (also
+#      what the shipped .ai/tools/dispatch-handoffs.sh resolves to). Now actually
+#      shipped by scripts/install-template.sh.
+#   2. $ScriptRoot/../../scripts/wt-bootstrap.sh   the repo-tree / dev checkout
+#      case (what worked before this fix).
+#   3. $RWN_FRAMEWORK_REPO/scripts/wt-bootstrap.sh   the framework source repo —
+#      the load-bearing one for the flat install driving a project that has no
+#      copy of its own. Same env var + default as Selector.ps1 $frameworkRepo; do
+#      not invent a second convention.
+#
+# $ScriptRoot is a parameter (not a read of $PSScriptRoot) precisely so a test can
+# simulate the flat-install topology. The old resolver was untestable for the
+# topology we actually SHIP, which is why a total regression shipped green.
+$script:FrameworkRepoDefault = 'C:/Users/rwn34/Code/rwn-multi-cli-skills'
+
+function Get-WtBootstrapCandidates {
+    param([string]$ProjectDir, [string]$ScriptRoot)
+    $frameworkRepo = if ($env:RWN_FRAMEWORK_REPO) { $env:RWN_FRAMEWORK_REPO } else { $script:FrameworkRepoDefault }
+    return @(
+        (Join-Path $ProjectDir    'scripts/wt-bootstrap.sh')
+        (Join-Path $ScriptRoot    '../../scripts/wt-bootstrap.sh')
+        (Join-Path $frameworkRepo 'scripts/wt-bootstrap.sh')
+    )
+}
+
+# Return the first candidate that exists, or $null if NONE do. $null is the
+# fail-loud signal — the caller lists every path tried and refuses to proceed.
+function Resolve-WtBootstrapPath {
+    param([string]$ProjectDir, [string]$ScriptRoot)
+    foreach ($candidate in (Get-WtBootstrapCandidates -ProjectDir $ProjectDir -ScriptRoot $ScriptRoot)) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return $null
+}
+
 # Overridable so tests can stub out the real bash/wt-bootstrap.sh call. Returns
 # $true on success (worktree present + usable), $false on failure. NEVER prints
 # or returns the primary checkout as a substitute on failure — callers MUST
@@ -182,11 +231,13 @@ function Get-CliWorktreePathFor {
 # dispatch-handoffs.sh ensure_cli_worktree()'s contract exactly).
 $script:InvokeWtBootstrap = {
     param([string]$ProjectDir, [string]$CliName)
-    # Resolve relative to the REPO the tool ships in, not a guess from $ProjectDir
-    # layout — $PSScriptRoot is tools/4ai-panes/, so the repo root is two levels up.
-    $bootstrap = Join-Path $PSScriptRoot '../../scripts/wt-bootstrap.sh'
-    if (-not (Test-Path $bootstrap)) {
-        Write-Host "  ERROR: worktree bootstrap script not found at $bootstrap" -ForegroundColor Red
+    $bootstrap = Resolve-WtBootstrapPath -ProjectDir $ProjectDir -ScriptRoot $PSScriptRoot
+    if (-not $bootstrap) {
+        Write-Host "  ERROR: worktree bootstrap script not found. Tried, in order:" -ForegroundColor Red
+        foreach ($candidate in (Get-WtBootstrapCandidates -ProjectDir $ProjectDir -ScriptRoot $PSScriptRoot)) {
+            Write-Host "    - $candidate" -ForegroundColor Red
+        }
+        Write-Host "  Fix: ship scripts/wt-bootstrap.sh into the project, or set RWN_FRAMEWORK_REPO to the framework checkout." -ForegroundColor Red
         return $false
     }
     $bash = Get-Command bash -ErrorAction SilentlyContinue
