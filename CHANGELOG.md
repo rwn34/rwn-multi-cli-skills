@@ -30,6 +30,51 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.22] - 2026-07-12
+
+### Fixed
+
+- **OpenCode's guard denied the job its contract assigns it.** `.opencode/contract.md`
+  gives OpenCode a "GitHub / repo-ops lane" (PRs, release chores, **CI config/workflow
+  fixes**) and operating-prompt §14 routes GitHub work to it — but
+  `.opencode/plugin/framework-guard.js` enforced a writable lane of `.ai/activity/log.md`,
+  `.ai/reports/**`, `.ai/handoffs/**` only. The first real ops handoff
+  (`202607120021-gates-required-check-and-step-order`, a `.github/workflows/gates.yml`
+  edit) was therefore mechanically impossible; OpenCode correctly refused and reported
+  BLOCKED (`.ai/reports/opencode-2026-07-12-gates-blocked.md`). The lane now includes
+  `.github/**` — and nothing else. `infra/`, `scripts/`, `Dockerfile`, `docker-compose*`
+  were deliberately NOT added: widening a security guard is a one-way ratchet, and only
+  `.github/**` is needed for the documented job.
+- **`AGENTS.md` never mirrored the repo-ops lane.** The paragraph was added to
+  `.opencode/contract.md` on 2026-07-11 and never propagated, so OpenCode's shipped
+  contract did not say it owns GitHub/CI work at all — a contributing cause of the lane
+  starvation, not just a symptom (ADR-0011 Context). `AGENTS.md` now carries an
+  OpenCode-only lane section.
+
+### Added
+
+- **`WRITABLE_LANE` is now a single exported constant** in `framework-guard.js`, and the
+  guard suite **fails loudly if it drifts from the `LANE:BEGIN`/`LANE:END` block in
+  `.opencode/contract.md` or `AGENTS.md`.** The doc/enforcement divergence *is* the bug
+  above; its recurrence is now a test failure, not a comment.
+- **Guard rule 5 (secrets) is enforced mechanically, ahead of every allow rule.** A
+  sensitive basename (`.env*`, `*.key`, `*.pem`, `id_rsa*`, `secrets.*`, `credentials*`)
+  is denied everywhere — including inside the newly-widened `.github/**` and inside
+  `.ai/reports/**`. Previously secrets were blocked only incidentally, by default-deny.
+- **OpenCode guard suite: 45 → 96 assertions.** New coverage: `.github/**` allowed in
+  relative/absolute/backslash/`./`-prefixed/traversal forms; source, `.claude/`, `.kimi/`,
+  `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/` (ADRs) and `.opencode/` still
+  denied in relative **and absolute and backslash** forms; mixed-case variants fail closed;
+  secrets denied inside the lane; doc/guard lane drift.
+
+### Security
+
+- **Project-root prefix comparison is now case-insensitive only on Windows.** It was
+  unconditionally case-insensitive, so on a case-sensitive filesystem a sibling directory
+  differing only in case (`/PROJ/` next to `/proj/`) would have been folded *inside* the
+  project root and its lane paths allowed. Legitimate paths always match case exactly, so
+  the strict compare costs nothing and closes the fold.
+
 ## [0.0.21] - 2026-07-12
 
 ### Fixed
