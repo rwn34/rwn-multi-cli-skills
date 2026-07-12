@@ -16,8 +16,13 @@ const assetsDir = join(__dirname, '..', 'assets');
 if (existsSync(assetsDir)) rmSync(assetsDir, { recursive: true });
 mkdirSync(assetsDir, { recursive: true });
 
-// Copy framework dirs (dotfolders + the versioned git-hooks backstop, ADR-0005)
-for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.archive', 'scripts/git-hooks']) {
+// Copy framework dirs (dotfolders + the versioned git-hooks backstop, ADR-0005).
+// .opencode ships the mechanical guard layer (contract.md + plugin/framework-guard.js);
+// without it onboarded projects run OpenCode on prompt-level rules only (ADR-0002
+// amendment 2026-07-09 — the guard layer is WHY OpenCode replaced Crush).
+// Keep in step with FRAMEWORK_DIRS in src/installer/copy-framework.ts —
+// .ai/tools/check-asset-drift.sh FAILS CI if the two manifests diverge.
+for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.opencode', '.archive', 'scripts/git-hooks']) {
   const src = join(repoRoot, d);
   if (existsSync(src)) {
     const dst = join(assetsDir, d);

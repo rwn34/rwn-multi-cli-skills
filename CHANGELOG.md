@@ -30,6 +30,35 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.24] - 2026-07-12
+
+### Fixed
+
+- **Onboarded projects received OpenCode with NO mechanical guard layer.** The
+  installer manifests (`scripts/sync-assets.ts` and
+  `src/installer/copy-framework.ts`) shipped `opencode.json` — which points
+  OpenCode at `.opencode/contract.md` — but never shipped `.opencode/` itself.
+  Every adopted project therefore ran OpenCode on prompt-level rules alone: no
+  write-lane enforcement, no sensitive-file guard, no destructive-command
+  guard. This is exactly the no-hook-layer situation ADR-0002's 2026-07-09
+  amendment rejected when Crush was replaced. Both manifests now include
+  `.opencode`, and a new installer test (`installed OpenCode guard actually
+  blocks out-of-lane writes`) imports the guard OUT OF A FRESH INSTALL TARGET
+  and proves it blocks `src/`, `.opencode/contract.md`, `.env`, and
+  `git push --force` — presence is no longer assumed, it is exercised.
+- **Nothing gated the installer asset tree, so it rotted invisibly.** A stale
+  generated `assets/` tree (protocol-v2 `AGENTS.md`, dozens of drifted files)
+  lingered undetected. New gate `.ai/tools/check-asset-drift.sh`, wired into
+  the `gates` workflow after asset regeneration: (1) enforces parity between
+  the two ship manifests plus required coverage (`.opencode`, `AGENTS.md`,
+  `opencode.json`) — the 2026-07-12 defect class fails here even on a clean
+  checkout; (2) rejects any committed file under
+  `tools/multi-cli-install/assets/` (a build artifact that goes stale the
+  moment its source changes); (3) glob-walks every file of any on-disk asset
+  tree and fails on any byte-divergence from its source — no hardcoded file
+  list, so new files are covered automatically. Proven both directions:
+  53 failures on the real stale tree, PASS once regenerated.
+
 ## [0.0.22] - 2026-07-12
 
 ### Fixed
