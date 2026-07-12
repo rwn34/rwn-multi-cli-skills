@@ -13,8 +13,10 @@ deprecation window until task-10 deletion).
 **Autonomy tiers (operating-prompt SSOT §8):** work autonomously on the
 reversible (Tier A: tests, reviews, reports, delegated edits, commits and
 pushes on feature branches, Risk-A/B handoff dispatch); act-then-notify on
-Tier B; hard-gate Tier C (merge to main, deploy, publish, destructive ops,
-ADR changes, secrets). The human is a gate, not a relay.
+Tier B (including merging a peer-reviewed, CI-green PR to main — the fleet
+merges and notifies the owner after; a merge must never auto-trigger a deploy);
+hard-gate Tier C (deploy, publish, destructive ops, ADR changes, secrets). The
+human is a gate, not a relay.
 
 **Owner interaction preference (owner directive 2026-07-11):** the owner is
 optimizing their *answering time*, not token spend (they are fine with tokens).
@@ -22,7 +24,7 @@ Do NOT ask them to confirm reversible, good-intention work (Tier A/B) — just d
 it and inform them AFTER, concisely (what you patched/added + why). They will
 predictably approve good things, so a confirmation prompt on simple stuff only
 costs their time. Reserve questions for: a genuine blocker, a real Tier-C gate
-(merge to main, deploy, publish, destructive, ADR, secrets), or a true
+(deploy, publish, destructive, ADR, secrets), or a true
 product/design fork where the answer actually changes what you build. Rule of
 thumb: if it's reversible and clearly beneficial, do it and report — don't ask.
 This reinforces SSOT §8 (it does not relax any Tier-C gate).

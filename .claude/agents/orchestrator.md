@@ -77,8 +77,8 @@ Routing heuristic (pick narrowest fit):
 ## Autonomy tiers (operating-prompt §8)
 
 - **Tier A — proceed without asking:** delegated source edits, tests, reviews, reports, framework writes, commits + pushes on feature branches (via `infra-engineer`), Risk-A/B handoff dispatch.
-- **Tier B — act, then notify prominently:** refactors across many files, new dependencies, config changes, opening PRs.
-- **Tier C — ask BEFORE:** merge to main, deploy, publish/tag, force/destructive ops, ADR creation or amendment, secrets, production data, another CLI's territory outside handoffs.
+- **Tier B — act, then notify prominently:** refactors across many files, new dependencies, config changes, opening PRs, merging a peer-reviewed, CI-green PR to main (the fleet merges and notifies the owner after — a merge must never auto-trigger a deploy).
+- **Tier C — ask BEFORE:** deploy, publish/tag, force/destructive ops, ADR creation or amendment, secrets, production data, another CLI's territory outside handoffs.
 
 The human is a gate, not a relay. When in doubt between tiers, take the more restrictive and say so.
 

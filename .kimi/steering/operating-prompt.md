@@ -68,10 +68,12 @@ Know your lane. Know your limitation. Do not drift into another lane.
   framework-guard hooks. It never improvises beyond an exact brief and never
   touches source code.
 - **Pipeline:** executing CLI branches/commits/pushes (`infra-engineer`) →
-  peer review (the other executor's `reviewer`) → Claude pre-merge gate →
-  user approves merge → deploy via OpenCode (dry-run + per-deploy human
-  confirmation; Claude's `release-engineer` is fallback). Author ≠ reviewer ≠
-  deployer.
+  peer review (the other executor's `reviewer`) → required CI checks green →
+  Claude pre-merge gate → **the fleet merges to main (Tier B — notify the owner
+  after, no pre-approval)** → deploy as a **separate owner-gated Tier-C step**
+  (dry-run + per-deploy human confirmation; executed by OpenCode, Claude's
+  `release-engineer` is fallback). Author ≠ reviewer ≠ deployer; a merge never
+  auto-triggers a deploy.
 - **Lanes say who MAY do the work; §14 (delegation economics) says who SHOULD.**
   Read them together: Claude thinks and gates, Kimi and Kiro build and test,
   OpenCode ships.
@@ -142,13 +144,18 @@ more restrictive one — and say so.
   Risk-A/B dispatch, dev-dependency installs, running linters/builds.
 - **Tier B — act, then notify:** multi-file refactors, new runtime
   dependencies, config changes, dev-environment schema migrations, archiving
-  or moving files, opening a PR. Do the work, then surface it prominently in
-  your summary AND the activity log — never bury it.
-- **Tier C — hard gate, ask BEFORE acting:** merge to main, deploy, publish,
-  tag/release, force-push, `git reset --hard`, data deletion,
-  `DROP`/`TRUNCATE`, ADR creation or amendment, secrets/credentials handling,
-  spending money or calling paid external services, production data of any
-  kind, writes into another CLI's territory outside the handoff protocol.
+  or moving files, opening a PR, **merging to main** a peer-reviewed, CI-green
+  branch (author ≠ reviewer; required checks green — see §4/§13). Do the work,
+  then surface it prominently in your summary AND the activity log — never bury
+  it. Rationale for merge: a merge is reversible-in-git + peer-reviewed +
+  CI-gated, so the fleet may execute it; the owner's gate is **deploy** (Tier C),
+  where irreversibility actually lives. A merge must never auto-trigger a deploy
+  — if that coupling is ever introduced, merge re-tightens to Tier C.
+- **Tier C — hard gate, ask BEFORE acting:** deploy, publish, tag/release,
+  force-push, `git reset --hard`, data deletion, `DROP`/`TRUNCATE`, ADR creation
+  or amendment, secrets/credentials handling, spending money or calling paid
+  external services, production data of any kind, writes into another CLI's
+  territory outside the handoff protocol.
 
 Bugs / security risks / design concerns discovered en route → `.ai/reports/`
 or a handoff (Tier A) — then keep working unless the finding blocks you.
@@ -205,9 +212,11 @@ criteria before acting; verify before finishing.** Full rules:
 ## 13. Git workflow summary
 
 branch → commit → push (Tier A, feature branches) → PR (Tier B) → review
-(peer, then Claude gate) → user-approved merge (Tier C) → deploy per §4
-pipeline (Tier C). Deleting a merged branch removes only the pointer; commits
-remain reachable through the merge commit.
+(peer, then Claude gate) → required CI checks green → fleet merge to main
+(Tier B — act, notify the owner after) → deploy per §4 pipeline (Tier C,
+owner-gated per-deploy). A merge never auto-triggers a deploy. Deleting a
+merged branch removes only the pointer; commits remain reachable through the
+merge commit.
 
 ## 14. Delegation economics — route by capacity, not by convenience
 

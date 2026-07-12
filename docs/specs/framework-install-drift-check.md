@@ -334,11 +334,16 @@ is an Open question below.
 
 ## Open questions
 
-- **How is the version-bump discipline enforced?** The drift check goes silent if
-  a framework-content change ships without a `package.json` version bump. Options:
-  a CI check (`gates.yml`) that fails a PR touching framework paths without a
-  version change; a pre-commit reminder; or convention + reviewer diligence.
-  Owner: framework maintainer.
+- **How is the version-bump discipline enforced?** *Resolved — see
+  `docs/architecture/0012-version-assigned-at-merge.md`.* Enforcement is a CI
+  check (`scripts/check-version-bump.sh` via `gates.yml`), but per ADR-0012 it
+  runs as a **detective check on `push: master`** — comparing the previous master
+  tip to the new one — rather than as a preventive `pull_request` gate. Feature
+  branches deliberately do NOT bump (that collided N concurrent PRs on the same
+  two lines); the release-engineer assigns one version and promotes the
+  `## [Unreleased]` CHANGELOG bullets at the single serialized merge point, and
+  the gate verifies it landed. The one-increment-per-merge invariant this drift
+  check depends on is preserved. Owner: framework maintainer.
 - **Should the installer later gain an opt-in `--update` flag?** Warn-only points
   the operator at re-running the full installer. A narrower, explicitly-invoked
   `--update` that refreshes framework files without the full onboarding ceremony

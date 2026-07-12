@@ -102,7 +102,20 @@ headless_cmd() {
     local cli="$1" file="$2"
     local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
     case "$cli" in
-        claude) HEADLESS_ARGV=(claude -p "$prompt" --permission-mode acceptEdits) ;;
+        # --dangerously-skip-permissions (not --permission-mode acceptEdits):
+        # acceptEdits auto-approves ONLY Edit/Write; a Bash call outside
+        # .claude/settings.local.json's allow-list (git/mv/rm are NOT on it)
+        # was auto-DENIED with no human available headless to approve it —
+        # the headless Claude lane was strictly weaker than every other CLI's
+        # headless invocation AND weaker than Claude's OWN interactive pane
+        # (which already runs --dangerously-skip-permissions). SAFE because
+        # permissions and hooks are different layers: this flag bypasses the
+        # permission PROMPT only — the PreToolUse guard hooks (cross-CLI dir,
+        # sensitive-file, root-file, destructive-cmd) still fire and remain
+        # the mechanical floor (F2 handoff, 2026-07-12; verified empirically,
+        # see docs/architecture/0005-commit-governance-backstop.md). This
+        # MUST match tools/4ai-panes/pane-runner.ps1 Get-HeadlessCmd.
+        claude) HEADLESS_ARGV=(claude -p "$prompt" --dangerously-skip-permissions) ;;
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
         kimi)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
