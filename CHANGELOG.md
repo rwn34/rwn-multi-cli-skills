@@ -30,6 +30,125 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.25] - 2026-07-12
+
+### Security
+
+- **The Claude territorial guard never fired on absolute paths — and the test suite was
+  certifying the bypass.** `.claude/hooks/pretool-write-edit.sh` computed
+  `project_root=$(pwd)`, which under Git Bash yields the MSYS form (`/c/Users/...`),
+  while the Write/Edit tools emit the Windows form (`C:\Users\...`). The prefix test
+  never matched, so `rel` stayed **absolute** and every territorial `case "$rel" in
+  .kimi|.kimi/*)` arm silently missed. A subagent — which under the orchestrator pattern
+  is who does all the writing — could write into any other CLI's territory just by using
+  an absolute path:
+
+      SUBAGENT + relative   .kimi/foo.md            -> exit=2  BLOCKED
+      SUBAGENT + absolute   C:\...\.kimi\foo.md     -> exit=0  ALLOWED
+
+  Reproduced against the pre-fix hook in a **normal (non-worktree) checkout**, which is
+  what every onboarded project has. Inside a `.wt/` executor worktree the escape was
+  *incidentally* caught by the later ADR-0004 worktree-confinement arm (with a misleading
+  "escaping the worktree" reason) — which is why the bug survived: it looked blocked
+  wherever the executors actually ran.
+- **Paths are now normalized before any rule runs**, by a deliberately **lexical**
+  converter (no `realpath`, no `cygpath`). `realpath`/`cygpath -a` resolve symlinks and
+  Windows junction reparse points — which would *reintroduce* an escape, since `.ai/` is
+  a junction. `cygpath -u` was tried and **fails open**: it canonicalizes the two shapes
+  we deliberately refuse (bare drive `C:`, drive-relative `C:foo`) instead of erroring.
+- **Normalization fails CLOSED.** An un-canonicalizable `file_path` (bare drive,
+  drive-relative, unrecognized shape) is now `exit 2`. A guard that cannot understand its
+  input must deny.
+
+### Fixed
+
+- **`test_hooks.sh` fixtures only ever used RELATIVE paths**, so the tests and the runtime
+  disagreed about the input domain and the suite had been green *because* it never fed the
+  hook what the tools actually send. Fixture set now covers relative, Windows-absolute
+  (forward- **and** back-slash), MSYS `/c/` form, mixed case, and the fail-closed shapes.
+  **17 → 98 assertions.**
+- **`.claude/hooks/README.md` documented the broken behavior.** It advertised
+  `PASS: 17/17`, omitted normalization entirely, and — load-bearing — instructed hook
+  authors to *"prefer **fail-open** (exit 0 on unexpected input)"*, which is precisely the
+  guidance that produced this bug class. Enforcement hooks are now documented as
+  fail-**closed**; only advisory hooks may fail open.
+
+### Known gap
+
+- **The Bash tool is NOT path-checked.** `pretool-bash.sh` screens for destructive command
+  *shapes* but does no path matching, so `cp`/`mv`/`sed -i`/`tee`/`>` can still write any
+  protected path. This change raises the wall; the door beside it is still open. Tracked
+  separately — do not treat protected paths as unreachable.
+## [0.0.24] - 2026-07-12
+
+### Fixed
+
+- **Onboarded projects received OpenCode with NO mechanical guard layer.** The
+  installer manifests (`scripts/sync-assets.ts` and
+  `src/installer/copy-framework.ts`) shipped `opencode.json` — which points
+  OpenCode at `.opencode/contract.md` — but never shipped `.opencode/` itself.
+  Every adopted project therefore ran OpenCode on prompt-level rules alone: no
+  write-lane enforcement, no sensitive-file guard, no destructive-command
+  guard. This is exactly the no-hook-layer situation ADR-0002's 2026-07-09
+  amendment rejected when Crush was replaced. Both manifests now include
+  `.opencode`, and a new installer test (`installed OpenCode guard actually
+  blocks out-of-lane writes`) imports the guard OUT OF A FRESH INSTALL TARGET
+  and proves it blocks `src/`, `.opencode/contract.md`, `.env`, and
+  `git push --force` — presence is no longer assumed, it is exercised.
+- **Nothing gated the installer asset tree, so it rotted invisibly.** A stale
+  generated `assets/` tree (protocol-v2 `AGENTS.md`, dozens of drifted files)
+  lingered undetected. New gate `.ai/tools/check-asset-drift.sh`, wired into
+  the `gates` workflow after asset regeneration: (1) enforces parity between
+  the two ship manifests plus required coverage (`.opencode`, `AGENTS.md`,
+  `opencode.json`) — the 2026-07-12 defect class fails here even on a clean
+  checkout; (2) rejects any committed file under
+  `tools/multi-cli-install/assets/` (a build artifact that goes stale the
+  moment its source changes); (3) glob-walks every file of any on-disk asset
+  tree and fails on any byte-divergence from its source — no hardcoded file
+  list, so new files are covered automatically. Proven both directions:
+  53 failures on the real stale tree, PASS once regenerated.
+## [0.0.23] - 2026-07-12
+
+### Added
+
+- **OpenCode's two enforcement layers now accept `.ai/activity/entries/**`** — the
+  entry-per-file activity-log spool of ADR-0010. Both layers hardcoded the log path
+  as an **exact string** (`scripts/git-hooks/pre-commit` L96
+  `case "$p" in .ai/activity/log.md|…`; `.opencode/plugin/framework-guard.js`
+  `WRITABLE_LANE`), so the first spool entry OpenCode ever wrote would have been
+  **blocked by its own guard** and its commit **rejected by the hook** — silently,
+  with no error a human would see. This is **permission plumbing only**: it makes the
+  spool landable later. Nothing is migrated, `entries/` is not created, no contract's
+  logging prose changed, and `.ai/tools/activity-append.sh` is untouched.
+  `.ai/activity/log.md` keeps working exactly as before — it is still the live log.
+
+### Fixed
+
+- **OpenCode could write `.github/**` but not commit it.** The 0.0.22 repo-ops
+  widening (PR #45) added `.github/**` to the *write* guard and to the contract
+  ("you own … CI config/workflow fixes … opening PRs"), but never to the *commit*
+  hook's OpenCode whitelist. The result was the same defect class it set out to fix,
+  one layer down: OpenCode could produce the workflow fix and then be rejected at
+  `git commit`. `.github/*` is now in the pre-commit lane too, so the two layers agree.
+
+### Security
+
+- The spool widening is asserted **not to leak**: the guard suite grew 96 → 133
+  assertions and the pre-commit backstop suite 54 → 86, covering relative,
+  Windows-absolute, backslash, `./`-prefixed, MSYS `/c/…`, traversal-escape and
+  mixed-case forms. Project source, `.claude/**`, `.kimi/**`, `.kiro/**`,
+  `.opencode/**`, `.ai/instructions/**` (SSOT), `docs/architecture/**` (ADRs),
+  `scripts/**` and secrets remain blocked from OpenCode, and rule 5 (secrets) still
+  outranks the lane *inside* the spool (`.ai/activity/entries/id_rsa` is denied).
+  `.ai/activity/archive/**` was deliberately **not** granted.
+- **Documented, not fixed:** the pre-commit hook matches the lowercased path (`_lc`),
+  which makes OpenCode's *whitelist* branch case-INSENSITIVE (fail-**open**) while
+  the guard's lane is case-SENSITIVE (fail-**closed**) — the two disagree on
+  `.AI/Activity/Entries/x.md`. The leak **cannot escalate** (no case variant reaches
+  another CLI's territory, source, or a secret — now asserted), and tightening it
+  risks false-blocking a real entry, which is the exact "OpenCode goes silent"
+  failure this change prevents. The assertions pin the contract for whoever revisits it.
+
 ## [0.0.22] - 2026-07-12
 
 ### Fixed
