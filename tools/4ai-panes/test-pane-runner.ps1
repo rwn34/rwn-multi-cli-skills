@@ -532,6 +532,67 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         Assert-Equal $dirtyBranchBefore $dirtyBranchAfter 'ac: dirty tree -> branch NOT changed (refused to cut over uncommitted work)'
         Remove-Item -Path (Join-Path $realWt1 'dirty.txt') -Force -ErrorAction SilentlyContinue
 
+        # -- (au) NATIVE-STDERR REGRESSION: git fetch that ACTUALLY FETCHES, under --
+        # -- $ErrorActionPreference='Stop' (the runner's real script-level EAP).    --
+        #
+        # git writes ordinary progress to STDERR: `git fetch` emits "From <remote>"
+        # whenever it retrieves refs, `git checkout` emits "Switched to a new
+        # branch". Under EAP=Stop, PS 5.1 promotes a native command's stderr record
+        # to a TERMINATING NativeCommandError — and `*> $null` does NOT suppress
+        # that promotion (the throw precedes the redirect). So a perfectly
+        # SUCCESSFUL fetch would throw and blow up the whole branch cut, surfacing
+        # as an opaque WORKTREE_FAIL.
+        #
+        # Why every existing test missed it: (ac) above has a real origin, but
+        # NOTHING EVER CHANGES ON IT — a fetch with nothing to fetch writes no
+        # stderr and never throws. The bug is only reachable when the remote has
+        # actually moved. So: advance the bare origin behind the worktree's back,
+        # then cut a branch under EAP=Stop. Against the unguarded function this
+        # throws; with the EAP guard it returns $true.
+        $auClone = Join-Path $sandboxParent 'mover'
+        git clone --quiet $originBare $auClone
+        Push-Location $auClone
+        git config user.email 'test@example.com'
+        git config user.name 'test'
+        'moved' | Set-Content -Path (Join-Path $auClone 'moved.txt')
+        git add -A
+        git commit --quiet -m 'advance origin so the next fetch has something to say'
+        git push --quiet origin master
+        Pop-Location
+
+        # Reset the worktree to a clean, non-exec branch so the cut actually runs.
+        Push-Location $realWt1
+        git checkout --quiet -B 'au-clean-base' 2>$null
+        Pop-Location
+
+        $auThrew = $false
+        $auOk = $false
+        $auPrevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Stop'   # exactly what pane-runner.ps1 sets at load
+        try {
+            $auOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'au-stderr-slug' -Base 'origin/master'
+        } catch {
+            $auThrew = $true
+            Write-Host "    (au) threw: $($_.Exception.GetType().Name): $(($_.Exception.Message -split "`n")[0])" -ForegroundColor DarkYellow
+        } finally {
+            $ErrorActionPreference = $auPrevEAP
+        }
+        Assert-Equal $false $auThrew 'au: PROVE-THE-FIX - a real (stderr-emitting) git fetch under EAP=Stop does NOT throw NativeCommandError'
+        Assert-Equal $true $auOk 'au: branch cut still succeeds when the remote has actually moved'
+        Push-Location $realWt1
+        $auBranch = git branch --show-current
+        Pop-Location
+        Assert-Equal 'exec/kiro/au-stderr-slug' $auBranch 'au: cut landed on exec/<cli>/<slug> from the freshly-fetched origin/master'
+
+        # (au2) anti-rot: the EAP guard must stay in the function. Without it the
+        # suite still passes from a repo whose origin happens to be up to date,
+        # which is exactly how this shipped.
+        $auSrc = ${function:Ensure-DeclaredBaseBranchReal}.ToString()
+        Assert-Equal $true ($auSrc -match "ErrorActionPreference\s*=\s*'Continue'") `
+            'au2: anti-rot - Ensure-DeclaredBaseBranchReal still forces EAP=Continue around its native git calls'
+        Assert-Equal $true ($auSrc -match '\$ErrorActionPreference\s*=\s*\$prevEAP') `
+            'au3: anti-rot - Ensure-DeclaredBaseBranchReal restores the prior EAP in finally'
+
         # (ad) THE REGRESSION TEST: two concurrent Invoke-HandoffRun calls for two
         # DIFFERENT CLIs, each resolving its OWN real worktree via the real
         # (unmocked) functions, must never perturb each other's HEAD/files, and

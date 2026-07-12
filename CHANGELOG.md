@@ -36,7 +36,31 @@ promotion happened.
 
 ### Fixed
 
-- [TODO: bug fixes]
+- **Fleet still down after 0.0.33: the declared-base branch cut threw on a
+  successful `git fetch` (`pane-runner.ps1` `Ensure-DeclaredBaseBranchReal`).**
+  Second-order regression, unmasked by the 0.0.33 flat-install fix. git writes
+  ordinary progress to **stderr** — `git fetch` emits `From <remote>` whenever it
+  actually retrieves refs, `git checkout` emits `Switched to a new branch`. The
+  runner sets `$ErrorActionPreference = 'Stop'`, and PS 5.1 promotes a native
+  command's stderr record to a **terminating** `NativeCommandError`; `*> $null`
+  does **not** suppress that promotion (the throw precedes the redirect). So a
+  perfectly successful fetch blew up the whole branch cut, surfacing as an opaque
+  `WORKTREE_FAIL` and re-quarantining every handoff. `$script:InvokeCli` and
+  `$script:InvokeWtBootstrap` already guard against exactly this hazard and
+  document it; `Ensure-DeclaredBaseBranchReal` was simply missing the guard. It
+  stayed hidden because the wt-bootstrap path failed *first* (0.0.33's bug), so the
+  branch cut was never reached — and it is intermittent by nature: a fetch with
+  nothing new writes no stderr and never throws, so it only fires when the remote
+  has actually moved. Now forces `EAP='Continue'` around the native git calls and
+  restores the prior value in `finally`. No failure signal is lost: every call's
+  outcome is judged by `$LASTEXITCODE`, never by whether it threw.
+- **Regression test for it (`test-pane-runner.ps1`, cases `au`–`au3`).** The
+  existing real-git test `(ac)` has a genuine origin but **never advances it**, so
+  its fetches had nothing to report, wrote no stderr, and never threw — the bug was
+  structurally unreachable by the suite. The new case advances the bare origin
+  behind the worktree's back, then cuts a branch under a real `EAP='Stop'`, so it
+  reproduces the live `RemoteException` against the unguarded function and passes
+  against the guarded one, plus anti-rot guards that the EAP guard stays put.
 
 ### Security
 
