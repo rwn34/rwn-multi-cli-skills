@@ -30,6 +30,22 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.28] - 2026-07-12
+
+### Changed
+
+- **Merge-to-main reclassified Tier C → Tier B (fleet act-then-notify); deploy
+  stays the owner's Tier-C gate.** Per owner directive 2026-07-12 ("merge doesn't
+  have to be my part, it can be the fleet — the one thing I should decide is
+  deploy"), landing a peer-reviewed, CI-green PR into `main` is now a fleet
+  action the fleet performs and notifies the owner about after the fact, not an
+  owner-gated ask-before step. Deploy remains owner-gated Tier C with its Stage-2
+  guardrails intact. A merge must **never** auto-trigger a deploy — if that
+  coupling is introduced, merge re-tightens to Tier C. Amends
+  `docs/architecture/0011-git-ops-execution-to-opencode.md` (Amendment
+  2026-07-12) and operating-prompt §8; stale Tier-C merge language swept from
+  `CLAUDE.md` and `.claude/agents/orchestrator.md`.
+
 ## [0.0.27] - 2026-07-12
 
 ### Security
@@ -164,6 +180,7 @@ adheres to [Semantic Versioning](https://semver.org).
   *shapes* but does no path matching, so `cp`/`mv`/`sed -i`/`tee`/`>` can still write any
   protected path. This change raises the wall; the door beside it is still open. Tracked
   separately — do not treat protected paths as unreachable.
+
 ## [0.0.24] - 2026-07-12
 
 ### Fixed
@@ -192,6 +209,7 @@ adheres to [Semantic Versioning](https://semver.org).
   tree and fails on any byte-divergence from its source — no hardcoded file
   list, so new files are covered automatically. Proven both directions:
   53 failures on the real stale tree, PASS once regenerated.
+
 ## [0.0.23] - 2026-07-12
 
 ### Added
