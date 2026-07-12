@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (owner-directed 2026-07-11).
+Accepted (owner-directed 2026-07-11). **Amended 2026-07-12** (see "Amendment
+(2026-07-12)" below): merge-to-main reclassified Tier C (owner-gated) → Tier B
+(fleet act-then-notify); deploy remains the owner's Tier-C gate.
 
 **Conditionally effective — see "Sequencing precondition" in the Decision.** This
 ADR is accepted as policy but does NOT take effect until OpenCode has completed
@@ -14,6 +16,53 @@ This ADR **narrows the execution half of Claude's lane** in
 § "GitHub/release pipeline"). It does not alter ADR-0002's separation-of-duties
 principle — it strengthens it. It also **amends the handoff protocol v3 rule**
 that Risk-C handoffs are never auto-dispatched (`.ai/handoffs/README.md` step 2b).
+
+## Amendment (2026-07-12) — merge-to-main is Tier B (fleet-executed), not owner-gated
+
+Owner directive, 2026-07-12:
+
+> "merge doesn't have to be my part, it can be the fleet — the one thing I
+> should decide is deploy."
+
+This reclassifies merge-to-main from Tier C (owner-gated, ask-before-acting) to
+Tier B (fleet act-then-notify) in operating-prompt §8. The owner's single
+irreversibility gate on the release path is now **deploy**, not merge. Merge into
+`main` is revertible; a bad merge is undone with a revert commit and another
+peer-reviewed PR. Deploy pushes code onto running infrastructure and is the point
+where the owner wants to be the one who says go.
+
+Under the amended policy the pipeline reads: an author opens a PR → a peer reviews
+it (author ≠ reviewer, unchanged) → the required CI checks go green → **the fleet
+merges (Tier B) and notifies the owner after the fact** → **deploy is a separate,
+explicitly Tier-C owner-gated step.** Merge and deploy are two distinct actions
+with two distinct gates; collapsing them is prohibited. A merge must **never**
+auto-trigger a deploy — no merge-to-`main` webhook, pipeline stage, or automation
+may push to a live environment as a side effect of landing a PR. If that coupling
+is ever introduced, merge is no longer independently revertible and it
+re-tightens to Tier C; the Tier-B classification is valid **only** while merge and
+deploy remain decoupled.
+
+This supersedes the original text of this ADR in two specific places: the §3
+decision-table row that lists merge under "owner approves (Tier C)," and the first
+bullet of the "What does NOT change" list that names merge as an owner gate. Where
+those passages say the owner approves the merge, read instead: the fleet merges
+under Tier B after peer review and green CI, and notifies the owner. The
+`Approved-by:` trailer machinery this ADR introduces for gated operations now
+applies **only** to the operations that remain Tier C — deploy, tag/release, and
+publish — and no longer to merge.
+
+The safeguards retained on merge are peer review (author ≠ reviewer), the required
+status checks, and the revertibility of `main` — not an owner sign-off. **Deploy
+stays owner-gated Tier C**, with the Stage-2 deploy guardrails described elsewhere
+in this ADR intact and unchanged.
+
+Finally, the tier change and the executor change are decoupled. This amendment
+moves *who gates* the merge (owner → fleet); it does not by itself move *who runs*
+the merge. Merge **execution** still transfers to OpenCode only after OpenCode has
+proven one live handoff round-trip end to end, exactly as the "Sequencing
+precondition" in the Decision requires. Until that proof lands, the fleet's merge
+is executed by `release-engineer`/`infra-engineer` as today — now under Tier B
+rather than as an owner-relayed Tier-C step.
 
 ## Context
 
