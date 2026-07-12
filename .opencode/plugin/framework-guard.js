@@ -1,9 +1,11 @@
 // framework-guard — OpenCode enforcement plugin (Crush-replacement lane, ADR-0002).
 // Mechanical enforcement of the .opencode/contract.md contract:
-//   1. File writes (write-class tools only: write/edit/patch) allowed ONLY to
-//      .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** — mirrors
-//      .claude/hooks/pretool-write-edit.sh normalization (absolute paths,
-//      ..-traversal, backslashes).
+//   1. File writes (write-class tools only: write/edit/patch) allowed ONLY to the
+//      paths in WRITABLE_LANE below — mirrors .claude/hooks/pretool-write-edit.sh
+//      normalization (absolute paths, ..-traversal, backslashes). Default-DENY:
+//      anything not matched by the lane is blocked, so project source, .claude/,
+//      .kimi/, .kiro/, .ai/instructions/ and docs/architecture/ stay unwritable
+//      without needing an explicit denylist.
 //   2. Fleet whitelist (ADR-0004): writes to <root>/.fleet/handoffs/to-<project>/
 //      allowed only if this project's talks_to list in <root>/.fleet/registry.json
 //      includes the target. Fail-CLOSED on missing/unreadable registry.
@@ -15,16 +17,65 @@
 //      run through the same path rules. Unresolvable redirect targets ($var,
 //      command substitution) are blocked — fail-closed; bash is permission "ask"
 //      anyway, this layer is defense in depth.
+//   5. Secrets: sensitive filenames (contract rule 5) are denied ANYWHERE, ahead of
+//      every allow rule — the lane never licenses writing a secret file.
 // Node builtins only. Decision logic is a pure exported function so
 // test-guard.mjs can unit-test it without the plugin host.
 
 import path from "node:path";
 import fs from "node:fs";
 
-const LANE = "OpenCode's writable lane is .ai/activity/log.md, .ai/reports/**, .ai/handoffs/** (see .opencode/contract.md)";
+/**
+ * OpenCode's writable lane — THE enforced list. `<prefix>/**` = subtree,
+ * bare path = exact file. Matching is case-SENSITIVE (a case variant fails
+ * closed, i.e. blocked).
+ *
+ * This constant is machine-checked against the LANE:BEGIN/LANE:END block in
+ * .opencode/contract.md and AGENTS.md by test-guard.mjs. A doc that misdescribes
+ * this list is the exact bug that blocked handoff 202607120021 (docs said
+ * "CI workflow fixes are yours", the guard said "no .github/") — so drift is a
+ * test failure, not a comment.
+ *
+ * .github/** was added 2026-07-12: the GitHub / repo-ops lane (operating-prompt
+ * §14, ADR-0011) assigns CI config + workflow fixes to OpenCode. Deliberately NOT
+ * added: infra/, scripts/, Dockerfile, docker-compose* — see the contract.
+ *
+ * .ai/activity/entries/** was added 2026-07-12 (ADR-0010 blocker): the activity log
+ * becomes an entry-per-file spool, and this exact-string lane entry
+ * (`rel === ".ai/activity/log.md"`) is one of the two layers that would block
+ * OpenCode from writing an entry at all. Additive on purpose — `.ai/activity/log.md`
+ * stays writable, because the migration has not happened yet and this permission
+ * plumbing must be safe to land on its own.
+ */
+export const WRITABLE_LANE = [
+  ".ai/activity/log.md",
+  ".ai/activity/entries/**",
+  ".ai/reports/**",
+  ".ai/handoffs/**",
+  ".github/**",
+];
+
+const LANE = `OpenCode's writable lane is ${WRITABLE_LANE.join(", ")} (see .opencode/contract.md)`;
+
+// Contract rule 5: never write secrets files. Matched on the BASENAME of the
+// resolved path, so it holds inside every allowed subtree too (e.g. a key
+// smuggled into .github/ or .ai/reports/).
+const SENSITIVE_BASENAME = /^(\.env.*|.*\.(key|pem)|id_rsa.*|secrets\..*|credentials.*)$/i;
+
+// Windows paths are case-insensitive, so the project-root prefix must be compared
+// case-insensitively there (a tool may hand back `c:\` for `C:\`). On case-SENSITIVE
+// filesystems an insensitive compare would treat a sibling `/PROJ/` as inside `/proj/`
+// — so we do not do that. Legitimate paths always match case exactly.
+const CASE_INSENSITIVE_FS = process.platform === "win32";
 
 function norm(p) {
   return p.replace(/\\/g, "/");
+}
+
+function inLane(rel) {
+  return WRITABLE_LANE.some((entry) =>
+    entry.endsWith("/**") ? rel.startsWith(entry.slice(0, -2)) : rel === entry
+  );
 }
 
 function block(reason) {
@@ -40,13 +91,27 @@ function defaultReadRegistry(registryPath) {
 }
 
 function decidePath(filePath, root, readRegistry, op = "write") {
-  const abs = norm(path.resolve(root, filePath));
-  const rootN = norm(path.resolve(root));
+  // Normalize separators BEFORE resolving, not after. On POSIX a backslash is a
+  // legal filename character, so path.resolve() treats a Windows-style absolute
+  // path ('C:\p\.github\x' / '\p\.github\x') as a RELATIVE name and silently
+  // rebases it under root — the path then fails to match its own lane. That is
+  // fail-closed (a wrongly-blocked allow, never a bypass), but it is still wrong:
+  // the guard must judge the same path identically whichever platform it runs on.
+  const abs = norm(path.resolve(norm(root), norm(filePath)));
+  const rootN = norm(path.resolve(norm(root)));
   const inWorktree = /\/\.wt\/[^/]+\/[^/]+(\/|$)/.test(rootN + "/");
 
-  // Relative form if under project root (case-insensitive: Windows), else null.
-  const absL = abs.toLowerCase();
-  const rootL = rootN.toLowerCase();
+  // Rule 5 (secrets) outranks every allow rule below, including the fleet lane.
+  if (SENSITIVE_BASENAME.test(path.basename(abs))) {
+    return block(
+      `${op} of '${norm(filePath)}' targets a sensitive file — never write secrets (.opencode/contract.md rule 5).`
+    );
+  }
+
+  // Relative form if under project root, else null.
+  const fold = (s) => (CASE_INSENSITIVE_FS ? s.toLowerCase() : s);
+  const absL = fold(abs);
+  const rootL = fold(rootN);
   const rel =
     absL === rootL ? "" : absL.startsWith(rootL + "/") ? abs.slice(rootN.length + 1) : null;
 
@@ -80,13 +145,7 @@ function decidePath(filePath, root, readRegistry, op = "write") {
   if (rel === null) {
     return block(`${op} of '${norm(filePath)}' is outside the project root. ${LANE}.`);
   }
-  if (
-    rel === ".ai/activity/log.md" ||
-    rel.startsWith(".ai/reports/") ||
-    rel.startsWith(".ai/handoffs/")
-  ) {
-    return { allow: true };
-  }
+  if (inLane(rel)) return { allow: true };
   return block(`${op} of '${rel || norm(filePath)}' is outside the lane. ${LANE}.`);
 }
 

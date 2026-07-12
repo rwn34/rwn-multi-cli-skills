@@ -112,6 +112,31 @@ function Get-InteractiveCmd {
     }
 }
 
+# -- Dispatch-guard child env (F3: nested self-dispatch race) --
+#
+# The pane-runner IS a dispatcher: it claims a handoff and runs the CLI on it.
+# Some CLIs (claude) also run a SessionStart hook that re-dispatches their own
+# queue - a SECOND consumer launched from inside the session already processing
+# it. Those hooks short-circuit when AI_HANDOFF_DISPATCH is set, so stamp it
+# into the process env (inherited by every child we spawn) for ALL CLIs -
+# harmless for CLIs whose hooks don't read it, correct for the one that does.
+# A per-CLI carve-out is how this bug got in; do not reintroduce one.
+function Enable-DispatchGuardEnv {
+    # Returns the prior value ($null if unset) so the caller can restore it.
+    $prev = $env:AI_HANDOFF_DISPATCH
+    $env:AI_HANDOFF_DISPATCH = '1'
+    return $prev
+}
+
+function Restore-DispatchGuardEnv {
+    param([object]$Previous)
+    if ($null -eq $Previous) {
+        Remove-Item -Path Env:\AI_HANDOFF_DISPATCH -ErrorAction SilentlyContinue
+    } else {
+        $env:AI_HANDOFF_DISPATCH = [string]$Previous
+    }
+}
+
 # -- Overridable hooks (tests replace these with mocks) --
 
 # Real CLI launch: build the headless command and run it as a blocking child.
@@ -138,9 +163,14 @@ $script:InvokeCli = {
     # exit code or stderr.
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    # F3: tell the child (and its SessionStart hooks) that a dispatcher is
+    # already driving this queue, so a nested dispatch-own-queue short-circuits
+    # instead of re-dispatching the same handoff to a second instance.
+    $prevDispatch = Enable-DispatchGuardEnv
     try {
         & $exe @rest 2>&1 | Out-Host
     } finally {
+        Restore-DispatchGuardEnv -Previous $prevDispatch
         $ErrorActionPreference = $prevEAP
     }
     return $LASTEXITCODE
@@ -554,6 +584,30 @@ function Invoke-HandoffRun {
 
 # -- Supervisor loop (IDLE -> CLAIM -> RUN/DECIDE), interruptible --
 
+# Idle-heartbeat throttle (F1): a healthy idle pane was previously
+# indistinguishable from a dead one - it printed its banner once and went
+# silent forever. The heartbeat is TIME-based, not every-Nth-poll: the cadence
+# stays stable no matter what PollSeconds is configured to, and emitting on the
+# very first idle poll proves liveness immediately at startup. 60s is visible
+# enough to glance at, quiet enough not to drown the pane (vs 6x the noise of
+# an every-poll line at the default 10s poll).
+$script:IdleHeartbeatSeconds = 60
+
+# Emit the idle heartbeat if due: always on the first idle poll, then at most
+# once per $script:IdleHeartbeatSeconds. Updates $LastEmitted (a [ref]) when it
+# emits. Returns $true if it emitted, $false if throttled - the return value is
+# the testable surface (Write-Host itself goes to the host, not the pipeline).
+function Write-IdleHeartbeat {
+    param([string]$CliName, [ref]$LastEmitted)
+    $now = Get-Date
+    if ($null -eq $LastEmitted.Value -or ($now - $LastEmitted.Value).TotalSeconds -ge $script:IdleHeartbeatSeconds) {
+        Write-Host "-- idle [$CliName] no qualifying handoff ($($now.ToString('HH:mm:ss'))) --" -ForegroundColor DarkGray
+        $LastEmitted.Value = $now
+        return $true
+    }
+    return $false
+}
+
 function Start-PaneRunner {
     param(
         [string]$Cli,
@@ -580,6 +634,10 @@ function Start-PaneRunner {
     # caught, or the 'q' quit key) so the outer finally exits 0 (do-not-respawn).
     # Left false on a crash / escaped exception -> exit non-zero (supervisor respawns).
     $stopIntent = $false
+
+    # Idle-heartbeat state (F1): $null = never emitted -> the first idle poll
+    # emits immediately, then Write-IdleHeartbeat throttles by wall-clock.
+    $lastHeartbeat = $null
 
     # Keyboard hatch guard: [Console]::KeyAvailable throws InvalidOperationException
     # in a headless / redirected / no-console context, and it sits INSIDE the loop -
@@ -630,6 +688,7 @@ function Start-PaneRunner {
 
                 $handoff = Get-QualifyingHandoff -ProjectDir $ProjectDir -CliName $Cli
                 if ($null -eq $handoff) {
+                    Write-IdleHeartbeat -CliName $Cli -LastEmitted ([ref]$lastHeartbeat) | Out-Null
                     Start-Sleep -Seconds $PollSeconds
                     continue
                 }
@@ -649,6 +708,12 @@ function Start-PaneRunner {
                     Start-Sleep -Seconds $PollSeconds
                     continue
                 }
+
+                # idle->busy transition, made visible (F1): without this line the
+                # pane jumps from heartbeat silence straight into streamed CLI
+                # output. Placed AFTER the claim is won so it prints only when
+                # THIS pane actually starts work, not on claim-contention skips.
+                Write-Host "-- picked up $(Split-Path -Leaf $handoff) --" -ForegroundColor Gray
 
                 Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
                 $hbase = Get-HandoffBasename -HandoffPath $handoff

@@ -30,6 +30,121 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.24] - 2026-07-12
+
+### Fixed
+
+- **Onboarded projects received OpenCode with NO mechanical guard layer.** The
+  installer manifests (`scripts/sync-assets.ts` and
+  `src/installer/copy-framework.ts`) shipped `opencode.json` — which points
+  OpenCode at `.opencode/contract.md` — but never shipped `.opencode/` itself.
+  Every adopted project therefore ran OpenCode on prompt-level rules alone: no
+  write-lane enforcement, no sensitive-file guard, no destructive-command
+  guard. This is exactly the no-hook-layer situation ADR-0002's 2026-07-09
+  amendment rejected when Crush was replaced. Both manifests now include
+  `.opencode`, and a new installer test (`installed OpenCode guard actually
+  blocks out-of-lane writes`) imports the guard OUT OF A FRESH INSTALL TARGET
+  and proves it blocks `src/`, `.opencode/contract.md`, `.env`, and
+  `git push --force` — presence is no longer assumed, it is exercised.
+- **Nothing gated the installer asset tree, so it rotted invisibly.** A stale
+  generated `assets/` tree (protocol-v2 `AGENTS.md`, dozens of drifted files)
+  lingered undetected. New gate `.ai/tools/check-asset-drift.sh`, wired into
+  the `gates` workflow after asset regeneration: (1) enforces parity between
+  the two ship manifests plus required coverage (`.opencode`, `AGENTS.md`,
+  `opencode.json`) — the 2026-07-12 defect class fails here even on a clean
+  checkout; (2) rejects any committed file under
+  `tools/multi-cli-install/assets/` (a build artifact that goes stale the
+  moment its source changes); (3) glob-walks every file of any on-disk asset
+  tree and fails on any byte-divergence from its source — no hardcoded file
+  list, so new files are covered automatically. Proven both directions:
+  53 failures on the real stale tree, PASS once regenerated.
+## [0.0.23] - 2026-07-12
+
+### Added
+
+- **OpenCode's two enforcement layers now accept `.ai/activity/entries/**`** — the
+  entry-per-file activity-log spool of ADR-0010. Both layers hardcoded the log path
+  as an **exact string** (`scripts/git-hooks/pre-commit` L96
+  `case "$p" in .ai/activity/log.md|…`; `.opencode/plugin/framework-guard.js`
+  `WRITABLE_LANE`), so the first spool entry OpenCode ever wrote would have been
+  **blocked by its own guard** and its commit **rejected by the hook** — silently,
+  with no error a human would see. This is **permission plumbing only**: it makes the
+  spool landable later. Nothing is migrated, `entries/` is not created, no contract's
+  logging prose changed, and `.ai/tools/activity-append.sh` is untouched.
+  `.ai/activity/log.md` keeps working exactly as before — it is still the live log.
+
+### Fixed
+
+- **OpenCode could write `.github/**` but not commit it.** The 0.0.22 repo-ops
+  widening (PR #45) added `.github/**` to the *write* guard and to the contract
+  ("you own … CI config/workflow fixes … opening PRs"), but never to the *commit*
+  hook's OpenCode whitelist. The result was the same defect class it set out to fix,
+  one layer down: OpenCode could produce the workflow fix and then be rejected at
+  `git commit`. `.github/*` is now in the pre-commit lane too, so the two layers agree.
+
+### Security
+
+- The spool widening is asserted **not to leak**: the guard suite grew 96 → 133
+  assertions and the pre-commit backstop suite 54 → 86, covering relative,
+  Windows-absolute, backslash, `./`-prefixed, MSYS `/c/…`, traversal-escape and
+  mixed-case forms. Project source, `.claude/**`, `.kimi/**`, `.kiro/**`,
+  `.opencode/**`, `.ai/instructions/**` (SSOT), `docs/architecture/**` (ADRs),
+  `scripts/**` and secrets remain blocked from OpenCode, and rule 5 (secrets) still
+  outranks the lane *inside* the spool (`.ai/activity/entries/id_rsa` is denied).
+  `.ai/activity/archive/**` was deliberately **not** granted.
+- **Documented, not fixed:** the pre-commit hook matches the lowercased path (`_lc`),
+  which makes OpenCode's *whitelist* branch case-INSENSITIVE (fail-**open**) while
+  the guard's lane is case-SENSITIVE (fail-**closed**) — the two disagree on
+  `.AI/Activity/Entries/x.md`. The leak **cannot escalate** (no case variant reaches
+  another CLI's territory, source, or a secret — now asserted), and tightening it
+  risks false-blocking a real entry, which is the exact "OpenCode goes silent"
+  failure this change prevents. The assertions pin the contract for whoever revisits it.
+
+## [0.0.22] - 2026-07-12
+
+### Fixed
+
+- **OpenCode's guard denied the job its contract assigns it.** `.opencode/contract.md`
+  gives OpenCode a "GitHub / repo-ops lane" (PRs, release chores, **CI config/workflow
+  fixes**) and operating-prompt §14 routes GitHub work to it — but
+  `.opencode/plugin/framework-guard.js` enforced a writable lane of `.ai/activity/log.md`,
+  `.ai/reports/**`, `.ai/handoffs/**` only. The first real ops handoff
+  (`202607120021-gates-required-check-and-step-order`, a `.github/workflows/gates.yml`
+  edit) was therefore mechanically impossible; OpenCode correctly refused and reported
+  BLOCKED (`.ai/reports/opencode-2026-07-12-gates-blocked.md`). The lane now includes
+  `.github/**` — and nothing else. `infra/`, `scripts/`, `Dockerfile`, `docker-compose*`
+  were deliberately NOT added: widening a security guard is a one-way ratchet, and only
+  `.github/**` is needed for the documented job.
+- **`AGENTS.md` never mirrored the repo-ops lane.** The paragraph was added to
+  `.opencode/contract.md` on 2026-07-11 and never propagated, so OpenCode's shipped
+  contract did not say it owns GitHub/CI work at all — a contributing cause of the lane
+  starvation, not just a symptom (ADR-0011 Context). `AGENTS.md` now carries an
+  OpenCode-only lane section.
+
+### Added
+
+- **`WRITABLE_LANE` is now a single exported constant** in `framework-guard.js`, and the
+  guard suite **fails loudly if it drifts from the `LANE:BEGIN`/`LANE:END` block in
+  `.opencode/contract.md` or `AGENTS.md`.** The doc/enforcement divergence *is* the bug
+  above; its recurrence is now a test failure, not a comment.
+- **Guard rule 5 (secrets) is enforced mechanically, ahead of every allow rule.** A
+  sensitive basename (`.env*`, `*.key`, `*.pem`, `id_rsa*`, `secrets.*`, `credentials*`)
+  is denied everywhere — including inside the newly-widened `.github/**` and inside
+  `.ai/reports/**`. Previously secrets were blocked only incidentally, by default-deny.
+- **OpenCode guard suite: 45 → 96 assertions.** New coverage: `.github/**` allowed in
+  relative/absolute/backslash/`./`-prefixed/traversal forms; source, `.claude/`, `.kimi/`,
+  `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/` (ADRs) and `.opencode/` still
+  denied in relative **and absolute and backslash** forms; mixed-case variants fail closed;
+  secrets denied inside the lane; doc/guard lane drift.
+
+### Security
+
+- **Project-root prefix comparison is now case-insensitive only on Windows.** It was
+  unconditionally case-insensitive, so on a case-sensitive filesystem a sibling directory
+  differing only in case (`/PROJ/` next to `/proj/`) would have been folded *inside* the
+  project root and its lane paths allowed. Legitimate paths always match case exactly, so
+  the strict compare costs nothing and closes the fold.
+
 ## [0.0.21] - 2026-07-12
 
 ### Fixed
