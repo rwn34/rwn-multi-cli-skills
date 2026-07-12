@@ -27,8 +27,33 @@
 #    stay silent, it inverts the drift warning for every adopter at once.
 #  - A bump requires a matching '## [<new-version>]' heading in CHANGELOG.md
 #    (0.0.20 shipped with no entry; the gap is still visible in the changelog).
+#  - The '## [<new-version>]' section must be SUBSTANTIVE — see below.
 #  - Unparseable/missing version on either side fails CLOSED: a gate that
 #    cannot parse its input refuses, never waves through.
+#
+# The substantive-section check (closes the gap ADR-0012 itself opened):
+# moving version assignment to merge time means the release-engineer now
+# MANUALLY promotes the accumulated '## [Unreleased]' bullets into a versioned
+# heading. Asserting only that the heading EXISTS lets two silent-wrong-record
+# failures through: an EMPTY section, and a section holding nothing but the
+# Keep-a-Changelog placeholder scaffolding ('- [TODO: new features]', TBD, WIP,
+# '...', an empty '- ' bullet, or comments only). Both produce a released
+# version documented by nothing. So the section must now hold at least one real
+# content line between its heading and the next '## ' heading (or EOF).
+#
+# What this does NOT close — be honest about the residual hole: it does NOT
+# prove the bullets DESCRIBE THE PR THAT BUMPED THE VERSION. Under a parallel
+# merge train the first symptom of a botched promotion is a version heading
+# whose bullets belong to a *different* PR, and that is WRONG CONTENT, not
+# empty content. Verifying it needs a reliable "which PR merged here" signal
+# this gate does not have. This closes the EMPTY/PLACEHOLDER hole only; a human
+# still reads the entry at release.
+#
+# '## [Unreleased]' is exempt BY CONSTRUCTION, not by a special case: the gate
+# only ever inspects the section named by the NEW SEMVER VERSION, and
+# "Unreleased" is not a semver string, so it is never the target. An Unreleased
+# section that is empty right after a promotion — the normal steady state — is
+# therefore never examined and can never fail this gate.
 #
 # Usage (from repo root):
 #   scripts/check-version-bump.sh <base-ref>
@@ -107,6 +132,91 @@ is_versioned() {
   esac
 }
 
+# changelog_section <version> <file> — print the BODY of the '## [<version>]'
+# section: every line strictly between that heading and the next '## ' heading
+# (or EOF). Returns 1 if the heading is absent, so callers fail closed on a
+# section they cannot parse. Pure bash — no sed/awk escaping games with the
+# literal brackets in the heading.
+changelog_section() {
+  local version="$1" file="$2" line in_section=0 found=0
+  [ -f "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"   # tolerate CRLF checkouts
+    case "$line" in
+      "## [$version]"*)
+        in_section=1; found=1; continue ;;
+      "## "*)
+        # any other top-level heading ends the section we were collecting
+        [ "$in_section" -eq 1 ] && break
+        continue ;;
+    esac
+    [ "$in_section" -eq 1 ] && printf '%s\n' "$line"
+  done < "$file"
+  [ "$found" -eq 1 ]
+}
+
+# is_placeholder_line <text> — 0 iff a content line is an obvious placeholder
+# rather than a real note. <text> is the line AFTER its bullet marker is
+# stripped. Both patterns are ANCHORED AT THE START, so a genuine note that
+# merely mentions a keyword ("dropped the TODO scaffolding") is NOT rejected —
+# only a line that *opens* as a placeholder is.
+is_placeholder_line() {
+  local t="$1"
+  # Empty is a placeholder (an empty '- ' bullet lands here). Checked BEFORE the
+  # greps: `printf '%s' ""` pipes ZERO lines to grep, so an empty string matches
+  # no pattern at all and would otherwise be misread as real content.
+  [ -z "$t" ] && return 0
+  # Nothing but whitespace/punctuation: '   ', '-', '...', '—'.
+  printf '%s\n' "$t" | grep -qE '^[[:space:][:punct:]]*$' && return 0
+  # Optional leading markers ( [ ( * _ ` ) then a placeholder keyword.
+  # '(TODO|...)([^A-Za-z]|$)' instead of '\b' — portable across grep -E flavors.
+  printf '%s\n' "$t" \
+    | grep -qiE '^[][(*_`[:space:]]*(TODO|TBD|WIP|XXX|PLACEHOLDER)([^A-Za-z]|$)' \
+    && return 0
+  return 1
+}
+
+# section_is_substantive <version> <file> — 0 iff the '## [<version>]' section
+# exists AND holds at least one real content line. Ignored as non-content:
+# blank lines, '### ' sub-headings (Keep-a-Changelog structure, not notes),
+# HTML comments, and placeholder lines. A missing/unreadable section returns 1
+# (fail closed).
+section_is_substantive() {
+  local version="$1" file="$2" body line text in_comment=0
+  body="$(changelog_section "$version" "$file")" || return 1
+
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+
+    # HTML comments carry no release information — skip them, including blocks.
+    case "$line" in *'<!--'*) in_comment=1 ;; esac
+    if [ "$in_comment" -eq 1 ]; then
+      case "$line" in *'-->'*) in_comment=0 ;; esac
+      continue
+    fi
+
+    text="${line#"${line%%[![:space:]]*}"}"    # ltrim
+    text="${text%"${text##*[![:space:]]}"}"    # rtrim
+    [ -n "$text" ] || continue                 # blank line
+    case "$text" in '#'*) continue ;; esac     # '### Fixed' etc: structure
+
+    # Strip one leading bullet marker, then re-trim: '- x' / '* x' / '+ x'.
+    case "$text" in
+      -[[:space:]]*|'-')    text="${text#-}" ;;
+      \*[[:space:]]*|'*')   text="${text#\*}" ;;
+      +[[:space:]]*|'+')    text="${text#+}" ;;
+    esac
+    text="${text#"${text%%[![:space:]]*}"}"
+
+    is_placeholder_line "$text" && continue
+    return 0                                   # a real content line — done
+  done <<EOF
+$body
+EOF
+
+  return 1
+}
+
 main() {
   BASE_REF="${1:-${BASE_REF:-}}"
   [ -n "$BASE_REF" ] || { echo "check-version-bump: no base ref (pass as arg1 or BASE_REF env)"; exit 2; }
@@ -177,8 +287,7 @@ EOF
   fi
 
   # A valid bump must ship with its CHANGELOG entry — the missing [0.0.20]
-  # heading is the hole this closes. Strictness note: this proves the heading
-  # EXISTS, not that the entry is accurate (a human reads it at release).
+  # heading is the hole this closes.
   if ! grep -q "^## \[$new_version\]" "$CHANGELOG" 2>/dev/null; then
     echo ""
     echo "FAIL: version bumped to '$new_version' but $CHANGELOG has no '## [$new_version]' heading."
@@ -186,7 +295,22 @@ EOF
     exit 1
   fi
 
-  echo "check-version-bump: version bumped $old_version -> $new_version with CHANGELOG entry — PASS"
+  # ...and the heading must have something UNDER it. An empty or
+  # placeholder-only section is a version documented by nothing: the promotion
+  # of the '## [Unreleased]' bullets (ADR-0012) silently did not happen.
+  # Scope note: this proves the section is SUBSTANTIVE, not that it is ACCURATE
+  # — bullets describing the wrong PR still pass. A human reads it at release.
+  if ! section_is_substantive "$new_version" "$CHANGELOG"; then
+    echo ""
+    echo "FAIL: $CHANGELOG '## [$new_version]' section has no substantive content."
+    echo "      It is empty, or holds only placeholders (TODO/TBD/WIP/'...'/empty bullet/comments)."
+    echo "      Under ADR-0012 the release-engineer promotes the accumulated '## [Unreleased]'"
+    echo "      bullets into '## [$new_version]' at merge — that promotion did not happen."
+    echo "      Move the real notes under the heading (and strip the TODO scaffolding)."
+    exit 1
+  fi
+
+  echo "check-version-bump: version bumped $old_version -> $new_version with a substantive CHANGELOG entry — PASS"
   exit 0
 }
 

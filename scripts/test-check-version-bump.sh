@@ -90,6 +90,23 @@ assert_false "gt malformed new"           version_gt "0.0.x" "0.0.1"
 assert_false "gt malformed old"           version_gt "0.0.2" "1.0"
 assert_false "gt empty old"               version_gt "0.0.2" ""
 
+# --- is_placeholder_line: what does NOT count as a real changelog note --------
+# Placeholders (bullet marker already stripped by the caller):
+assert_true  "placeholder empty"          is_placeholder_line ""
+assert_true  "placeholder whitespace"     is_placeholder_line "   "
+assert_true  "placeholder ellipsis"       is_placeholder_line "..."
+assert_true  "placeholder bare dash"      is_placeholder_line "-"
+assert_true  "placeholder TODO"           is_placeholder_line "TODO: write this"
+assert_true  "placeholder [TODO: ...]"    is_placeholder_line "[TODO: new features]"
+assert_true  "placeholder TBD"            is_placeholder_line "TBD"
+assert_true  "placeholder WIP"            is_placeholder_line "wip — still drafting"
+assert_true  "placeholder **TODO**"       is_placeholder_line "**TODO**"
+# Real notes — including one that merely MENTIONS a keyword mid-sentence. The
+# patterns are start-anchored precisely so this is not a false positive:
+assert_false "real note"                  is_placeholder_line "Fixed the drift checker"
+assert_false "real note naming TODO"      is_placeholder_line "Dropped the TODO scaffolding from the template"
+assert_false "real note starting Todos"   is_placeholder_line "Todos list rendering fixed"
+
 # -----------------------------------------------------------------------------
 echo "== Part 2: gate end-to-end in real git repos =="
 
@@ -243,6 +260,264 @@ if [ -f "$GATES" ]; then
 else
     printf 'SKIP  gates.yml not found at %s (workflow-wiring checks skipped)\n' "$GATES"
 fi
+
+echo
+echo "== Part 5: CHANGELOG section substance (the gap ADR-0012 opened) =="
+# ADR-0012 made the release-engineer MANUALLY promote the '## [Unreleased]'
+# bullets into a '## [x.y.z]' heading at merge. Asserting only that the heading
+# EXISTS let an EMPTY or PLACEHOLDER-ONLY section ship a version documented by
+# nothing. These cases pin the substance check. (They do NOT — and cannot —
+# test that the bullets describe the PR that bumped the version: that is the
+# WRONG-CONTENT hole, still open by design. See the gate's header comment.)
+
+# setup_repo_cl <old-ver> <new-ver> <tag> <head-changelog-content>
+# Like setup_repo, but HEAD's CHANGELOG.md is supplied verbatim. Always changes
+# versioned content and always bumps, so the version ordering is satisfied and
+# ONLY the section's substance decides the verdict.
+setup_repo_cl() {
+    old="$1"; new="$2"; tag="$3"; content="$4"
+    R="$WORK/repo-cl-$tag"
+    mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools"
+    git -C "$R" -c init.defaultBranch=master init -q
+    git -C "$R" config user.email test@test
+    git -C "$R" config user.name test
+    git -C "$R" config core.autocrlf false
+
+    printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
+    printf '# Changelog\n\n## [Unreleased]\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$old" > "$R/CHANGELOG.md"
+    echo "base tool" > "$R/.ai/tools/tool.sh"
+    git -C "$R" add -A && git -C "$R" commit -qm base
+    BASE_SHA="$(git -C "$R" rev-parse HEAD)"
+
+    printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$new" > "$R/tools/multi-cli-install/package.json"
+    echo "changed" >> "$R/.ai/tools/tool.sh"
+    printf '%s' "$content" > "$R/CHANGELOG.md"
+    git -C "$R" add -A && git -C "$R" commit -qm head
+}
+
+# The happy path: promotion actually happened, real bullets under the heading.
+setup_repo_cl 0.0.30 0.0.31 real '# Changelog
+
+## [Unreleased]
+
+## [0.0.31] - 2026-01-02
+
+### Added
+
+- The substantive-section check on the version gate.
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: real bullets PASS" 0
+
+# EMPTY section — heading promoted, bullets forgotten. This is the hole.
+setup_repo_cl 0.0.30 0.0.31 empty '# Changelog
+
+## [Unreleased]
+
+## [0.0.31] - 2026-01-02
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: EMPTY section FAIL" 1
+out="$(cd "$R" && bash "$GATE" "$BASE_SHA" 2>&1)"
+case "$out" in
+    *"no substantive content"*) pass=$((pass + 1)); printf 'PASS  empty-section message says "no substantive content"\n' ;;
+    *) fail=$((fail + 1)); printf 'FAIL  empty-section message unclear; got: %s\n' "$out" ;;
+esac
+
+# PLACEHOLDER-ONLY — the Keep-a-Changelog scaffold copied down verbatim. This is
+# the shape the real CHANGELOG's '## [Unreleased]' block actually has, so it is
+# the single most likely way a botched promotion looks.
+setup_repo_cl 0.0.30 0.0.31 todo '# Changelog
+
+## [Unreleased]
+
+## [0.0.31] - 2026-01-02
+
+### Added
+
+- [TODO: new features]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: TODO-scaffold-only section FAIL" 1
+
+# An empty bullet is not a note.
+setup_repo_cl 0.0.30 0.0.31 emptybullet '# Changelog
+
+## [0.0.31] - 2026-01-02
+
+### Fixed
+
+-
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: empty dash-bullet only FAIL" 1
+
+# '...' is not a note.
+setup_repo_cl 0.0.30 0.0.31 ellipsis '# Changelog
+
+## [0.0.31] - 2026-01-02
+
+### Changed
+
+- ...
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: ellipsis-only section FAIL" 1
+
+# An HTML comment carries no release information.
+setup_repo_cl 0.0.30 0.0.31 commentonly '# Changelog
+
+## [0.0.31] - 2026-01-02
+
+<!--
+  promote the Unreleased bullets here before merging
+-->
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: comment-only section FAIL" 1
+
+# NO FALSE POSITIVES: real bullets alongside blank lines, a comment, a wrapped
+# continuation line, and a trailing blank must still PASS.
+setup_repo_cl 0.0.30 0.0.31 noise '# Changelog
+
+## [Unreleased]
+
+## [0.0.31] - 2026-01-02
+
+<!-- promoted from Unreleased at merge -->
+
+### Added
+
+- Substantive-section check on the version gate — an empty or placeholder
+  section no longer passes as a documented release.
+
+### Fixed
+
+- [TODO: bug fixes]
+
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: bullets + comment + wrap + trailing blank PASS" 0
+
+# A bullet that MENTIONS a keyword mid-sentence is a real note, not a placeholder.
+setup_repo_cl 0.0.30 0.0.31 mentions '# Changelog
+
+## [0.0.31] - 2026-01-02
+
+### Removed
+
+- Dropped the TODO scaffolding from the onboarding template.
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: bullet mentioning TODO mid-sentence PASS" 0
+
+# The section is the LAST in the file: EOF terminates it, not a '## ' heading.
+setup_repo_cl 0.0.30 0.0.31 eof '# Changelog
+
+## [0.0.31] - 2026-01-02
+
+### Added
+
+- Real note, last section in the file.
+'
+assert_gate "substance: section terminated by EOF PASS" 0
+
+# THE UNRELEASED EXEMPTION: '## [Unreleased]' is empty (the normal steady state
+# right after a promotion) while the versioned section is real. The gate only
+# ever inspects the section named by the new SEMVER version, so Unreleased is
+# never examined and cannot fail the build.
+setup_repo_cl 0.0.30 0.0.31 unreleased_empty '# Changelog
+
+## [Unreleased]
+
+## [0.0.31] - 2026-01-02
+
+### Added
+
+- Real note; Unreleased above is intentionally empty post-promotion.
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: EMPTY [Unreleased] does not fail (exempt by construction)" 0
+
+# Same, with Unreleased holding only the TODO scaffold — also never examined.
+setup_repo_cl 0.0.30 0.0.31 unreleased_todo '# Changelog
+
+## [Unreleased]
+
+### Added
+
+- [TODO: new features]
+
+## [0.0.31] - 2026-01-02
+
+### Added
+
+- Real note; the TODO scaffold in Unreleased above is not this gate'"'"'s business.
+
+## [0.0.30] - 2026-01-01
+
+### Fixed
+
+- base
+'
+assert_gate "substance: TODO-scaffolded [Unreleased] does not fail (exempt)" 0
+
+# Fail CLOSED on a section that cannot be parsed: the heading-exists grep is the
+# first line of defence, and section_is_substantive independently returns 1 for
+# a heading it cannot find, so a bump whose section vanished never waves through.
+assert_false "section_is_substantive: missing heading fails closed" \
+    section_is_substantive "9.9.9" "$R/CHANGELOG.md"
+assert_true  "section_is_substantive: real section is substantive" \
+    section_is_substantive "0.0.31" "$R/CHANGELOG.md"
 
 echo
 echo "=============================================="
