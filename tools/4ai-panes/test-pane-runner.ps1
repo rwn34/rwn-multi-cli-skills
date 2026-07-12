@@ -25,6 +25,14 @@
 #   (t) Test-HandoffQuarantined fresh record    (true  -> still quarantined)
 #   (u) Get-StopExitCode intentional stop        (Intent=$true  -> 0)
 #   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
+#   (w) idle heartbeat on first idle poll         (emits; line has CLI name + time)
+#   (x) heartbeat is throttled                    (10 rapid polls -> exactly 1 emit)
+#   (y) heartbeat re-emits after the interval     (true)
+#   (z) heartbeat is idle-only                    (one call site, null-handoff branch)
+#   (aa) picked-up line on idle->busy             (present, printed after claim won)
+#   (bb) Enable/Restore-DispatchGuardEnv          (sets 1, returns+restores prior)
+#   (cc) real InvokeCli child env                 (child sees AI_HANDOFF_DISPATCH=1)
+#   (dd) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -306,6 +314,83 @@ Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hexp
 # -- (u/v) exit-code contract helper: intent -> 0, crash -> non-zero --
 Assert-Equal 0 (Get-StopExitCode -Intent $true) 'u: intentional stop -> Get-StopExitCode 0'
 Assert-Equal $true ((Get-StopExitCode -Intent $false) -ne 0) 'v: crash -> Get-StopExitCode non-zero'
+
+# -- (w/x/y) idle heartbeat (F1) --
+# Shadow the Write-Host cmdlet with a capturing function for these tests only;
+# Write-IdleHeartbeat's boolean return carries the emit/throttle decision, and
+# the captured line carries the content. Removed again right after (y).
+$script:hostLines = @()
+function Write-Host {
+    param([object]$Object, $ForegroundColor)
+    $script:hostLines += [string]$Object
+    # Forward to the real cmdlet so test PASS/FAIL lines stay visible while the
+    # heartbeat line is captured for assertion.
+    if ($ForegroundColor) { Microsoft.PowerShell.Utility\Write-Host -Object $Object -ForegroundColor $ForegroundColor } else { Microsoft.PowerShell.Utility\Write-Host -Object $Object }
+}
+
+# (w) first idle poll emits immediately, and the line names the CLI + a timestamp
+$script:hostLines = @()
+$hbLast = $null
+$emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast)
+Assert-Equal $true $emitted 'w: first idle poll emits the heartbeat'
+Assert-Equal $true ($script:hostLines[0] -match '\[kimi\]') 'w: heartbeat line contains the CLI name'
+Assert-Equal $true ($script:hostLines[0] -match '\(\d{2}:\d{2}:\d{2}\)') 'w: heartbeat line contains a timestamp'
+
+# (x) throttled: 10 rapid idle polls emit exactly ONE heartbeat, not one per poll
+$script:hostLines = @()
+$hbLast2 = $null
+$emitCount = 0
+for ($i = 0; $i -lt 10; $i++) { if (Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)) { $emitCount++ } }
+Assert-Equal 1 $emitCount 'x: 10 rapid idle polls -> exactly 1 heartbeat (throttled, not every poll)'
+
+# (y) once the interval has elapsed, the next idle poll emits again
+$hbLast2 = (Get-Date).AddSeconds(-($script:IdleHeartbeatSeconds + 1))
+$emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)
+Assert-Equal $true $emitted 'y: heartbeat re-emits once IdleHeartbeatSeconds has elapsed'
+
+Remove-Item -Path function:Write-Host -Force
+
+# -- (z/aa) structural guards on the supervisor loop (F1) --
+$runnerSrc = Get-Content -Path $runner -Raw
+# (z) the heartbeat is idle-only: exactly one call site, inside the null-handoff branch
+$hbRefs = ([regex]::Matches($runnerSrc, 'Write-IdleHeartbeat -CliName')).Count
+Assert-Equal 1 $hbRefs 'z: Write-IdleHeartbeat has exactly one call site'
+Assert-Equal $true ($runnerSrc -match 'if \(\$null -eq \$handoff\) \{\s*Write-IdleHeartbeat') 'z: heartbeat fires only in the no-handoff (idle) branch'
+# (aa) the idle->busy transition prints a picked-up line, AFTER the claim is won
+$idxPick = $runnerSrc.IndexOf('-- picked up')
+$idxClaim = $runnerSrc.IndexOf('if (-not (Claim-Handoff')
+Assert-Equal $true ($idxPick -ge 0) 'aa: picked-up line present on the idle->busy transition'
+Assert-Equal $true ($idxPick -gt $idxClaim) 'aa: picked-up line prints only after the claim is won'
+
+# -- (bb) Enable/Restore-DispatchGuardEnv round trip (F3) --
+$env:AI_HANDOFF_DISPATCH = 'outer-value'
+$prev = Enable-DispatchGuardEnv
+Assert-Equal 'outer-value' $prev 'bb: Enable-DispatchGuardEnv returns the prior value'
+Assert-Equal '1' $env:AI_HANDOFF_DISPATCH 'bb: Enable-DispatchGuardEnv sets AI_HANDOFF_DISPATCH=1'
+Restore-DispatchGuardEnv -Previous $prev
+Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'bb: Restore-DispatchGuardEnv restores the prior value'
+Remove-Item -Path Env:\AI_HANDOFF_DISPATCH
+$prevUnset = Enable-DispatchGuardEnv
+Assert-Equal $true ($null -eq $prevUnset) 'bb: prior value is $null when the var was unset'
+Restore-DispatchGuardEnv -Previous $prevUnset
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'bb: restore removes the var when it was previously unset'
+
+# -- (cc) REAL invoke path: the spawned child actually inherits AI_HANDOFF_DISPATCH=1 --
+#     Stub Get-HeadlessCmd with a real native child (cmd, like test p - never a
+#     real CLI) that exits 7 ONLY if the guard var reached its environment.
+#     InvokeCli returns the child exit code, so the env assertion needs no
+#     output capture. Also proves the runner env is cleaned up afterwards.
+$origHeadlessCc = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (exit 7) else (exit 9)') }
+$ccCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+${function:Get-HeadlessCmd} = $origHeadlessCc
+Assert-Equal 7 $ccCode 'cc: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 (exit 7)'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'cc: AI_HANDOFF_DISPATCH removed from runner env after the call'
+
+# -- (dd) GUARD: the assignment must never silently disappear from the source --
+#     Removing AI_HANDOFF_DISPATCH from the child env re-arms the nested
+#     self-dispatch race (F3); if it is ever dropped, this test fails loudly.
+Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_DISPATCH = ''1''')) 'dd: GUARD - AI_HANDOFF_DISPATCH=1 assignment present in pane-runner source'
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
