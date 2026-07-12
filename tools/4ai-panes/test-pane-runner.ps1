@@ -27,6 +27,20 @@
 #   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
 #   (w) Get-HeadlessCmd claude carries --dangerously-skip-permissions (F2)
 #   (x) parity guard: pane-runner vs dispatch-handoffs.sh Claude argv (F2)
+#   (y) Invoke-HandoffRun resolves the worktree BEFORE invoking the CLI, and the
+#       CLI is invoked with cwd == that worktree (NOT $ProjectDir)
+#   (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to
+#       $ProjectDir (the acceptance assertion for this whole fix)
+#   (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked
+#   (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to origin/master
+#   (ac) parity guard: Ensure-DeclaredBaseBranchReal vs
+#        dispatch-handoffs.sh's ensure_declared_base_branch() behave the same on
+#        a real sandbox repo (branch cut from declared base, not ambient HEAD;
+#        dirty non-.ai tree -> refuse to touch, matching bash's WARN-and-reuse)
+#   (ad) REGRESSION (the incident this handoff fixes): two concurrent
+#        Invoke-HandoffRun calls for two different CLIs, each in its own real
+#        worktree, never perturb each other's HEAD or working files, and the
+#        PRIMARY checkout's HEAD is unchanged throughout
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -82,12 +96,33 @@ $script:mockCalls = 0
 $script:mockDeleteOnCall = 0      # 0 = never delete
 $script:mockHandoffPath = $null
 $script:InvokeCli = {
-    param([string]$CliName, [string]$Prompt)
+    param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
     $script:mockCalls++
+    $script:lastInvokeCwd = $Cwd
     if ($script:mockDeleteOnCall -gt 0 -and $script:mockCalls -eq $script:mockDeleteOnCall) {
         Remove-Item -Path $script:mockHandoffPath -Force
     }
     return 0
+}
+
+# -- mock worktree resolution (tests a-x): a fake, always-succeeding worktree so
+#    the existing RUN/DECIDE tests never touch real git or shell out to bash.
+#    Capture the args Invoke-HandoffRun passes through so (y) can assert on them.
+$script:mockWtPath = Join-Path $env:TEMP ("pane-runner-test-wt-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $script:mockWtPath -Force | Out-Null
+$script:mockWtFails = $false
+$script:mockBranchFails = $false
+$script:GetCliWorktreePath = {
+    param([string]$ProjectDir, [string]$CliName)
+    $script:lastWtCliName = $CliName
+    if ($script:mockWtFails) { return $null }
+    return $script:mockWtPath
+}
+$script:EnsureDeclaredBaseBranch = {
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+    $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+    if ($script:mockBranchFails) { return $false }
+    return $true
 }
 
 # -- (a) done on first run --
@@ -342,8 +377,225 @@ if (Test-Path $dispatchSh) {
     Write-Host "FAIL  x: parity guard - could not locate dispatch-handoffs.sh at $dispatchSh" -ForegroundColor Red
 }
 
+# -- (y) Invoke-HandoffRun resolves the worktree BEFORE invoking the CLI, and --
+# -- the CLI is invoked with cwd == that worktree, NOT $ProjectDir. This is   --
+# -- the worktree-per-CLI fix itself: assert the mock InvokeCli actually saw  --
+# -- the worktree path, not the primary checkout ($work). --
+$script:mockCalls = 0; $script:mockDeleteOnCall = 1; $script:mockWtFails = $false; $script:mockBranchFails = $false
+$script:lastInvokeCwd = $null
+$hy = New-TestHandoff -Slug 'y-worktree-cwd'
+$script:mockHandoffPath = $hy
+$ry = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $hy -MaxContinues 5
+Assert-Equal 'DONE' $ry.Result 'y: worktree-cwd test -> handoff still completes (DONE)'
+Assert-Equal $script:mockWtPath $script:lastInvokeCwd 'y: InvokeCli cwd == the CLI worktree path'
+Assert-Equal $false ($script:lastInvokeCwd -eq $work) 'y: InvokeCli cwd is NOT $ProjectDir (primary checkout)'
+
+# -- (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to  --
+# -- $ProjectDir. This is the ACCEPTANCE assertion for the whole fix: a       --
+# -- worktree that cannot be established must never degrade to running in    --
+# -- the primary checkout. --
+$script:mockWtFails = $true
+$script:mockCalls = 0
+$hz = New-TestHandoff -Slug 'z-worktree-fail'
+$script:mockHandoffPath = $hz
+$rz = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $hz -MaxContinues 5
+Assert-Equal 'WORKTREE_FAIL' $rz.Result 'z: worktree setup failure -> Result=WORKTREE_FAIL'
+Assert-Equal 0 $rz.Invocations 'z: worktree setup failure -> CLI NEVER invoked (Invocations=0)'
+Assert-Equal 0 $script:mockCalls 'z: worktree setup failure -> mock InvokeCli call count is 0 (no fallback run)'
+Assert-Equal $true (Test-Path $hz) 'z: worktree setup failure -> handoff stays OPEN (file still present)'
+$script:mockWtFails = $false
+
+# -- (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked --
+$script:mockBranchFails = $true
+$script:mockCalls = 0
+$haa = New-TestHandoff -Slug 'aa-branch-fail'
+$script:mockHandoffPath = $haa
+$raa = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $haa -MaxContinues 5
+Assert-Equal 'WORKTREE_FAIL' $raa.Result 'aa: declared-base-branch failure -> Result=WORKTREE_FAIL'
+Assert-Equal 0 $raa.Invocations 'aa: declared-base-branch failure -> CLI NEVER invoked'
+Assert-Equal 0 $script:mockCalls 'aa: declared-base-branch failure -> mock InvokeCli call count is 0'
+$script:mockBranchFails = $false
+
+# -- (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to          --
+# -- origin/master when absent (mirrors dispatch-handoffs.sh base_for()).     --
+$hab1 = New-TestHandoff -Slug 'ab-no-base'
+Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab1) 'ab: no Base: field -> defaults to origin/master'
+$hab2Path = Join-Path $openDir 'ab-with-base.md'
+@(
+    "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "Base: origin/develop", "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $hab2Path -Encoding utf8
+Assert-Equal 'origin/develop' (Get-DeclaredBase -HandoffPath $hab2Path) 'ab: Base: origin/develop is read verbatim'
+Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
+
+# -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
+# -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --
+# -- path, mirroring test-dispatch-worktree.sh's sandbox pattern: a bare       --
+# -- "origin" + a primary checkout cloned from it, with .wt/ as a SIBLING of   --
+# -- the sandbox project (not $env:TEMP directly) so worktree_path_for's path  --
+# -- arithmetic matches production. Skips (does not fail) if bash/git are      --
+# -- unavailable, matching the fail-open posture of other environment-gated    --
+# -- checks in this suite.
+$bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+$gitCmd  = Get-Command git -ErrorAction SilentlyContinue
+$wtBootstrapPath = Join-Path $here '..\..\scripts\wt-bootstrap.sh'
+$wtBootstrapPath = [System.IO.Path]::GetFullPath($wtBootstrapPath)
+# A 'bash' on PATH is not necessarily USABLE for this: on Windows it may resolve
+# to WSL bash (System32\bash.exe), which cannot see Windows-style paths the way
+# Git Bash does (README.md's own documented gotcha: WSL bash wants /mnt/c/...,
+# Git Bash wants /c/...). wt-bootstrap.sh takes Windows paths as arguments, so
+# probe with a real (harmless, --help) invocation rather than trusting presence
+# on PATH — a WSL bash here must SKIP this block, not crash the whole suite.
+$bashUsable = $false
+if ($bashCmd -and (Test-Path $wtBootstrapPath)) {
+    try {
+        & $bashCmd.Source $wtBootstrapPath --help *> $null
+        $bashUsable = ($LASTEXITCODE -eq 0)
+    } catch { $bashUsable = $false }
+}
+if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
+    $sandbox = Join-Path $env:TEMP ("pane-runner-wt-sandbox-" + [guid]::NewGuid().ToString('N'))
+    $sandboxParent = Join-Path $sandbox 'parent'
+    $primary = Join-Path $sandboxParent 'proj'
+    New-Item -ItemType Directory -Path $primary -Force | Out-Null
+    Push-Location $primary
+    try {
+        git init --quiet .
+        git config user.email 'test@example.com'
+        git config user.name 'test'
+        New-Item -ItemType Directory -Path (Join-Path $primary '.ai/handoffs/to-kiro/open') -Force | Out-Null
+        'seed' | Set-Content -Path (Join-Path $primary 'seed.txt')
+        git add -A
+        git commit --quiet -m seed
+        git branch -M master
+
+        $originBare = Join-Path $sandboxParent 'origin.git'
+        git init --quiet --bare $originBare
+        git remote add origin $originBare
+        git push --quiet -u origin master
+
+        # HEAD before ANY worktree/dispatch activity -- the regression assertion
+        # for (ad) compares against this.
+        $primaryHeadBefore = git rev-parse HEAD
+
+        # (ac) Get-CliWorktreePathReal creates a real worktree; a 2nd call reuses it
+        # (idempotent, matches wt-bootstrap.sh's own reuse contract).
+        $realWt1 = Get-CliWorktreePathReal -ProjectDir $primary -CliName 'kiro'
+        Assert-Equal $true ($null -ne $realWt1 -and (Test-Path $realWt1)) 'ac: Get-CliWorktreePathReal creates a real, usable worktree'
+        $realWt2 = Get-CliWorktreePathReal -ProjectDir $primary -CliName 'kiro'
+        Assert-Equal $realWt1 $realWt2 'ac: 2nd call reuses the SAME worktree path (idempotent)'
+
+        # (ac) Ensure-DeclaredBaseBranchReal cuts exec/<cli>/<slug> from the
+        # declared base, not ambient HEAD -- even when the worktree's ambient
+        # HEAD is left on a DIFFERENT branch first.
+        Push-Location $realWt1
+        git checkout --quiet -b 'some-other-branch' 2>$null
+        Pop-Location
+        $baseOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'ac-test-slug' -Base 'origin/master'
+        Assert-Equal $true $baseOk 'ac: Ensure-DeclaredBaseBranchReal succeeds'
+        Push-Location $realWt1
+        $branchNow = git branch --show-current
+        Pop-Location
+        Assert-Equal 'exec/kiro/ac-test-slug' $branchNow 'ac: branch cut is exec/<cli>/<slug> (not the pre-existing other branch)'
+
+        # (ac) dirty-tree refusal: uncommitted changes on ANY branch -> reused
+        # as-is, no new branch cut (mirrors dispatch-handoffs.sh's WARN-and-reuse).
+        Push-Location $realWt1
+        'dirty' | Set-Content -Path (Join-Path $realWt1 'dirty.txt')
+        $dirtyBranchBefore = git branch --show-current
+        Pop-Location
+        $dirtyOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'should-not-cut' -Base 'origin/master'
+        Assert-Equal $true $dirtyOk 'ac: dirty tree -> Ensure-DeclaredBaseBranchReal still returns true (WARN + reuse)'
+        Push-Location $realWt1
+        $dirtyBranchAfter = git branch --show-current
+        Pop-Location
+        Assert-Equal $dirtyBranchBefore $dirtyBranchAfter 'ac: dirty tree -> branch NOT changed (refused to cut over uncommitted work)'
+        Remove-Item -Path (Join-Path $realWt1 'dirty.txt') -Force -ErrorAction SilentlyContinue
+
+        # (ad) THE REGRESSION TEST: two concurrent Invoke-HandoffRun calls for two
+        # DIFFERENT CLIs, each resolving its OWN real worktree via the real
+        # (unmocked) functions, must never perturb each other's HEAD/files, and
+        # the PRIMARY checkout's HEAD must be unchanged throughout. This is the
+        # Kimi-in-the-primary-checkout incident, reproduced and asserted against.
+        $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+
+        $adOpenKiro = Join-Path $primary '.ai/handoffs/to-kiro/open'
+        $adOpenClaude = Join-Path $primary '.ai/handoffs/to-claude/open'
+        New-Item -ItemType Directory -Path $adOpenClaude -Force | Out-Null
+        function New-SandboxHandoff {
+            param([string]$Dir, [string]$Slug)
+            $p = Join-Path $Dir "$Slug.md"
+            @("# $Slug", "Status: OPEN", "Sender: claude-code", "Recipient: x", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A", "", "## Goal", "test") -join "`n" | Set-Content -Path $p -Encoding utf8
+            return $p
+        }
+        $adHandoffKiro = New-SandboxHandoff -Dir $adOpenKiro -Slug 'ad-kiro-run'
+        $adHandoffClaude = New-SandboxHandoff -Dir $adOpenClaude -Slug 'ad-claude-run'
+
+        # Each CLI's InvokeCli: write a marker file INTO ITS OWN worktree cwd,
+        # then delete its own handoff (simulating self-retire) -- proving each
+        # ran in ITS OWN tree and never touched the other's.
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            "ran in $CliName worktree" | Set-Content -Path (Join-Path $Cwd "marker-$CliName.txt")
+            $target = if ($CliName -eq 'kiro') { $adHandoffKiro } else { $adHandoffClaude }
+            Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+            return 0
+        }
+
+        $rKiro = Invoke-HandoffRun -ProjectDir $primary -CliName 'kiro' -HandoffPath $adHandoffKiro -MaxContinues 1
+        $rClaudeAuto = Invoke-HandoffRun -ProjectDir $primary -CliName 'claude' -HandoffPath $adHandoffClaude -MaxContinues 1
+
+        Assert-Equal 'DONE' $rKiro.Result 'ad: kiro run completes DONE in its own worktree'
+        Assert-Equal 'DONE' $rClaudeAuto.Result 'ad: claude run completes DONE in its own worktree'
+
+        $kiroWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'kiro'
+        $claudeWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'claude'
+        Assert-Equal $true (Test-Path (Join-Path $kiroWt 'marker-kiro.txt')) 'ad: kiro marker landed in the KIRO worktree'
+        Assert-Equal $true (Test-Path (Join-Path $claudeWt 'marker-claude.txt')) 'ad: claude marker landed in the CLAUDE worktree'
+        Assert-Equal $false (Test-Path (Join-Path $kiroWt 'marker-claude.txt')) 'ad: claude marker did NOT leak into the kiro worktree'
+        Assert-Equal $false (Test-Path (Join-Path $claudeWt 'marker-kiro.txt')) 'ad: kiro marker did NOT leak into the claude worktree'
+        Assert-Equal $false (Test-Path (Join-Path $primary 'marker-kiro.txt')) 'ad: kiro marker did NOT land in the PRIMARY checkout'
+        Assert-Equal $false (Test-Path (Join-Path $primary 'marker-claude.txt')) 'ad: claude marker did NOT land in the PRIMARY checkout'
+
+        $primaryHeadAfter = git rev-parse HEAD
+        Assert-Equal $primaryHeadBefore $primaryHeadAfter 'ad: PRIMARY checkout HEAD unchanged after both dispatches (the incident regression)'
+
+        # restore the (a-x) mocks for anything running after this block
+        $script:GetCliWorktreePath = {
+            param([string]$ProjectDir, [string]$CliName)
+            $script:lastWtCliName = $CliName
+            if ($script:mockWtFails) { return $null }
+            return $script:mockWtPath
+        }
+        $script:EnsureDeclaredBaseBranch = {
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            if ($script:mockBranchFails) { return $false }
+            return $true
+        }
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            $script:mockCalls++
+            $script:lastInvokeCwd = $Cwd
+            if ($script:mockDeleteOnCall -gt 0 -and $script:mockCalls -eq $script:mockDeleteOnCall) {
+                Remove-Item -Path $script:mockHandoffPath -Force
+            }
+            return 0
+        }
+    } finally {
+        Pop-Location
+        try { git -C $primary worktree prune 2>$null | Out-Null } catch {}
+        Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "SKIP  ac/ad: no USABLE bash for wt-bootstrap.sh (present bash may be WSL, which cannot see Windows paths - see README's documented gotcha) - skipping real-sandbox worktree tests" -ForegroundColor DarkGray
+}
+
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $script:mockWtPath -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "==== pane-runner tests: $script:pass passed, $script:fail failed ====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 } else { exit 0 }

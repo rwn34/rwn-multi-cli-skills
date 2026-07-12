@@ -25,6 +25,43 @@
 #              respawns subject to exponential backoff + a rolling-window cap.
 # The exit fires only from the outer finally in Start-PaneRunner, which runs only
 # when -not $NoRun, so -NoRun dot-source (tests) never hits it.
+#
+# Worktree-per-CLI (ADR-0004 amendment, 2026-07-11 + parity fix 2026-07-12): a
+# pane-consumed handoff is executed in that CLI's OWN git worktree
+# (<parent>/.wt/<project>/<cli>/), never in $ProjectDir (the primary checkout).
+# $ProjectDir remains the root for shared .ai/ state (handoff inbox, claims,
+# activity log — all junctioned identically into every worktree by
+# scripts/wt-bootstrap.sh), but the CLI CHILD PROCESS's cwd is the worktree.
+# This closes the second half of the shared-HEAD race that
+# .ai/tools/dispatch-handoffs.sh already closed for the headless-dispatch path
+# (docs/architecture/0004-worktree-multi-project-topology.md, Amendment) — the
+# pane-runner is the OTHER, more heavily used dispatch path (the auto panes are
+# what actually consume handoffs day to day), and until this fix it still ran
+# every CLI in the primary checkout, which is how a live Kimi session in that
+# checkout came within one `git checkout -b` of having its uncommitted work
+# reverted by a concurrently dispatched pane (see the handoff for this fix).
+#
+# Worktree creation delegates to scripts/wt-bootstrap.sh (bash) — the SAME
+# script .ai/tools/dispatch-handoffs.sh already calls — rather than
+# reimplementing junction/branch-container setup a third time in PowerShell.
+# The declared-base branch cut (Ensure-DeclaredBaseBranch below) IS a second,
+# native-PowerShell implementation of dispatch-handoffs.sh's
+# ensure_declared_base_branch(): that piece is plain git plumbing (fetch,
+# rev-parse, checkout -b) cheap enough to keep 1:1 in both languages, and
+# shelling out to bash for every git call the supervisor loop makes on every
+# poll cycle would be slower and adds a bash-availability dependency to the hot
+# path. Test (parity guard, see test-pane-runner.ps1) asserts the two
+# implementations' BEHAVIOR (branch name, base resolution, dirty-tree refusal)
+# stays in lockstep — per the handoff's own guidance: unify what's cheap to
+# unify (worktree creation, via wt-bootstrap.sh), guard what's not (the branch
+# cut) with a test that fails loudly on divergence rather than silently drifting.
+#
+# Fail-loud contract: if the worktree cannot be established, the pane MUST NOT
+# silently fall back to $ProjectDir. Get-CliWorktreePath returns $null on
+# failure; every call site treats $null as "this handoff cannot run right now" —
+# it is left OPEN (never claimed), an ALERT is printed, and the poll loop
+# continues. This mirrors dispatch-handoffs.sh's ensure_cli_worktree() contract
+# verbatim (see that script's header + comments).
 
 param(
     [Parameter(Mandatory = $true)]
@@ -125,23 +162,197 @@ function Get-InteractiveCmd {
     }
 }
 
+# -- Worktree-per-CLI (ADR-0004 amendment; pane-runner parity fix 2026-07-12) --
+#
+# Pure path arithmetic — MUST match dispatch-handoffs.sh worktree_path_for() and
+# scripts/wt-bootstrap.sh's own WT_CONTAINER derivation: a sibling
+# .wt/<project>/<cli> next to the primary checkout. No side effects.
+function Get-CliWorktreePathFor {
+    param([string]$ProjectDir, [string]$CliName)
+    $projectDirResolved = (Resolve-Path -Path $ProjectDir).Path.TrimEnd('\', '/')
+    $parentDir   = Split-Path -Parent $projectDirResolved
+    $projectName = Split-Path -Leaf $projectDirResolved
+    return (Join-Path (Join-Path (Join-Path $parentDir '.wt') $projectName) $CliName)
+}
+
+# Overridable so tests can stub out the real bash/wt-bootstrap.sh call. Returns
+# $true on success (worktree present + usable), $false on failure. NEVER prints
+# or returns the primary checkout as a substitute on failure — callers MUST
+# treat $false as "this dispatch cannot proceed right now", full stop (mirrors
+# dispatch-handoffs.sh ensure_cli_worktree()'s contract exactly).
+$script:InvokeWtBootstrap = {
+    param([string]$ProjectDir, [string]$CliName)
+    # Resolve relative to the REPO the tool ships in, not a guess from $ProjectDir
+    # layout — $PSScriptRoot is tools/4ai-panes/, so the repo root is two levels up.
+    $bootstrap = Join-Path $PSScriptRoot '../../scripts/wt-bootstrap.sh'
+    if (-not (Test-Path $bootstrap)) {
+        Write-Host "  ERROR: worktree bootstrap script not found at $bootstrap" -ForegroundColor Red
+        return $false
+    }
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if (-not $bash) {
+        Write-Host "  ERROR: 'bash' not found on PATH - cannot run scripts/wt-bootstrap.sh" -ForegroundColor Red
+        return $false
+    }
+    # wt-bootstrap.sh's normal informational logging goes to stdout AND its
+    # `warn()` helper to stderr; neither is a fatal error. Under
+    # $ErrorActionPreference='Stop' (the supervisor loop's call-site EAP), a
+    # 2>&1-merged stderr line from a native command is promoted to a
+    # terminating NativeCommandError — same hazard $script:InvokeCli already
+    # guards against for the CLI child. Mirror that guard here.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $bash.Source $bootstrap $ProjectDir $CliName 2>&1 | ForEach-Object { Write-Host "  [wt-bootstrap] $_" -ForegroundColor DarkGray }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    return ($LASTEXITCODE -eq 0)
+}
+
+# Ensure (create-or-reuse) this CLI's dedicated worktree exists and is a usable
+# git worktree. Returns the absolute worktree path on success, $null on
+# failure — $null is the fail-loud signal every call site must honor: NEVER
+# substitute $ProjectDir when this returns $null.
+#
+# Overridable ($script:GetCliWorktreePath) for the SAME reason $script:InvokeCli
+# and $script:TestPidAlive are: the test harness must be able to drive
+# Invoke-HandoffRun's worktree-fail-loud logic without touching a real git
+# worktree or shelling out to bash. Production code (Invoke-HandoffRun) calls
+# through the script-scoped indirection below; only tests replace it.
+function Get-CliWorktreePathReal {
+    param([string]$ProjectDir, [string]$CliName)
+    $wtPath = Get-CliWorktreePathFor -ProjectDir $ProjectDir -CliName $CliName
+
+    $ok = & $script:InvokeWtBootstrap $ProjectDir $CliName
+    if (-not $ok) { return $null }
+
+    if (-not (Test-Path $wtPath)) {
+        Write-Host "  ERROR: wt-bootstrap.sh reported success but $wtPath does not exist" -ForegroundColor Red
+        return $null
+    }
+    # Belt-and-suspenders: confirm it's actually a usable git worktree, mirroring
+    # dispatch-handoffs.sh's own re-verification after calling the same script.
+    Push-Location $wtPath
+    try {
+        git rev-parse --is-inside-work-tree *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: $wtPath exists but is not a usable git worktree" -ForegroundColor Red
+            return $null
+        }
+    } finally {
+        Pop-Location
+    }
+    return $wtPath
+}
+
+$script:GetCliWorktreePath = {
+    param([string]$ProjectDir, [string]$CliName)
+    return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName)
+}
+
+# Read an optional `Base:` line from a handoff's status block (first 20 lines,
+# mirrors dispatch-handoffs.sh base_for()); defaults to origin/master per the
+# ADR amendment ("origin/master unless the handoff names a different one").
+function Get-DeclaredBase {
+    param([string]$HandoffPath)
+    $head = Get-Content -Path $HandoffPath -TotalCount 20 -ErrorAction SilentlyContinue
+    if ($head) {
+        foreach ($line in $head) {
+            if ($line -match '^\s*Base:\s*(\S.*)$') { return $matches[1].Trim() }
+        }
+    }
+    return 'origin/master'
+}
+
+# Cut/reuse exec/<cli>/<slug> in $WtPath FROM the declared base — never from
+# ambient HEAD. Native-PowerShell twin of dispatch-handoffs.sh
+# ensure_declared_base_branch() (see the file-header note on why this one stays
+# duplicated rather than shelled out to bash). Returns $true on success (worktree
+# HEAD now on the per-handoff branch, or left untouched with pre-existing
+# uncommitted work reported), $false on hard failure (no declared base
+# resolvable). Excludes .ai/** from the dirty-tree check for the same reason
+# dispatch-handoffs.sh does: .ai is a directory junction into the canonical
+# coordination plane, and `git status` reports newly-created files reached
+# through it as untracked even with the .git/info/exclude entry present.
+#
+# Overridable ($script:EnsureDeclaredBaseBranch) so tests can drive
+# Invoke-HandoffRun's declared-base-branch-failure path without a real git
+# worktree — same pattern as $script:GetCliWorktreePath above.
+function Ensure-DeclaredBaseBranchReal {
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+    $branch = "exec/$CliName/$Slug"
+
+    Push-Location $WtPath
+    try {
+        $dirty = git status --porcelain 2>$null | Where-Object { $_ -notmatch '\s\.ai/' }
+        if ($dirty) {
+            $current = (git branch --show-current 2>$null)
+            Write-Host "  WARN: $WtPath has uncommitted changes on '$current' - reusing as-is, not cutting $branch" -ForegroundColor Yellow
+            return $true
+        }
+
+        git fetch origin *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  WARN: git fetch origin failed in $WtPath - using cached '$Base'" -ForegroundColor Yellow
+        }
+
+        git rev-parse --verify --quiet $Base *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: declared base '$Base' does not resolve in $WtPath (no network + no local cache?)" -ForegroundColor Red
+            return $false
+        }
+
+        git show-ref --verify --quiet "refs/heads/$branch" *> $null
+        if ($LASTEXITCODE -eq 0) {
+            git checkout --quiet $branch *> $null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  ERROR: could not check out existing branch $branch in $WtPath" -ForegroundColor Red
+                return $false
+            }
+        } else {
+            git checkout --quiet -b $branch $Base *> $null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  ERROR: could not cut $branch from $Base in $WtPath" -ForegroundColor Red
+                return $false
+            }
+        }
+        return $true
+    } finally {
+        Pop-Location
+    }
+}
+
+$script:EnsureDeclaredBaseBranch = {
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+    return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base)
+}
+
 # -- Overridable hooks (tests replace these with mocks) --
 
-# Real CLI launch: build the headless command and run it as a blocking child.
+# Real CLI launch: build the headless command and run it as a blocking child IN
+# $Cwd — the CLI's own worktree (Get-CliWorktreePath), never $ProjectDir. This is
+# the worktree-per-CLI fix itself: a concurrently dispatched pane's `git
+# checkout` can never revert THIS session's on-disk files, because they are two
+# distinct working trees (mirrors dispatch-handoffs.sh's `cd "$wt_path" && ...`,
+# which is the same fix on the headless-dispatch path). $Cwd defaults to the
+# caller's current location when omitted, which only matters for the test mock
+# below — Invoke-HandoffRun always passes an explicit, already-verified $Cwd.
+#
 # The child's stdout AND stderr are streamed live to the pane console via
 # '2>&1 | Out-Host' so EVERY CLI is visibly active - not just the ones that write
 # straight to the console handle. Out-Host renders to the host and emits nothing
 # onto the pipeline, so the CLI's chatter never leaks into a caller's return
 # value; only the exit code below is returned. Returns the child's exit code.
 $script:InvokeCli = {
-    param([string]$CliName, [string]$Prompt)
+    param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
     # argv array: [0] = exe, [1..] = args. The untrusted $Prompt is one element,
     # invoked via the call operator (& $exe @args) so it is NEVER re-parsed as a
     # command string (was Invoke-Expression - a filename-to-RCE hole).
     $argv = @(Get-HeadlessCmd -CliName $CliName -Prompt $Prompt)
     $exe  = $argv[0]
     $rest = @($argv | Select-Object -Skip 1)
-    Write-Host "  > $exe $($rest -join ' ')" -ForegroundColor DarkGray
+    Write-Host "  > (cwd=$Cwd) $exe $($rest -join ' ')" -ForegroundColor DarkGray
     # A native CLI's stderr is normal progress streaming, not a fatal error. Under
     # $ErrorActionPreference='Stop' the 2>&1-merged stderr record is promoted to a
     # terminating NativeCommandError, which would unwind the whole supervisor loop
@@ -151,9 +362,11 @@ $script:InvokeCli = {
     # exit code or stderr.
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    Push-Location $Cwd
     try {
         & $exe @rest 2>&1 | Out-Host
     } finally {
+        Pop-Location
         $ErrorActionPreference = $prevEAP
     }
     return $LASTEXITCODE
@@ -522,9 +735,14 @@ function Get-ContinuePrompt {
 # -- RUN + DECIDE core (the unit-tested heart) --
 #
 # Invoke the CLI on a handoff, then auto-continue while it stays OPEN, up to
-# MaxContinues. Returns @{ Result = 'DONE'|'MAXED'; Continues = <n>; Invocations = <n> }.
-# 'DONE'  -> handoff moved to done/ (release claim, back to IDLE).
-# 'MAXED' -> hit the continue cap still OPEN (ALERT, leave for the human).
+# MaxContinues. Returns @{ Result = 'DONE'|'MAXED'|'WORKTREE_FAIL'; Continues = <n>; Invocations = <n> }.
+# 'DONE'          -> handoff moved to done/ (release claim, back to IDLE).
+# 'MAXED'         -> hit the continue cap still OPEN (ALERT, leave for the human).
+# 'WORKTREE_FAIL' -> the CLI's worktree/branch could not be established; the CLI
+#                    was NEVER invoked (Invocations = 0) and — critically — was
+#                    NEVER run in $ProjectDir as a fallback. Fail loudly, not
+#                    silently degrade (this is the entire point of this fix; see
+#                    the file-header note and the handoff for this change).
 function Invoke-HandoffRun {
     param(
         [string]$ProjectDir,
@@ -536,6 +754,26 @@ function Invoke-HandoffRun {
     if ($HandoffPath.StartsWith($ProjectDir, [System.StringComparison]::OrdinalIgnoreCase)) {
         $rel = $HandoffPath.Substring($ProjectDir.Length).TrimStart('\', '/')
     }
+
+    # Worktree-per-CLI: resolve (create-or-reuse) this CLI's own worktree BEFORE
+    # any CLI invocation. Refuse — do not invoke, do not fall back to
+    # $ProjectDir — if it cannot be established.
+    Write-Host "-- ensuring $CliName worktree --" -ForegroundColor DarkCyan
+    $wtPath = & $script:GetCliWorktreePath $ProjectDir $CliName
+    if (-not $wtPath) {
+        Write-Host "== FAIL [$CliName] $rel - could not establish worktree; refusing to fall back to the primary checkout ==" -ForegroundColor Red
+        return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
+    }
+
+    # Declared-base branch cut: never leave the worktree on ambient HEAD.
+    $slug = Get-HandoffBasename -HandoffPath $HandoffPath
+    $base = Get-DeclaredBase -HandoffPath $HandoffPath
+    if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base)) {
+        Write-Host "== FAIL [$CliName] $rel - could not establish declared-base branch (base=$base) ==" -ForegroundColor Red
+        return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
+    }
+    Write-Host "-- worktree: $wtPath  branch: exec/$CliName/$slug (base: $base) --" -ForegroundColor DarkCyan
+
     $continues = 0
     $invocations = 0
     while ($true) {
@@ -549,7 +787,8 @@ function Invoke-HandoffRun {
         # Absorb only the returned exit code here; the CLI's own stdout/stderr is
         # already streamed live to the pane inside $script:InvokeCli (Out-Host).
         # This keeps Invoke-HandoffRun's return a clean @{Result;Continues;Invocations}.
-        & $script:InvokeCli $CliName $prompt | Out-Null
+        # $wtPath (NOT $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
+        & $script:InvokeCli $CliName $prompt $wtPath | Out-Null
         $invocations++
 
         if (Test-HandoffDone -HandoffPath $HandoffPath) {
@@ -677,10 +916,19 @@ function Start-PaneRunner {
                         # DONE notify (fail-open).
                         try { Send-FleetNotification -Kind done -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                     } else {
-                        # MAXED (still OPEN after the continue cap) counts as a failed
-                        # attempt; quarantine once the threshold is reached.
-                        $q = Add-HandoffAttempt -Recipient $Cli -HandoffPath $handoff -ErrorText 'MAXED (still OPEN after continue cap)'
-                        # ALERT notify on MAXED or a new quarantine (fail-open).
+                        # MAXED (still OPEN after the continue cap) or WORKTREE_FAIL
+                        # (worktree/branch could not be established — the CLI was
+                        # never invoked, per Invoke-HandoffRun's fail-loud contract)
+                        # both count as a failed attempt; quarantine once the
+                        # threshold is reached so a persistently-broken worktree
+                        # cannot ALERT-spam the pane forever.
+                        $errText = if ($runResult -and $runResult.Result -eq 'WORKTREE_FAIL') {
+                            'WORKTREE_FAIL (worktree/branch setup failed — CLI never invoked, no fallback to primary checkout)'
+                        } else {
+                            'MAXED (still OPEN after continue cap)'
+                        }
+                        $q = Add-HandoffAttempt -Recipient $Cli -HandoffPath $handoff -ErrorText $errText
+                        # ALERT notify on MAXED/WORKTREE_FAIL or a new quarantine (fail-open).
                         try { Send-FleetNotification -Kind alert -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                         if ($q.quarantined) {
                             Write-Host "== QUARANTINE [$Cli] $(Split-Path -Leaf $handoff) after $($q.attempts) failed attempts -- skipping until a human clears .ai/handoffs/.quarantine/ ==" -ForegroundColor Red
