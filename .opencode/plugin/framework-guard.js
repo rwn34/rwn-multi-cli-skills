@@ -39,9 +39,17 @@ import fs from "node:fs";
  * .github/** was added 2026-07-12: the GitHub / repo-ops lane (operating-prompt
  * §14, ADR-0011) assigns CI config + workflow fixes to OpenCode. Deliberately NOT
  * added: infra/, scripts/, Dockerfile, docker-compose* — see the contract.
+ *
+ * .ai/activity/entries/** was added 2026-07-12 (ADR-0010 blocker): the activity log
+ * becomes an entry-per-file spool, and this exact-string lane entry
+ * (`rel === ".ai/activity/log.md"`) is one of the two layers that would block
+ * OpenCode from writing an entry at all. Additive on purpose — `.ai/activity/log.md`
+ * stays writable, because the migration has not happened yet and this permission
+ * plumbing must be safe to land on its own.
  */
 export const WRITABLE_LANE = [
   ".ai/activity/log.md",
+  ".ai/activity/entries/**",
   ".ai/reports/**",
   ".ai/handoffs/**",
   ".github/**",
