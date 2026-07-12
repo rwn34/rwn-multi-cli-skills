@@ -330,10 +330,33 @@ function Get-DeclaredBase {
 # Overridable ($script:EnsureDeclaredBaseBranch) so tests can drive
 # Invoke-HandoffRun's declared-base-branch-failure path without a real git
 # worktree — same pattern as $script:GetCliWorktreePath above.
+#
+# NATIVE-STDERR GUARD (regression fix 2026-07-12, second-order): every git call
+# below is a NATIVE command, and git writes ordinary progress to STDERR — `git
+# fetch` emits "From https://github.com/..." whenever it actually retrieves refs,
+# and `git checkout` emits "Switched to a new branch '...'". This script runs
+# under $ErrorActionPreference='Stop' (set at the top), which PROMOTES a native
+# command's stderr record to a TERMINATING NativeCommandError. `*> $null` does NOT
+# suppress that promotion in PS 5.1 — the throw happens before the redirect. So a
+# plain, successful `git fetch` that had anything to fetch would throw and take
+# out the whole branch cut, surfacing as WORKTREE_FAIL with no useful message.
+#
+# This is the SAME hazard $script:InvokeCli and $script:InvokeWtBootstrap already
+# guard against (see their comments) — this function was simply missing the guard.
+# It stayed hidden because the wt-bootstrap path failed FIRST (the flat-install
+# regression), so the branch cut was never reached; fixing that unmasked this.
+# It is also intermittent by nature: a fetch with nothing new writes no stderr and
+# does not throw, so it fails only when the remote has actually moved.
+#
+# Force EAP='Continue' around the native git calls and restore it in finally. This
+# loses no failure signal: every call's outcome is already judged by $LASTEXITCODE,
+# never by whether it threw.
 function Ensure-DeclaredBaseBranchReal {
     param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
     $branch = "exec/$CliName/$Slug"
 
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     Push-Location $WtPath
     try {
         $dirty = git status --porcelain 2>$null | Where-Object { $_ -notmatch '\s\.ai/' }
@@ -371,6 +394,7 @@ function Ensure-DeclaredBaseBranchReal {
         return $true
     } finally {
         Pop-Location
+        $ErrorActionPreference = $prevEAP
     }
 }
 
