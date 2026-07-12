@@ -2,7 +2,10 @@ import { cpSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const FRAMEWORK_DIRS = ['.ai', '.claude', '.kimi', '.kiro', '.archive', 'scripts/git-hooks'];
+// Keep in step with the dirs list in scripts/sync-assets.ts —
+// .ai/tools/check-asset-drift.sh FAILS CI if the two manifests diverge.
+// .opencode carries the mechanical guard layer (ADR-0002 amendment 2026-07-09).
+const FRAMEWORK_DIRS = ['.ai', '.claude', '.kimi', '.kiro', '.opencode', '.archive', 'scripts/git-hooks'];
 const FRAMEWORK_FILES = [
   'CLAUDE.md',
   'AGENTS.md',

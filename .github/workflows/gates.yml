@@ -55,6 +55,20 @@ jobs:
       - name: Git pre-commit backstop test (ADR-0005)
         run: bash scripts/git-hooks/test-pre-commit.sh
 
+      - name: Installer dependency install
+        run: npm ci
+        working-directory: tools/multi-cli-install
+
+      - name: Asset drift check (installer payload must match sources)
+        # Regenerate the asset tree, then gate on it: manifest parity/coverage,
+        # no committed generated assets, and every asset file byte-matching its
+        # source. This is the gate that catches the 2026-07-12 defect class
+        # (stale asset AGENTS.md + missing .opencode guard layer).
+        run: |
+          npx tsx scripts/sync-assets.ts
+          cd "$GITHUB_WORKSPACE" && bash .ai/tools/check-asset-drift.sh
+        working-directory: tools/multi-cli-install
+
       - name: Installer typecheck + tests
-        run: npm ci && npx tsc --noEmit && npx vitest run
+        run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
