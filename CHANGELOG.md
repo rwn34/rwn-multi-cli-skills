@@ -24,7 +24,29 @@ promotion happened.
 
 ### Changed
 
-- [TODO: changes to existing behavior]
+- Narrowed the shell scope of three agents from "any shell command" to an
+  enumerated command set matching the job each one already claims to do:
+  `refactorer` (test runners), `security-auditor` (security scanners),
+  `data-migrator` (migration tools). **No agent lost `Bash`.** The command sets
+  are now fixed in the agent-catalog SSOT
+  (`.ai/instructions/agent-catalog/principles.md`, "Per-agent shell command
+  sets") so every CLI restricts the same list. Implements
+  `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli) §3–§4.
+- Enforcement strength is stated honestly and is **not uniform**: Kiro is
+  hard-enforced (`toolsSettings.execute_bash.allowedCommands`); Claude and Kimi
+  are **soft / prompt-level only**, because no per-command scoping exists in
+  `.claude/agents/*.md` frontmatter or Kimi's agent config. The three Claude
+  agent prompts carry an explicit `ENFORCEMENT: SOFT` block saying so. Nothing
+  here implies parity between the two.
+
+### Security
+
+- Documented two residuals this change explicitly does **not** close
+  (`.ai/known-limitations.md`): (1) a restricted-but-not-removed `Bash` is still
+  evadable via `eval` / `sh -c` / `$(...)` / base64 — accepted, not closed, since
+  closing it would duplicate PR #53's fail-closed logic in a second surface;
+  (2) Kimi and Kiro subagents do not inherit hooks at all, so for them exposure
+  reduction is the ONLY control — a platform limitation no allowlist can fix.
 
 ### Deprecated
 
