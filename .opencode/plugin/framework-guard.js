@@ -83,8 +83,14 @@ function defaultReadRegistry(registryPath) {
 }
 
 function decidePath(filePath, root, readRegistry, op = "write") {
-  const abs = norm(path.resolve(root, filePath));
-  const rootN = norm(path.resolve(root));
+  // Normalize separators BEFORE resolving, not after. On POSIX a backslash is a
+  // legal filename character, so path.resolve() treats a Windows-style absolute
+  // path ('C:\p\.github\x' / '\p\.github\x') as a RELATIVE name and silently
+  // rebases it under root — the path then fails to match its own lane. That is
+  // fail-closed (a wrongly-blocked allow, never a bypass), but it is still wrong:
+  // the guard must judge the same path identically whichever platform it runs on.
+  const abs = norm(path.resolve(norm(root), norm(filePath)));
+  const rootN = norm(path.resolve(norm(root)));
   const inWorktree = /\/\.wt\/[^/]+\/[^/]+(\/|$)/.test(rootN + "/");
 
   // Rule 5 (secrets) outranks every allow rule below, including the fleet lane.
