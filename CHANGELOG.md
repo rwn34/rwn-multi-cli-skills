@@ -30,6 +30,58 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.26] - 2026-07-12
+
+### Fixed
+
+- **`tools/4ai-panes/pane-runner.ps1`: pane-consumed handoffs no longer run in
+  the primary checkout.** This closed the SECOND, more heavily-used dispatch
+  path for the ADR-0004 shared-HEAD race — `.ai/tools/dispatch-handoffs.sh`
+  (headless `--exec` dispatch) got worktree-per-CLI in 0.0.21, but the
+  self-driving pane-runner (the auto panes that actually consume most
+  handoffs day to day) still ran every CLI directly in `$ProjectDir`. This
+  was proven live: a Kimi interactive session with an unpushed commit sat in
+  the primary checkout while a concurrently dispatched pane came within one
+  `git checkout -b` of reverting its uncommitted work. `Invoke-HandoffRun` now
+  resolves (creates or reuses) that CLI's own worktree via
+  `scripts/wt-bootstrap.sh` — the same script the dispatcher already calls —
+  before invoking the CLI, and cuts/reuses a `exec/<cli>/<slug>` branch from a
+  declared base (`origin/master`, or the handoff's `Base:` field), mirroring
+  `dispatch-handoffs.sh`'s `ensure_declared_base_branch()`. **Fail-loud, never
+  fall back:** if the worktree or branch cannot be established, the pane
+  returns `WORKTREE_FAIL`, the CLI is never invoked, and the handoff stays
+  `OPEN` for retry — it never silently degrades to running in the primary
+  checkout. `$script:InvokeCli` now runs the CLI child process with `cwd` set
+  to the resolved worktree instead of the caller's location. New regression
+  coverage in `tools/4ai-panes/test-pane-runner.ps1` (tests y-ad, incl. a
+  live two-worktree sandbox proof mirroring `.ai/tests/test-dispatch-worktree.sh`
+  that asserts the primary checkout's HEAD is unchanged after two concurrent
+  dispatches). See handoff 202607121130-pane-runner-worktree-parity.
+- **Headless Claude dispatch now uses `--dangerously-skip-permissions` instead of
+  `--permission-mode acceptEdits`** in both `tools/4ai-panes/pane-runner.ps1`
+  (`Get-HeadlessCmd`) and `.ai/tools/dispatch-handoffs.sh` (`headless_cmd`).
+  `acceptEdits` auto-approved only Edit/Write, so a Bash call outside
+  `.claude/settings.local.json`'s allow-list was auto-denied with no human
+  available headless to approve it — the headless Claude lane was strictly
+  weaker than every other fleet CLI's headless invocation, and weaker than
+  Claude's own interactive pane. Verified empirically that the `PreToolUse`
+  guard hooks still fire under the new flag (permissions and hooks are
+  separate layers) — see F2 handoff 202607120023.
+- **Rebased onto master's `AI_HANDOFF_DISPATCH` nested-dispatch-guard fix
+  (0.0.25's `a140807`, "pane-runner: idle heartbeat (F1) + AI_HANDOFF_DISPATCH
+  child env (F3)") — the two `$script:InvokeCli` changes are a genuine
+  behavioral interleave, not a pick-one conflict.** Worktree confinement
+  (`Push-Location $Cwd`) now wraps the WHOLE call as the outermost scope; the
+  dispatch-guard-env set/restore is innermost, immediately around the native
+  child invocation, so it is acquired last and released first — matching the
+  nesting of the two `try/finally` blocks exactly. Both effects now apply to
+  every child the pane-runner launches: it runs in its own worktree AND signals
+  `AI_HANDOFF_DISPATCH=1` at the same time. New test (am) proves the interleave
+  directly: a single `$script:InvokeCli` call with an explicit non-default
+  `$Cwd` AND the env-guard child probe, asserting both effects landed on the
+  same invocation and both are torn down afterward. See handoff
+  202607121500-rebase-f2-pane-parity.
+
 ## [0.0.25] - 2026-07-12
 
 ### Security
