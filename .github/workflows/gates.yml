@@ -80,11 +80,15 @@ jobs:
       # substantive suites (hooks / backstop / installer) and mask a real defect.
       # Ordering this early did exactly that on the first push of this branch —
       # one prose failure skipped 13 steps.
-      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
-        run: bash .ai/tools/check-tier-restatements.sh
-
+      # Self-test FIRST: it is hermetic (temp-dir fixtures, never reads the live
+      # tree) and proves the checker still detects each failure mode. Running it
+      # before the repo assertion means a non-compliant tree cannot skip it and
+      # hide a checker that has quietly stopped biting.
       - name: Tier restatement checker self-test
         run: bash .ai/tools/test-check-tier-restatements.sh
+
+      - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        run: bash .ai/tools/check-tier-restatements.sh
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
       # branches, so this is a DETECTIVE check on the resulting master push —
