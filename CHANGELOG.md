@@ -4,6 +4,18 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog v1.1.0](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org).
 
+<!--
+Release convention (ADR-0012 — version assigned at merge, not on feature branches):
+a feature PR adds its notes as bullets under "## [Unreleased]" below. It does NOT
+add a versioned "## [x.y.z]" heading and does NOT bump
+tools/multi-cli-install/package.json — that would collide with every other open
+PR on the same two lines. At the single serialized merge point the
+release-engineer assigns ONE version, promotes the accumulated "## [Unreleased]"
+bullets into a new "## [x.y.z]" heading, and bumps the version SSOT once. The
+push:master version-bump gate (scripts/check-version-bump.sh) then verifies that
+promotion happened.
+-->
+
 ## [Unreleased]
 
 ### Added
@@ -29,6 +41,30 @@ adheres to [Semantic Versioning](https://semver.org).
 ### Security
 
 - [TODO: vulnerabilities addressed]
+
+## [0.0.30] - 2026-07-12
+
+### Changed
+
+- **Framework version is now assigned at MERGE, not on feature branches
+  (ADR-0012).** `scripts/check-version-bump.sh` moves from a `pull_request` gate
+  that forced EVERY content-changing PR to bump `package.json` `.version` + add a
+  CHANGELOG heading — colliding N concurrent PRs on the same two lines and
+  hand-serializing the merge train — to a DETECTIVE check on `push: master` that
+  compares the previous master tip to the new one. `.github/workflows/gates.yml`
+  runs the check LAST (after drift / hooks / backstop / installer) and only on
+  push-to-master, so a missing bump can never mask a real test failure (the old
+  PR-time placement did). All PR#44 hardening is preserved verbatim: strict
+  semver increase (equal + downgrade rejected), fail-closed on an unparseable or
+  unresolvable ref, and the matching `## [<new-version>]` CHANGELOG requirement.
+  Adopter drift-detection is unchanged — one increment per merge still moves the
+  template `.version` that `Selector.ps1` `Test-FrameworkDrift` and the installer
+  compare against `.ai/.framework-version`. Feature PRs now add bullets under
+  `## [Unreleased]`; the release-engineer promotes them to a versioned heading at
+  the single serialized merge point. Resolves the "how is the version-bump
+  discipline enforced?" open question in
+  `docs/specs/framework-install-drift-check.md` and amends the version-bump-gate
+  discipline referenced in ADR-0007 P2.
 
 ## [0.0.28] - 2026-07-12
 

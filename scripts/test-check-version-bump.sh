@@ -48,6 +48,21 @@ assert_gate() {
     fi
 }
 
+# assert_gate_ref <desc> <expected-exit> <base-ref> — like assert_gate but
+# against an explicit base ref (used to exercise the fail-closed guard on an
+# unresolvable base, e.g. the all-zero SHA a master push carries on a
+# branch-create/force-push edge).
+assert_gate_ref() {
+    desc="$1"; want="$2"; ref="$3"
+    (cd "$R" && bash "$GATE" "$ref") >/dev/null 2>&1
+    got=$?
+    if [ "$got" -eq "$want" ]; then
+        pass=$((pass + 1)); printf 'PASS  %s (exit %s)\n' "$desc" "$got"
+    else
+        fail=$((fail + 1)); printf 'FAIL  %s (expected exit %s, got %s)\n' "$desc" "$want" "$got"
+    fi
+}
+
 # -----------------------------------------------------------------------------
 echo "== Part 1: version comparison (unit) =="
 # shellcheck source=/dev/null
@@ -163,6 +178,71 @@ assert_gate "e2e docs-only change PASS (no bump needed)" 0
 # Empty diff passes.
 setup_repo 0.0.21 0.0.21 no none
 assert_gate "e2e no changed files PASS" 0
+
+# -----------------------------------------------------------------------------
+echo
+echo "== Part 3: master-push detective mode (ADR-0012) =="
+# Under ADR-0012 the gate no longer runs on PRs — it runs on `push: master`,
+# comparing the PREVIOUS master tip to the NEW one. Mechanically the script is
+# ref-agnostic (it diffs <base-ref>...HEAD), so a master-push run is the same
+# invocation with base = the previous master tip. These cases model the two
+# master commits as $BASE_SHA (old master) -> HEAD (new master).
+
+# A master push that bumped correctly PASSES.
+setup_repo 0.0.28 0.0.30 yes versioned
+assert_gate "master-push: content + correct bump PASS" 0
+
+# A master push that changed versioned content WITHOUT bumping FAILS (the whole
+# point of the detective check — a merge that forgot the bump turns master red).
+setup_repo 0.0.28 0.0.28 no versioned
+assert_gate "master-push: content, no bump FAIL" 1
+
+# A downgrade landing on master FAILS (merge-order downgrade guard).
+setup_repo 0.0.30 0.0.28 yes versioned
+assert_gate "master-push: downgrade FAIL" 1
+
+# The lexicographic-trap bump is still correct on the master-push path.
+setup_repo 0.0.9 0.0.10 yes versioned
+assert_gate "master-push: 0.0.9 -> 0.0.10 lex-trap PASS" 0
+
+# Fail CLOSED on an unresolvable base ref — the all-zero SHA github.event.before
+# carries on a branch-create/force-push edge is an env error, never a wave-through.
+setup_repo 0.0.28 0.0.30 yes versioned
+assert_gate_ref "master-push: unresolvable base ref FAIL CLOSED" 2 \
+    "0000000000000000000000000000000000000000"
+
+# -----------------------------------------------------------------------------
+echo
+echo "== Part 4: workflow wiring (gates.yml) — the PR carve-out lives here =="
+# The "a PR that changes content WITHOUT bumping now PASSES" guarantee is NOT a
+# property of this ref-agnostic script (it would still FAIL a no-bump versioned
+# diff on any ref). It is enforced by gates.yml only running the step on push,
+# never on PRs. Encode that as an executable anti-rot check on the workflow file.
+GATES="$HERE/../.github/workflows/gates.yml"
+if [ -f "$GATES" ]; then
+    # The version-bump step must be guarded to push events (so PRs skip it ->
+    # a content PR without a bump passes because the check never runs).
+    if grep -Eq "check-version-bump\.sh" "$GATES" \
+        && grep -Eq "github\.event_name == 'push'" "$GATES"; then
+        pass=$((pass + 1)); printf 'PASS  gates.yml: version-bump step guarded to push (PRs skip -> no bump needed)\n'
+    else
+        fail=$((fail + 1)); printf 'FAIL  gates.yml: version-bump step is not push-guarded\n'
+    fi
+    # The step must pass the previous-master tip (github.event.before) as base.
+    if grep -Eq "check-version-bump\.sh \"\\\$\{\{ github\.event\.before \}\}\"" "$GATES"; then
+        pass=$((pass + 1)); printf 'PASS  gates.yml: base ref is github.event.before (previous master tip)\n'
+    else
+        fail=$((fail + 1)); printf 'FAIL  gates.yml: version-bump step does not use github.event.before as base\n'
+    fi
+    # The step must NOT still be a pull_request gate (the old, masking placement).
+    if grep -Eq "check-version-bump\.sh \"origin/\\\$\{\{ github\.base_ref \}\}\"" "$GATES"; then
+        fail=$((fail + 1)); printf 'FAIL  gates.yml: still invokes the check on the PR base_ref (old model)\n'
+    else
+        pass=$((pass + 1)); printf 'PASS  gates.yml: no residual PR-base invocation of the check\n'
+    fi
+else
+    printf 'SKIP  gates.yml not found at %s (workflow-wiring checks skipped)\n' "$GATES"
+fi
 
 echo
 echo "=============================================="

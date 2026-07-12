@@ -1,15 +1,27 @@
 #!/bin/bash
-# check-version-bump.sh — CI gate (gap D1): fail a PR that changes versioned
-# framework content without bumping tools/multi-cli-install/package.json .version.
+# check-version-bump.sh — CI DETECTIVE gate (ADR-0012): after a merge lands on
+# master, fail the master-push run if versioned framework content changed without
+# a strict semver bump of tools/multi-cli-install/package.json .version (+ its
+# matching CHANGELOG heading). It runs on `push: master`, comparing the PREVIOUS
+# master tip to the NEW one — NOT on feature-branch PRs.
 #
-# Why this exists: onboarded projects compare their .ai/.framework-version
+# Why the trigger moved (ADR-0012, 2026-07-12): requiring the bump on every
+# feature branch forced N concurrent PRs to collide on the same two lines
+# (package.json .version + the CHANGELOG heading), hand-serializing an otherwise
+# parallel merge train and risking a merge-order version downgrade. The
+# release-engineer now assigns ONE version at the single serialized merge point;
+# this gate verifies — detectively, on the resulting master push — that the
+# assignment actually happened. Feature-branch PRs deliberately do NOT bump.
+#
+# Why it still exists at all: onboarded projects compare their .ai/.framework-version
 # against the template's package.json .version to decide whether to warn the
-# operator about drift. If framework *content* changes but the version does NOT,
-# every onboarded project's version still equals the template's → the drift
-# warning stays silent → drift ships undetected. This check closes that hole by
-# requiring a version bump whenever versioned framework content changes in a PR.
+# operator about drift (tools/4ai-panes/Selector.ps1 `Test-FrameworkDrift` and the
+# Node installer's tools/multi-cli-install/src/upgrade/version.ts). If framework
+# *content* changes on master but the version does NOT, every onboarded project's
+# version still equals the template's → the drift warning stays silent → drift
+# ships undetected. One increment per merge keeps adopter drift-detection honest.
 #
-# Two further holes closed (handoff 202607120022, 2026-07-12):
+# Checks (unchanged from the PR#44 hardening, handoff 202607120022):
 #  - The bump must be a strict semver INCREASE. An unchanged version fails (the
 #    original rule), but a DOWNGRADE fails too — a lower version doesn't just
 #    stay silent, it inverts the drift warning for every adopter at once.
@@ -20,11 +32,13 @@
 #
 # Usage (from repo root):
 #   scripts/check-version-bump.sh <base-ref>
+#     - CI (push: master): base-ref = the previous master tip (github.event.before)
+#     - Local:             base-ref = origin/master (checks your committed diff)
 #   BASE_REF=origin/master scripts/check-version-bump.sh
 #
 # Exit codes: 0 = PASS (no versioned change, or version properly bumped),
 #             1 = FAIL (versioned change without a valid bump),
-#             2 = usage / environment error.
+#             2 = usage / environment error (incl. an unresolvable base ref).
 #
 # Dependency-light on purpose: bash + git + sed/grep only, no npm/node.
 # Source with CHECK_VERSION_BUMP_LIB=1 to load the functions without running
@@ -96,6 +110,15 @@ is_versioned() {
 main() {
   BASE_REF="${1:-${BASE_REF:-}}"
   [ -n "$BASE_REF" ] || { echo "check-version-bump: no base ref (pass as arg1 or BASE_REF env)"; exit 2; }
+
+  # Fail CLOSED on an unresolvable base ref. On `push: master` the base is
+  # github.event.before, which is the all-zero SHA on a branch-create/force-push
+  # edge — a gate that cannot resolve its comparison point refuses (env error),
+  # it never waves through.
+  git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null || {
+    echo "check-version-bump: base ref '$BASE_REF' does not resolve to a commit — cannot diff (env error)"
+    exit 2
+  }
 
   changed=$(git diff --name-only "$BASE_REF"...HEAD)
   if [ -z "$changed" ]; then
