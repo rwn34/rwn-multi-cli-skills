@@ -147,22 +147,38 @@ assert_block "case variant cannot reach source"   _territory_violation opencode 
 assert_block "case variant cannot reach SSOT"     _territory_violation opencode ".AI/Instructions/x.md"
 assert_block "case variant cannot reach a secret" _is_sensitive ".AI/Activity/Entries/ID_RSA"
 
-echo "== SSOT replica-steering exception (claude-code only, ADR-0005 2026-07-10) =="
-# sync.md replicas -> claude-code may fleet-commit them.
+echo "== SSOT replica exception (claude-code only, ADR-0005 2026-07-10, WIDENED 2026-07-12) =="
+# sync.md steering replicas -> claude-code may fleet-commit them (original exception).
 assert_allow "claude -> .kimi replica"   _territory_violation claude-code ".kimi/steering/operating-prompt.md"
 assert_allow "claude -> .kiro replica"   _territory_violation claude-code ".kiro/steering/agent-catalog.md"
 assert_allow "claude -> .kimi replica 2" _territory_violation claude-code ".kimi/steering/karpathy-guidelines.md"
+# WIDENING (2026-07-12): the exception now covers the full sync.md replica set, not
+# just steering. The two non-steering replicas must land in the same atomic commit.
+assert_allow "claude -> .kimi resource replica" \
+    _territory_violation claude-code ".kimi/resource/karpathy-guidelines-examples.md"
+# DELIBERATE INVERSION (was assert_block pre-2026-07-12): .kiro/skills/karpathy-
+# guidelines/SKILL.md is a REGISTERED replica in .ai/sync.md, so widening the
+# exception from steering-only to the whole replica set now ALLOWS claude-code to
+# fleet-commit it. This is the point of the change — it lets the Kiro skill replica
+# land atomically with its SSOT source instead of drifting until Kiro syncs.
+assert_allow "claude -> .kiro skill replica (INVERTED: now a registered replica)" \
+    _territory_violation claude-code ".kiro/skills/karpathy-guidelines/SKILL.md"
 # Hand-authored, NOT a sync.md replica -> stays blocked.
 assert_block "claude -> .kimi 00-contract" _territory_violation claude-code ".kimi/steering/00-ai-contract.md"
 assert_block "claude -> .kiro 00-contract" _territory_violation claude-code ".kiro/steering/00-ai-contract.md"
-# Non-steering path under another CLI's dir -> exception does not apply, blocked.
-assert_block "claude -> .kimi hooks"     _territory_violation claude-code ".kimi/hooks/foo.sh"
-assert_block "claude -> .kiro resource"  _territory_violation claude-code ".kiro/skills/x/SKILL.md"
+# Non-replica paths under another CLI's dir -> exception does NOT apply, blocked.
+# The widening is REPLICA-ONLY and fail-closed: an unregistered .kiro/skills path is
+# still blocked even though its parent dir now participates in the exception.
+assert_block "claude -> .kimi hooks (non-replica)"  _territory_violation claude-code ".kimi/hooks/foo.sh"
+assert_block "claude -> .kiro unregistered skill"   _territory_violation claude-code ".kiro/skills/x/SKILL.md"
+assert_block "claude -> .kimi unregistered resource" _territory_violation claude-code ".kimi/resource/not-a-replica.md"
 # Exception is claude-code ONLY: other committers still blocked on the same replica path.
 assert_block "kiro -> .kimi replica"     _territory_violation kiro-cli ".kimi/steering/operating-prompt.md"
 assert_block "kimi -> .kiro replica"     _territory_violation kimi-cli ".kiro/steering/agent-catalog.md"
+assert_block "kiro -> .kimi resource replica" _territory_violation kiro-cli ".kimi/resource/karpathy-guidelines-examples.md"
 # Fail-closed: if the registry is unreadable, even a real replica path is blocked.
 assert_block "claude replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kimi/steering/operating-prompt.md"'
+assert_block "claude skill replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kiro/skills/karpathy-guidelines/SKILL.md"'
 
 echo "== PowerShell .ps1 syntax gate =="
 # The gate is enforced only where a PowerShell host exists. On Linux CI there is
@@ -199,6 +215,159 @@ assert_block "unknown -> .kiro"          _territory_violation unknown ".kiro/x.m
 assert_block "unknown -> .opencode"      _territory_violation unknown ".opencode/x.md"
 assert_allow "unknown -> source ok"      _territory_violation unknown "src/main.ts"
 assert_allow "unknown -> .ai ok"         _territory_violation unknown ".ai/activity/log.md"
+
+# =============================================================================
+# Integration tests — the generator, the checker, and the live pre-commit hook
+# (ADR-0005 second amendment, 2026-07-12). These spin up throwaway git repos, so
+# they exercise the WHOLE path (regenerate → stage/refuse → commit), not just the
+# pure decision functions above. Skipped only if git/cp are unavailable.
+# =============================================================================
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+
+# pf <desc> <rc> — PASS iff rc==0 (a scenario computes rc: 0 good, non-0 bad).
+pf() {
+    if [ "$2" -eq 0 ]; then pass=$((pass + 1)); printf 'PASS  %s\n' "$1"
+    else fail=$((fail + 1)); printf 'FAIL  %s\n' "$1"; fi
+}
+
+# mkrepo — materialize a throwaway repo from the current worktree's framework
+# files, wired to the hook, with a synced initial commit. Echoes the repo path.
+mkrepo() {
+    d="$(mktemp -d)"
+    cp -R "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
+          "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
+    cp "$REPO_ROOT/.gitattributes" "$d/" 2>/dev/null
+    git -C "$d" init -q 2>/dev/null
+    git -C "$d" config core.hooksPath scripts/git-hooks
+    git -C "$d" config user.email test@example.com
+    git -C "$d" config user.name claude-code
+    git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" commit -q -m init --no-verify >/dev/null 2>&1
+    printf '%s' "$d"
+}
+
+if ! command -v git >/dev/null 2>&1 || ! command -v cp >/dev/null 2>&1; then
+    echo "== integration tests =="
+    echo "SKIP  no git/cp available — generator/checker/hook integration not run"
+else
+    echo "== generator: byte-identical + idempotent on a synced tree =="
+    d="$(mkrepo)"
+    gout="$(mktemp -d)"
+    gman="$(mktemp)"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh --dest-root "$gout" 2>/dev/null ) > "$gman"
+    # Every generated replica must equal the committed one (0 drift).
+    gdiffs=0
+    while IFS="$(printf '\t')" read -r _s dd; do
+        [ -n "$dd" ] || continue
+        diff -q "$d/$dd" "$gout/$dd" >/dev/null 2>&1 || gdiffs=$((gdiffs + 1))
+    done < "$gman"
+    pf "generator output byte-identical to committed replicas" "$gdiffs"
+    rm -f "$gman"
+    # Idempotent: running in place on a synced tree changes nothing.
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    idem="$(cd "$d" && git status --porcelain)"
+    pf "generator in place produces no changes (idempotent)" "$([ -z "$idem" ] && echo 0 || echo 1)"
+    rm -rf "$d" "$gout"
+
+    echo "== generator: fails closed on unreadable registry =="
+    d="$(mkrepo)"
+    ( cd "$d" && SYNC_MD=/nonexistent/sync.md bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "unreadable sync.md -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: regenerates + preserves SKILL.md frontmatter after SSOT edit =="
+    d="$(mkrepo)"
+    printf '\n<!-- integration drift marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    # The examples-derived replicas must now carry the marker...
+    grep -q "integration drift marker" "$d/.kiro/skills/karpathy-guidelines/SKILL.md"
+    pf "regenerated .kiro skill picked up the SSOT edit" "$?"
+    grep -q "integration drift marker" "$d/.kimi/resource/karpathy-guidelines-examples.md"
+    pf "regenerated .kimi resource picked up the SSOT edit" "$?"
+    # ...while the SKILL.md preamble (frontmatter + SSOT marker) survives intact.
+    fm=0
+    grep -q "^name: karpathy-guidelines-examples" "$d/.kiro/skills/karpathy-guidelines/SKILL.md" || fm=1
+    grep -q "^<!-- SSOT:" "$d/.kiro/skills/karpathy-guidelines/SKILL.md" || fm=1
+    pf "regenerated .kiro SKILL.md preserved its frontmatter + SSOT marker" "$fm"
+    rm -rf "$d"
+
+    echo "== checker == generator: red after SSOT edit, green after regenerate =="
+    d="$(mkrepo)"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green on synced tree" "$?"
+    printf '\n<!-- drift -->\n' >> "$d/.ai/instructions/operating-prompt/principles.md"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker RED after SSOT edit with no replica update" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green again after running the generator" "$?"
+    rm -rf "$d"
+
+    echo "== checker == generator: a deliberate generator change flips the verdict =="
+    # If the checker had its OWN copy of the transform, mutating the generator would
+    # NOT change its verdict. It does -> proof the checker consumes generator output.
+    d="$(mkrepo)"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green before generator mutation" "$?"
+    # Make normalize_lf prepend a sentinel line to every replica it emits.
+    sed -i 's/normalize_lf() { tr -d/normalize_lf() { echo ZZDRIFT; tr -d/' \
+        "$d/.ai/tools/sync-replicas.sh"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker RED after a deliberate generator change (checker uses generator)" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== pre-commit: claude-code auto-stages replicas atomically =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    printf '\n<!-- atomic marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "ssot: edit examples" >/dev/null 2>&1 )
+    pf "claude-code commit of SSOT-only change SUCCEEDS" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "committed tree is synced (0 drift) after auto-stage" "$?"
+    # The WIDENED exception must have let the two non-steering replicas into the commit.
+    names="$(git -C "$d" show --name-only --format= HEAD)"
+    printf '%s' "$names" | grep -q ".kiro/skills/karpathy-guidelines/SKILL.md"
+    pf "widened exception: .kiro/skills replica landed in the commit" "$?"
+    printf '%s' "$names" | grep -q ".kimi/resource/karpathy-guidelines-examples.md"
+    pf "widened exception: .kimi/resource replica landed in the commit" "$?"
+    rm -rf "$d"
+
+    echo "== pre-commit: human/other identity is REFUSED with the hint =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name "Some Human"
+    printf '\n<!-- human marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    hout="$(cd "$d" && git commit -m "ssot: edit examples" 2>&1)"; hrc=$?
+    pf "human commit of SSOT-only change is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "sync-replicas.sh"
+    pf "refusal names the fix (run sync-replicas.sh / commit as claude-code)" "$?"
+    rm -rf "$d"
+
+    echo "== pre-commit: widening does NOT leak beyond registered replicas =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    mkdir -p "$d/.kimi/hooks"
+    printf '#!/bin/sh\necho x\n' > "$d/.kimi/hooks/x.sh"
+    ( cd "$d" && git add .kimi/hooks/x.sh >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "peer write" >/dev/null 2>&1 )
+    pf "claude-code commit of NON-replica peer write (.kimi/hooks) is BLOCKED" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== degradation: --no-verify commits stale, but check-ssot-drift still catches it =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    printf '\n<!-- bypass marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "ssot bypass" --no-verify >/dev/null 2>&1 )
+    pf "--no-verify lets the SSOT-only (stale) commit through" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "CI net (check-ssot-drift) goes RED on the bypassed stale tree" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+fi
 
 echo
 echo "=============================================="
