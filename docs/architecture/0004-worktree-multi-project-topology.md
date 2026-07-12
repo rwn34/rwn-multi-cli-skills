@@ -228,13 +228,38 @@ CLIs may concurrently share a working tree / HEAD.**
 
 ### Follow-ups
 
-- **Implementation of the dispatcher change is a separate task, handed to Kiro.**
-  This amendment is the decision only; `.ai/tools/dispatch-handoffs.sh` is
-  unchanged as of this ADR landing (it still runs `cd "$root"`). Until that task
-  lands, **parallel dispatch remains unsafe** and the orchestrator should serialize
-  same-file-risk handoffs by hand.
+- **Dispatcher implementation — DONE (2026-07-11, handoff
+  `202607111550-dispatcher-worktree-per-cli`).** `.ai/tools/dispatch-handoffs.sh`
+  now runs every dispatched CLI inside its own worktree
+  (`ensure_cli_worktree()`, reusing `scripts/wt-bootstrap.sh`) and cuts a
+  per-handoff branch from a declared base (`ensure_declared_base_branch()`,
+  `origin/master` unless a handoff sets `Base:`). The old `cd "$root"`
+  shared-checkout invocation is gone from the dispatch path. Worktree/branch
+  setup failure fails the dispatch outright (handoff stays `OPEN`, a
+  `dispatch-failure-*.md` report is written) — there is no fallback to the
+  primary checkout. Regression coverage:
+  `.ai/tests/test-dispatch-worktree.sh` (24/24, incl. a genuine concurrent
+  two-CLI dispatch proof). **Parallel dispatch of source-file changes is now
+  safe** for the class of bug this amendment describes.
 - The activity-log write race (above) needs its own decision. Track it against
-  `.ai/known-limitations.md` § "Concurrent activity-log writes".
+  `.ai/known-limitations.md` § "Concurrent activity-log writes". **Still open**
+  — this dispatcher change deliberately does not touch it (explicit non-goal
+  in the handoff): `.ai/` remains junctioned to one canonical copy across all
+  worktrees, so concurrent `.ai/activity/log.md` prepends are still a
+  last-writer-wins race.
 - `tools/4ai-panes/pane-runner.ps1` runs the same headless invocations as the
   dispatcher and must be brought to parity, or it reintroduces the shared-HEAD
-  path from the pane side.
+  path from the pane side. **Still open** — not touched by this change.
+- **New, discovered during implementation:** `scripts/wt-bootstrap.sh`'s
+  `.git/info/exclude` entry for `.ai` does not suppress `git status` output for
+  files *added under* the junctioned `.ai/` after the worktree is created —
+  git recurses through the Windows directory-junction reparse point and
+  reports new files there as untracked (`?? .ai/handoffs/...`) despite the
+  exclude line matching. The dispatcher's own dirty-worktree check works
+  around this (excludes `.ai/` paths when deciding whether a worktree has
+  "real" uncommitted changes), but the underlying `wt-bootstrap.sh` exclude
+  gap is unfixed and could surprise a human running `git status` by hand in a
+  worktree. Worth a follow-up fix in `wt-bootstrap.sh` itself.
+- **Worktree pool growth (unchanged from the original amendment's framing):**
+  the worktree pool grows unbounded (one per CLI per project) and nothing
+  reaps it. A teardown/GC policy is the next thing to need attention.
