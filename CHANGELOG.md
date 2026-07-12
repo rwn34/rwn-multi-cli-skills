@@ -68,6 +68,21 @@ promotion happened.
   aligned), `.opencode/contract.md` + `AGENTS.md` (OpenCode is the deploy
   executor: staging fleet-authorized, production human-confirmed),
   `CLAUDE.md`, `.claude/agents/orchestrator.md`.
+- **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
+  present.** `scripts/check-version-bump.sh` previously proved only that a
+  `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
+  and made the release-engineer *manually* promote the `## [Unreleased]` bullets
+  into that heading — so an empty section, or one holding nothing but the
+  Keep-a-Changelog scaffolding (`[TODO: …]`, TBD, WIP, `...`, an empty `-`
+  bullet, comments only), sailed through and shipped a version documented by
+  nothing. The gate now requires at least one real content line between the
+  heading and the next `## `, fails closed on a section it cannot parse, and
+  says which promotion did not happen. `## [Unreleased]` is exempt by
+  construction (the gate only inspects the section named by the new semver
+  version), so an empty Unreleased right after a promotion is fine. Scope: this
+  closes the EMPTY/PLACEHOLDER hole, **not** the WRONG-CONTENT one — bullets
+  describing a different PR than the one that bumped the version still pass, and
+  a human still reads the entry at release.
 
 ### Deprecated
 
