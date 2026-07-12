@@ -42,6 +42,14 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.36] - 2026-07-12
+
+### Changed
+
+- OpenCode's model switched from `zhipu-coding/glm-4.7` to
+  `zhipu-coding/glm-4.7-flash` (`opencode.json`, both the top-level `model` and
+  the `opencode` agent's `model`) — owner-requested, for pane responsiveness.
+
 ## [0.0.35] - 2026-07-12
 
 ### Fixed
