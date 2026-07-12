@@ -20,6 +20,32 @@ promotion happened.
 
 ### Added
 
+- [TODO: new features]
+
+### Changed
+
+- [TODO: changes in existing functionality]
+
+### Deprecated
+
+- [TODO: features marked for removal]
+
+### Removed
+
+- [TODO: features removed this release]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.32] - 2026-07-12
+
+### Added
+
 - **Tier-restatement drift gate (`.ai/tools/check-tier-restatements.sh`).** The
   autonomy-tier table lives in six places: the SSOT (operating-prompt §8), three
   generated replicas, and two HAND-WRITTEN restatements — `CLAUDE.md` and
@@ -99,22 +125,6 @@ promotion happened.
   closes the EMPTY/PLACEHOLDER hole, **not** the WRONG-CONTENT one — bullets
   describing a different PR than the one that bumped the version still pass, and
   a human still reads the entry at release.
-
-### Deprecated
-
-- [TODO: features marked for removal]
-
-### Removed
-
-- [TODO: features removed this release]
-
-### Fixed
-
-- [TODO: bug fixes]
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.31] - 2026-07-12
 
