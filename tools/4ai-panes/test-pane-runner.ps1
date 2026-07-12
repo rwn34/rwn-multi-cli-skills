@@ -25,14 +25,32 @@
 #   (t) Test-HandoffQuarantined fresh record    (true  -> still quarantined)
 #   (u) Get-StopExitCode intentional stop        (Intent=$true  -> 0)
 #   (v) Get-StopExitCode crash                    (Intent=$false -> non-zero)
-#   (w) idle heartbeat on first idle poll         (emits; line has CLI name + time)
-#   (x) heartbeat is throttled                    (10 rapid polls -> exactly 1 emit)
-#   (y) heartbeat re-emits after the interval     (true)
-#   (z) heartbeat is idle-only                    (one call site, null-handoff branch)
-#   (aa) picked-up line on idle->busy             (present, printed after claim won)
-#   (bb) Enable/Restore-DispatchGuardEnv          (sets 1, returns+restores prior)
-#   (cc) real InvokeCli child env                 (child sees AI_HANDOFF_DISPATCH=1)
-#   (dd) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
+#   (w) Get-HeadlessCmd claude carries --dangerously-skip-permissions (F2)
+#   (x) parity guard: pane-runner vs dispatch-handoffs.sh Claude argv (F2)
+#   (y) Invoke-HandoffRun resolves the worktree BEFORE invoking the CLI, and the
+#       CLI is invoked with cwd == that worktree (NOT $ProjectDir)
+#   (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to
+#       $ProjectDir (the acceptance assertion for this whole fix)
+#   (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked
+#   (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to origin/master
+#   (ac) parity guard: Ensure-DeclaredBaseBranchReal vs
+#        dispatch-handoffs.sh's ensure_declared_base_branch() behave the same on
+#        a real sandbox repo (branch cut from declared base, not ambient HEAD;
+#        dirty non-.ai tree -> refuse to touch, matching bash's WARN-and-reuse)
+#   (ad) REGRESSION (the incident this handoff fixes): two concurrent
+#        Invoke-HandoffRun calls for two different CLIs, each in its own real
+#        worktree, never perturb each other's HEAD or working files, and the
+#        PRIMARY checkout's HEAD is unchanged throughout
+#   (ae) idle heartbeat on first idle poll         (emits; line has CLI name + time)
+#   (af) heartbeat is throttled                    (10 rapid polls -> exactly 1 emit)
+#   (ag) heartbeat re-emits after the interval     (true)
+#   (ah) heartbeat is idle-only                    (one call site, null-handoff branch)
+#   (ai) picked-up line on idle->busy              (present, printed after claim won)
+#   (aj) Enable/Restore-DispatchGuardEnv          (sets 1, returns+restores prior)
+#   (ak) real InvokeCli child env                 (child sees AI_HANDOFF_DISPATCH=1)
+#   (al) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
+#   (am) real InvokeCli honors BOTH the worktree cwd AND AI_HANDOFF_DISPATCH=1
+#        in the SAME child invocation (the interleave this rebase must prove)
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -88,12 +106,33 @@ $script:mockCalls = 0
 $script:mockDeleteOnCall = 0      # 0 = never delete
 $script:mockHandoffPath = $null
 $script:InvokeCli = {
-    param([string]$CliName, [string]$Prompt)
+    param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
     $script:mockCalls++
+    $script:lastInvokeCwd = $Cwd
     if ($script:mockDeleteOnCall -gt 0 -and $script:mockCalls -eq $script:mockDeleteOnCall) {
         Remove-Item -Path $script:mockHandoffPath -Force
     }
     return 0
+}
+
+# -- mock worktree resolution (tests a-x): a fake, always-succeeding worktree so
+#    the existing RUN/DECIDE tests never touch real git or shell out to bash.
+#    Capture the args Invoke-HandoffRun passes through so (y) can assert on them.
+$script:mockWtPath = Join-Path $env:TEMP ("pane-runner-test-wt-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $script:mockWtPath -Force | Out-Null
+$script:mockWtFails = $false
+$script:mockBranchFails = $false
+$script:GetCliWorktreePath = {
+    param([string]$ProjectDir, [string]$CliName)
+    $script:lastWtCliName = $CliName
+    if ($script:mockWtFails) { return $null }
+    return $script:mockWtPath
+}
+$script:EnsureDeclaredBaseBranch = {
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+    $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+    if ($script:mockBranchFails) { return $false }
+    return $true
 }
 
 # -- (a) done on first run --
@@ -315,10 +354,259 @@ Clear-HandoffAttempts -Recipient 'kimi' -HandoffPath $hexp
 Assert-Equal 0 (Get-StopExitCode -Intent $true) 'u: intentional stop -> Get-StopExitCode 0'
 Assert-Equal $true ((Get-StopExitCode -Intent $false) -ne 0) 'v: crash -> Get-StopExitCode non-zero'
 
-# -- (w/x/y) idle heartbeat (F1) --
+# -- (w) F2: headless Claude argv carries --dangerously-skip-permissions, --
+# -- NOT the weaker --permission-mode acceptEdits (which auto-denies Bash    --
+# -- calls outside settings.local.json's allow-list with no human headless   --
+# -- to approve them). --
+$claudeArgv = @(Get-HeadlessCmd -CliName 'claude' -Prompt 'test-prompt')
+Assert-Equal $true ($claudeArgv -contains '--dangerously-skip-permissions') 'w: headless claude argv contains --dangerously-skip-permissions'
+Assert-Equal $false ($claudeArgv -contains '--permission-mode') 'w: headless claude argv no longer contains --permission-mode'
+
+# -- (x) F2 parity guard: pane-runner's Get-HeadlessCmd claude form MUST match --
+# -- dispatch-handoffs.sh's headless_cmd claude form. Two files stating the   --
+# -- same launch flags is exactly the class of bug that motivated this fix   --
+# -- (the two invocations had already drifted once) - so this test extracts  --
+# -- the bash HEADLESS_ARGV line for claude and fails LOUDLY on any drift.   --
+$dispatchSh = Join-Path $here '..\..\.ai\tools\dispatch-handoffs.sh'
+$dispatchSh = [System.IO.Path]::GetFullPath($dispatchSh)
+if (Test-Path $dispatchSh) {
+    $shLine = (Get-Content -Path $dispatchSh) | Where-Object { $_ -match 'claude\)\s*HEADLESS_ARGV=\(claude\s+-p\s+"\$prompt"\s+(.+)\)\s*;;' }
+    if ($shLine) {
+        $shFlags = $Matches[1].Trim()
+    } else {
+        $shFlags = $null
+    }
+    # PowerShell argv for claude, flags only (drop exe, '-p', and the prompt).
+    $psFlags = ($claudeArgv | Select-Object -Skip 3) -join ' '
+    Assert-Equal $psFlags $shFlags 'x: parity guard - pane-runner vs dispatch-handoffs.sh claude headless flags match'
+} else {
+    # dispatch-handoffs.sh not found relative to this file (e.g. running the
+    # flat install copy without the .ai/ sibling) -- do not fail loudly for a
+    # missing comparison target, but do not silently pass either.
+    $script:fail++
+    Write-Host "FAIL  x: parity guard - could not locate dispatch-handoffs.sh at $dispatchSh" -ForegroundColor Red
+}
+
+# -- (y) Invoke-HandoffRun resolves the worktree BEFORE invoking the CLI, and --
+# -- the CLI is invoked with cwd == that worktree, NOT $ProjectDir. This is   --
+# -- the worktree-per-CLI fix itself: assert the mock InvokeCli actually saw  --
+# -- the worktree path, not the primary checkout ($work). --
+$script:mockCalls = 0; $script:mockDeleteOnCall = 1; $script:mockWtFails = $false; $script:mockBranchFails = $false
+$script:lastInvokeCwd = $null
+$hy = New-TestHandoff -Slug 'y-worktree-cwd'
+$script:mockHandoffPath = $hy
+$ry = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $hy -MaxContinues 5
+Assert-Equal 'DONE' $ry.Result 'y: worktree-cwd test -> handoff still completes (DONE)'
+Assert-Equal $script:mockWtPath $script:lastInvokeCwd 'y: InvokeCli cwd == the CLI worktree path'
+Assert-Equal $false ($script:lastInvokeCwd -eq $work) 'y: InvokeCli cwd is NOT $ProjectDir (primary checkout)'
+
+# -- (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to  --
+# -- $ProjectDir. This is the ACCEPTANCE assertion for the whole fix: a       --
+# -- worktree that cannot be established must never degrade to running in    --
+# -- the primary checkout. --
+$script:mockWtFails = $true
+$script:mockCalls = 0
+$hz = New-TestHandoff -Slug 'z-worktree-fail'
+$script:mockHandoffPath = $hz
+$rz = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $hz -MaxContinues 5
+Assert-Equal 'WORKTREE_FAIL' $rz.Result 'z: worktree setup failure -> Result=WORKTREE_FAIL'
+Assert-Equal 0 $rz.Invocations 'z: worktree setup failure -> CLI NEVER invoked (Invocations=0)'
+Assert-Equal 0 $script:mockCalls 'z: worktree setup failure -> mock InvokeCli call count is 0 (no fallback run)'
+Assert-Equal $true (Test-Path $hz) 'z: worktree setup failure -> handoff stays OPEN (file still present)'
+$script:mockWtFails = $false
+
+# -- (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked --
+$script:mockBranchFails = $true
+$script:mockCalls = 0
+$haa = New-TestHandoff -Slug 'aa-branch-fail'
+$script:mockHandoffPath = $haa
+$raa = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $haa -MaxContinues 5
+Assert-Equal 'WORKTREE_FAIL' $raa.Result 'aa: declared-base-branch failure -> Result=WORKTREE_FAIL'
+Assert-Equal 0 $raa.Invocations 'aa: declared-base-branch failure -> CLI NEVER invoked'
+Assert-Equal 0 $script:mockCalls 'aa: declared-base-branch failure -> mock InvokeCli call count is 0'
+$script:mockBranchFails = $false
+
+# -- (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to          --
+# -- origin/master when absent (mirrors dispatch-handoffs.sh base_for()).     --
+$hab1 = New-TestHandoff -Slug 'ab-no-base'
+Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab1) 'ab: no Base: field -> defaults to origin/master'
+$hab2Path = Join-Path $openDir 'ab-with-base.md'
+@(
+    "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "Base: origin/develop", "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $hab2Path -Encoding utf8
+Assert-Equal 'origin/develop' (Get-DeclaredBase -HandoffPath $hab2Path) 'ab: Base: origin/develop is read verbatim'
+Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
+
+# -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
+# -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --
+# -- path, mirroring test-dispatch-worktree.sh's sandbox pattern: a bare       --
+# -- "origin" + a primary checkout cloned from it, with .wt/ as a SIBLING of   --
+# -- the sandbox project (not $env:TEMP directly) so worktree_path_for's path  --
+# -- arithmetic matches production. Skips (does not fail) if bash/git are      --
+# -- unavailable, matching the fail-open posture of other environment-gated    --
+# -- checks in this suite.
+$bashCmd = Get-Command bash -ErrorAction SilentlyContinue
+$gitCmd  = Get-Command git -ErrorAction SilentlyContinue
+$wtBootstrapPath = Join-Path $here '..\..\scripts\wt-bootstrap.sh'
+$wtBootstrapPath = [System.IO.Path]::GetFullPath($wtBootstrapPath)
+# A 'bash' on PATH is not necessarily USABLE for this: on Windows it may resolve
+# to WSL bash (System32\bash.exe), which cannot see Windows-style paths the way
+# Git Bash does (README.md's own documented gotcha: WSL bash wants /mnt/c/...,
+# Git Bash wants /c/...). wt-bootstrap.sh takes Windows paths as arguments, so
+# probe with a real (harmless, --help) invocation rather than trusting presence
+# on PATH — a WSL bash here must SKIP this block, not crash the whole suite.
+$bashUsable = $false
+if ($bashCmd -and (Test-Path $wtBootstrapPath)) {
+    try {
+        & $bashCmd.Source $wtBootstrapPath --help *> $null
+        $bashUsable = ($LASTEXITCODE -eq 0)
+    } catch { $bashUsable = $false }
+}
+if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
+    $sandbox = Join-Path $env:TEMP ("pane-runner-wt-sandbox-" + [guid]::NewGuid().ToString('N'))
+    $sandboxParent = Join-Path $sandbox 'parent'
+    $primary = Join-Path $sandboxParent 'proj'
+    New-Item -ItemType Directory -Path $primary -Force | Out-Null
+    Push-Location $primary
+    try {
+        git init --quiet .
+        git config user.email 'test@example.com'
+        git config user.name 'test'
+        New-Item -ItemType Directory -Path (Join-Path $primary '.ai/handoffs/to-kiro/open') -Force | Out-Null
+        'seed' | Set-Content -Path (Join-Path $primary 'seed.txt')
+        git add -A
+        git commit --quiet -m seed
+        git branch -M master
+
+        $originBare = Join-Path $sandboxParent 'origin.git'
+        git init --quiet --bare $originBare
+        git remote add origin $originBare
+        git push --quiet -u origin master
+
+        # HEAD before ANY worktree/dispatch activity -- the regression assertion
+        # for (ad) compares against this.
+        $primaryHeadBefore = git rev-parse HEAD
+
+        # (ac) Get-CliWorktreePathReal creates a real worktree; a 2nd call reuses it
+        # (idempotent, matches wt-bootstrap.sh's own reuse contract).
+        $realWt1 = Get-CliWorktreePathReal -ProjectDir $primary -CliName 'kiro'
+        Assert-Equal $true ($null -ne $realWt1 -and (Test-Path $realWt1)) 'ac: Get-CliWorktreePathReal creates a real, usable worktree'
+        $realWt2 = Get-CliWorktreePathReal -ProjectDir $primary -CliName 'kiro'
+        Assert-Equal $realWt1 $realWt2 'ac: 2nd call reuses the SAME worktree path (idempotent)'
+
+        # (ac) Ensure-DeclaredBaseBranchReal cuts exec/<cli>/<slug> from the
+        # declared base, not ambient HEAD -- even when the worktree's ambient
+        # HEAD is left on a DIFFERENT branch first.
+        Push-Location $realWt1
+        git checkout --quiet -b 'some-other-branch' 2>$null
+        Pop-Location
+        $baseOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'ac-test-slug' -Base 'origin/master'
+        Assert-Equal $true $baseOk 'ac: Ensure-DeclaredBaseBranchReal succeeds'
+        Push-Location $realWt1
+        $branchNow = git branch --show-current
+        Pop-Location
+        Assert-Equal 'exec/kiro/ac-test-slug' $branchNow 'ac: branch cut is exec/<cli>/<slug> (not the pre-existing other branch)'
+
+        # (ac) dirty-tree refusal: uncommitted changes on ANY branch -> reused
+        # as-is, no new branch cut (mirrors dispatch-handoffs.sh's WARN-and-reuse).
+        Push-Location $realWt1
+        'dirty' | Set-Content -Path (Join-Path $realWt1 'dirty.txt')
+        $dirtyBranchBefore = git branch --show-current
+        Pop-Location
+        $dirtyOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'should-not-cut' -Base 'origin/master'
+        Assert-Equal $true $dirtyOk 'ac: dirty tree -> Ensure-DeclaredBaseBranchReal still returns true (WARN + reuse)'
+        Push-Location $realWt1
+        $dirtyBranchAfter = git branch --show-current
+        Pop-Location
+        Assert-Equal $dirtyBranchBefore $dirtyBranchAfter 'ac: dirty tree -> branch NOT changed (refused to cut over uncommitted work)'
+        Remove-Item -Path (Join-Path $realWt1 'dirty.txt') -Force -ErrorAction SilentlyContinue
+
+        # (ad) THE REGRESSION TEST: two concurrent Invoke-HandoffRun calls for two
+        # DIFFERENT CLIs, each resolving its OWN real worktree via the real
+        # (unmocked) functions, must never perturb each other's HEAD/files, and
+        # the PRIMARY checkout's HEAD must be unchanged throughout. This is the
+        # Kimi-in-the-primary-checkout incident, reproduced and asserted against.
+        $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+
+        $adOpenKiro = Join-Path $primary '.ai/handoffs/to-kiro/open'
+        $adOpenClaude = Join-Path $primary '.ai/handoffs/to-claude/open'
+        New-Item -ItemType Directory -Path $adOpenClaude -Force | Out-Null
+        function New-SandboxHandoff {
+            param([string]$Dir, [string]$Slug)
+            $p = Join-Path $Dir "$Slug.md"
+            @("# $Slug", "Status: OPEN", "Sender: claude-code", "Recipient: x", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A", "", "## Goal", "test") -join "`n" | Set-Content -Path $p -Encoding utf8
+            return $p
+        }
+        $adHandoffKiro = New-SandboxHandoff -Dir $adOpenKiro -Slug 'ad-kiro-run'
+        $adHandoffClaude = New-SandboxHandoff -Dir $adOpenClaude -Slug 'ad-claude-run'
+
+        # Each CLI's InvokeCli: write a marker file INTO ITS OWN worktree cwd,
+        # then delete its own handoff (simulating self-retire) -- proving each
+        # ran in ITS OWN tree and never touched the other's.
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            "ran in $CliName worktree" | Set-Content -Path (Join-Path $Cwd "marker-$CliName.txt")
+            $target = if ($CliName -eq 'kiro') { $adHandoffKiro } else { $adHandoffClaude }
+            Remove-Item -Path $target -Force -ErrorAction SilentlyContinue
+            return 0
+        }
+
+        $rKiro = Invoke-HandoffRun -ProjectDir $primary -CliName 'kiro' -HandoffPath $adHandoffKiro -MaxContinues 1
+        $rClaudeAuto = Invoke-HandoffRun -ProjectDir $primary -CliName 'claude' -HandoffPath $adHandoffClaude -MaxContinues 1
+
+        Assert-Equal 'DONE' $rKiro.Result 'ad: kiro run completes DONE in its own worktree'
+        Assert-Equal 'DONE' $rClaudeAuto.Result 'ad: claude run completes DONE in its own worktree'
+
+        $kiroWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'kiro'
+        $claudeWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'claude'
+        Assert-Equal $true (Test-Path (Join-Path $kiroWt 'marker-kiro.txt')) 'ad: kiro marker landed in the KIRO worktree'
+        Assert-Equal $true (Test-Path (Join-Path $claudeWt 'marker-claude.txt')) 'ad: claude marker landed in the CLAUDE worktree'
+        Assert-Equal $false (Test-Path (Join-Path $kiroWt 'marker-claude.txt')) 'ad: claude marker did NOT leak into the kiro worktree'
+        Assert-Equal $false (Test-Path (Join-Path $claudeWt 'marker-kiro.txt')) 'ad: kiro marker did NOT leak into the claude worktree'
+        Assert-Equal $false (Test-Path (Join-Path $primary 'marker-kiro.txt')) 'ad: kiro marker did NOT land in the PRIMARY checkout'
+        Assert-Equal $false (Test-Path (Join-Path $primary 'marker-claude.txt')) 'ad: claude marker did NOT land in the PRIMARY checkout'
+
+        $primaryHeadAfter = git rev-parse HEAD
+        Assert-Equal $primaryHeadBefore $primaryHeadAfter 'ad: PRIMARY checkout HEAD unchanged after both dispatches (the incident regression)'
+
+        # restore the (a-x) mocks for anything running after this block
+        $script:GetCliWorktreePath = {
+            param([string]$ProjectDir, [string]$CliName)
+            $script:lastWtCliName = $CliName
+            if ($script:mockWtFails) { return $null }
+            return $script:mockWtPath
+        }
+        $script:EnsureDeclaredBaseBranch = {
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            if ($script:mockBranchFails) { return $false }
+            return $true
+        }
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            $script:mockCalls++
+            $script:lastInvokeCwd = $Cwd
+            if ($script:mockDeleteOnCall -gt 0 -and $script:mockCalls -eq $script:mockDeleteOnCall) {
+                Remove-Item -Path $script:mockHandoffPath -Force
+            }
+            return 0
+        }
+    } finally {
+        Pop-Location
+        try { git -C $primary worktree prune 2>$null | Out-Null } catch {}
+        Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "SKIP  ac/ad: no USABLE bash for wt-bootstrap.sh (present bash may be WSL, which cannot see Windows paths - see README's documented gotcha) - skipping real-sandbox worktree tests" -ForegroundColor DarkGray
+}
+
+# -- (ae/af/ag) idle heartbeat (F1) --
 # Shadow the Write-Host cmdlet with a capturing function for these tests only;
 # Write-IdleHeartbeat's boolean return carries the emit/throttle decision, and
-# the captured line carries the content. Removed again right after (y).
+# the captured line carries the content. Removed again right after (ag).
 $script:hostLines = @()
 function Write-Host {
     param([object]$Object, $ForegroundColor)
@@ -328,72 +616,99 @@ function Write-Host {
     if ($ForegroundColor) { Microsoft.PowerShell.Utility\Write-Host -Object $Object -ForegroundColor $ForegroundColor } else { Microsoft.PowerShell.Utility\Write-Host -Object $Object }
 }
 
-# (w) first idle poll emits immediately, and the line names the CLI + a timestamp
+# (ae) first idle poll emits immediately, and the line names the CLI + a timestamp
 $script:hostLines = @()
 $hbLast = $null
 $emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast)
-Assert-Equal $true $emitted 'w: first idle poll emits the heartbeat'
-Assert-Equal $true ($script:hostLines[0] -match '\[kimi\]') 'w: heartbeat line contains the CLI name'
-Assert-Equal $true ($script:hostLines[0] -match '\(\d{2}:\d{2}:\d{2}\)') 'w: heartbeat line contains a timestamp'
+Assert-Equal $true $emitted 'ae: first idle poll emits the heartbeat'
+Assert-Equal $true ($script:hostLines[0] -match '\[kimi\]') 'ae: heartbeat line contains the CLI name'
+Assert-Equal $true ($script:hostLines[0] -match '\(\d{2}:\d{2}:\d{2}\)') 'ae: heartbeat line contains a timestamp'
 
-# (x) throttled: 10 rapid idle polls emit exactly ONE heartbeat, not one per poll
+# (af) throttled: 10 rapid idle polls emit exactly ONE heartbeat, not one per poll
 $script:hostLines = @()
 $hbLast2 = $null
 $emitCount = 0
 for ($i = 0; $i -lt 10; $i++) { if (Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)) { $emitCount++ } }
-Assert-Equal 1 $emitCount 'x: 10 rapid idle polls -> exactly 1 heartbeat (throttled, not every poll)'
+Assert-Equal 1 $emitCount 'af: 10 rapid idle polls -> exactly 1 heartbeat (throttled, not every poll)'
 
-# (y) once the interval has elapsed, the next idle poll emits again
+# (ag) once the interval has elapsed, the next idle poll emits again
 $hbLast2 = (Get-Date).AddSeconds(-($script:IdleHeartbeatSeconds + 1))
 $emitted = Write-IdleHeartbeat -CliName 'kimi' -LastEmitted ([ref]$hbLast2)
-Assert-Equal $true $emitted 'y: heartbeat re-emits once IdleHeartbeatSeconds has elapsed'
+Assert-Equal $true $emitted 'ag: heartbeat re-emits once IdleHeartbeatSeconds has elapsed'
 
 Remove-Item -Path function:Write-Host -Force
 
-# -- (z/aa) structural guards on the supervisor loop (F1) --
+# -- (ah/ai) structural guards on the supervisor loop (F1) --
 $runnerSrc = Get-Content -Path $runner -Raw
-# (z) the heartbeat is idle-only: exactly one call site, inside the null-handoff branch
+# (ah) the heartbeat is idle-only: exactly one call site, inside the null-handoff branch
 $hbRefs = ([regex]::Matches($runnerSrc, 'Write-IdleHeartbeat -CliName')).Count
-Assert-Equal 1 $hbRefs 'z: Write-IdleHeartbeat has exactly one call site'
-Assert-Equal $true ($runnerSrc -match 'if \(\$null -eq \$handoff\) \{\s*Write-IdleHeartbeat') 'z: heartbeat fires only in the no-handoff (idle) branch'
-# (aa) the idle->busy transition prints a picked-up line, AFTER the claim is won
+Assert-Equal 1 $hbRefs 'ah: Write-IdleHeartbeat has exactly one call site'
+Assert-Equal $true ($runnerSrc -match 'if \(\$null -eq \$handoff\) \{\s*Write-IdleHeartbeat') 'ah: heartbeat fires only in the no-handoff (idle) branch'
+# (ai) the idle->busy transition prints a picked-up line, AFTER the claim is won
 $idxPick = $runnerSrc.IndexOf('-- picked up')
 $idxClaim = $runnerSrc.IndexOf('if (-not (Claim-Handoff')
-Assert-Equal $true ($idxPick -ge 0) 'aa: picked-up line present on the idle->busy transition'
-Assert-Equal $true ($idxPick -gt $idxClaim) 'aa: picked-up line prints only after the claim is won'
+Assert-Equal $true ($idxPick -ge 0) 'ai: picked-up line present on the idle->busy transition'
+Assert-Equal $true ($idxPick -gt $idxClaim) 'ai: picked-up line prints only after the claim is won'
 
-# -- (bb) Enable/Restore-DispatchGuardEnv round trip (F3) --
+# -- (aj) Enable/Restore-DispatchGuardEnv round trip (F3) --
 $env:AI_HANDOFF_DISPATCH = 'outer-value'
 $prev = Enable-DispatchGuardEnv
-Assert-Equal 'outer-value' $prev 'bb: Enable-DispatchGuardEnv returns the prior value'
-Assert-Equal '1' $env:AI_HANDOFF_DISPATCH 'bb: Enable-DispatchGuardEnv sets AI_HANDOFF_DISPATCH=1'
+Assert-Equal 'outer-value' $prev 'aj: Enable-DispatchGuardEnv returns the prior value'
+Assert-Equal '1' $env:AI_HANDOFF_DISPATCH 'aj: Enable-DispatchGuardEnv sets AI_HANDOFF_DISPATCH=1'
 Restore-DispatchGuardEnv -Previous $prev
-Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'bb: Restore-DispatchGuardEnv restores the prior value'
+Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'aj: Restore-DispatchGuardEnv restores the prior value'
 Remove-Item -Path Env:\AI_HANDOFF_DISPATCH
 $prevUnset = Enable-DispatchGuardEnv
-Assert-Equal $true ($null -eq $prevUnset) 'bb: prior value is $null when the var was unset'
+Assert-Equal $true ($null -eq $prevUnset) 'aj: prior value is $null when the var was unset'
 Restore-DispatchGuardEnv -Previous $prevUnset
-Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'bb: restore removes the var when it was previously unset'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'aj: restore removes the var when it was previously unset'
 
-# -- (cc) REAL invoke path: the spawned child actually inherits AI_HANDOFF_DISPATCH=1 --
+# -- (ak) REAL invoke path: the spawned child actually inherits AI_HANDOFF_DISPATCH=1 --
 #     Stub Get-HeadlessCmd with a real native child (cmd, like test p - never a
 #     real CLI) that exits 7 ONLY if the guard var reached its environment.
 #     InvokeCli returns the child exit code, so the env assertion needs no
-#     output capture. Also proves the runner env is cleaned up afterwards.
+#     output capture. Also proves the runner env is cleaned up afterwards, AND
+#     (the point of this rebase) that the worktree-cwd param does not disturb
+#     the env-guard behavior when both are exercised through the SAME call.
 $origHeadlessCc = ${function:Get-HeadlessCmd}
 function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (exit 7) else (exit 9)') }
 $ccCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
 ${function:Get-HeadlessCmd} = $origHeadlessCc
-Assert-Equal 7 $ccCode 'cc: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 (exit 7)'
-Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'cc: AI_HANDOFF_DISPATCH removed from runner env after the call'
+Assert-Equal 7 $ccCode 'ak: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 (exit 7)'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'ak: AI_HANDOFF_DISPATCH removed from runner env after the call'
 
-# -- (dd) GUARD: the assignment must never silently disappear from the source --
+# -- (al) GUARD: the assignment must never silently disappear from the source --
 #     Removing AI_HANDOFF_DISPATCH from the child env re-arms the nested
 #     self-dispatch race (F3); if it is ever dropped, this test fails loudly.
-Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_DISPATCH = ''1''')) 'dd: GUARD - AI_HANDOFF_DISPATCH=1 assignment present in pane-runner source'
+Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_DISPATCH = ''1''')) 'al: GUARD - AI_HANDOFF_DISPATCH=1 assignment present in pane-runner source'
+
+# -- (am) THE INTERLEAVE PROOF (this rebase's own acceptance test): a single --
+# -- real InvokeCli call must honor BOTH the worktree cwd param AND the      --
+# -- AI_HANDOFF_DISPATCH env guard AT THE SAME TIME. Prior tests (y)/(ad)    --
+# -- prove cwd alone; (ak) proves the env guard alone with the DEFAULT cwd.  --
+# -- This proves neither wrapper silently drops or reorders the other.      --
+$amDir = Join-Path $env:TEMP ("pane-runner-interleave-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $amDir -Force | Out-Null
+try {
+    $origHeadlessAm = ${function:Get-HeadlessCmd}
+    function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (echo %CD%>cwd.txt & exit 7) else (exit 9)') }
+    $amCode = & $script:RealInvokeCli 'claude' 'ignored-prompt' $amDir
+    ${function:Get-HeadlessCmd} = $origHeadlessAm
+    Assert-Equal 7 $amCode 'am: interleave - env guard fires (exit 7) with an explicit non-default cwd passed too'
+    $amCwdFile = Join-Path $amDir 'cwd.txt'
+    Assert-Equal $true (Test-Path $amCwdFile) 'am: interleave - child actually ran IN $amDir (cwd.txt written there, not elsewhere)'
+    if (Test-Path $amCwdFile) {
+        $amSeenCwd = (Get-Content -Path $amCwdFile -Raw).Trim().TrimEnd('\')
+        Assert-Equal ($amDir.TrimEnd('\')) $amSeenCwd 'am: interleave - child process cwd (%CD%) equals the Cwd param, not the caller location'
+    }
+    Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'am: interleave - AI_HANDOFF_DISPATCH still cleaned up from runner env with a non-default cwd too'
+} finally {
+    Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $script:mockWtPath -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "==== pane-runner tests: $script:pass passed, $script:fail failed ====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 } else { exit 0 }
