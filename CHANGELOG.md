@@ -36,6 +36,16 @@ promotion happened.
 
 ### Fixed
 
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.33] - 2026-07-12
+
+### Fixed
+
 - **Total auto-fleet outage: `pane-runner.ps1` could not find `wt-bootstrap.sh` in
   the deployed launcher (regression from PR #51).** The worktree-bootstrap resolver
   had a single candidate, `$PSScriptRoot/../../scripts/wt-bootstrap.sh`, on the
@@ -72,10 +82,6 @@ promotion happened.
   copy and via `RWN_FRAMEWORK_REPO`, assert the repo-tree case still works, assert
   fail-loud when nothing resolves, and add an anti-rot guard so nobody "simplifies"
   the resolver back to one hardcoded path.
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.32] - 2026-07-12
 
