@@ -46,6 +46,91 @@ adheres to [Semantic Versioning](https://semver.org).
   2026-07-12) and operating-prompt §8; stale Tier-C merge language swept from
   `CLAUDE.md` and `.claude/agents/orchestrator.md`.
 
+## [0.0.27] - 2026-07-12
+
+### Security
+
+- **Closed the Bash side-door around the Write/Edit territorial guard.**
+  `.claude/hooks/pretool-bash.sh` did no path checking, so `cp`/`mv`/`install`/
+  `ln`/`dd`/`tee`/`sed -i` and shell redirections (`>`, `>>`, `>|`) could write
+  into `.kimi/**`, `.kiro/**`, `.claude/hooks/**`, `.env`, or non-allowlisted root
+  files — defeating the guard PR #50 had just fixed on the Write/Edit surface. The
+  bash hook now extracts each write TARGET and routes it through the SAME policy
+  classifier the Write/Edit hook uses.
+- **Scope (not overclaimed).** This shuts the door that is open by default:
+  accidental and casual-deliberate territorial writes via ordinary `cp`/`mv`/
+  `sed -i`/`tee`/redirects, plus the trivial self-modification path. It does NOT
+  stop a determined self-evader (`$(...)`, backticks, `eval`, `sh -c`/`bash -c`,
+  base64/hex-decoded or variable-assembled paths and command names) — those either
+  fail CLOSED as unparseable ("blocked for safety") or remain out of scope for a
+  static pre-execution guard. Read-side exfiltration (`cp .env /tmp/x`) is out of
+  scope by design: the policy classifies write TARGETS, asserted by an explicit
+  ALLOW test. The durable complement is narrowing which subagents get an
+  unrestricted Bash tool at all (follow-up ADR).
+
+### Changed
+
+- Extracted path normalization AND territorial/sensitive/root policy into a shared
+  `.claude/hooks/lib/path-policy.sh`, sourced by BOTH hooks. Neither hook
+  re-implements normalization or policy; a cross-hook divergence test fails loudly
+  if they ever disagree. This closes the recurring "two enforcement surfaces, one
+  rule, nothing keeping them in lockstep" pattern for path policy.
+- Added Rule 1.5 (enforcement-layer self-protection): `.claude/hooks/**` guard
+  scripts are owner-apply-only on BOTH surfaces — no agent edits its own guard via
+  a tool. (`test_hooks` t87 retargeted to `.claude/agents/`; t96–t99 added.)
+
+## [0.0.26] - 2026-07-12
+
+### Fixed
+
+- **`tools/4ai-panes/pane-runner.ps1`: pane-consumed handoffs no longer run in
+  the primary checkout.** This closed the SECOND, more heavily-used dispatch
+  path for the ADR-0004 shared-HEAD race — `.ai/tools/dispatch-handoffs.sh`
+  (headless `--exec` dispatch) got worktree-per-CLI in 0.0.21, but the
+  self-driving pane-runner (the auto panes that actually consume most
+  handoffs day to day) still ran every CLI directly in `$ProjectDir`. This
+  was proven live: a Kimi interactive session with an unpushed commit sat in
+  the primary checkout while a concurrently dispatched pane came within one
+  `git checkout -b` of reverting its uncommitted work. `Invoke-HandoffRun` now
+  resolves (creates or reuses) that CLI's own worktree via
+  `scripts/wt-bootstrap.sh` — the same script the dispatcher already calls —
+  before invoking the CLI, and cuts/reuses a `exec/<cli>/<slug>` branch from a
+  declared base (`origin/master`, or the handoff's `Base:` field), mirroring
+  `dispatch-handoffs.sh`'s `ensure_declared_base_branch()`. **Fail-loud, never
+  fall back:** if the worktree or branch cannot be established, the pane
+  returns `WORKTREE_FAIL`, the CLI is never invoked, and the handoff stays
+  `OPEN` for retry — it never silently degrades to running in the primary
+  checkout. `$script:InvokeCli` now runs the CLI child process with `cwd` set
+  to the resolved worktree instead of the caller's location. New regression
+  coverage in `tools/4ai-panes/test-pane-runner.ps1` (tests y-ad, incl. a
+  live two-worktree sandbox proof mirroring `.ai/tests/test-dispatch-worktree.sh`
+  that asserts the primary checkout's HEAD is unchanged after two concurrent
+  dispatches). See handoff 202607121130-pane-runner-worktree-parity.
+- **Headless Claude dispatch now uses `--dangerously-skip-permissions` instead of
+  `--permission-mode acceptEdits`** in both `tools/4ai-panes/pane-runner.ps1`
+  (`Get-HeadlessCmd`) and `.ai/tools/dispatch-handoffs.sh` (`headless_cmd`).
+  `acceptEdits` auto-approved only Edit/Write, so a Bash call outside
+  `.claude/settings.local.json`'s allow-list was auto-denied with no human
+  available headless to approve it — the headless Claude lane was strictly
+  weaker than every other fleet CLI's headless invocation, and weaker than
+  Claude's own interactive pane. Verified empirically that the `PreToolUse`
+  guard hooks still fire under the new flag (permissions and hooks are
+  separate layers) — see F2 handoff 202607120023.
+- **Rebased onto master's `AI_HANDOFF_DISPATCH` nested-dispatch-guard fix
+  (0.0.25's `a140807`, "pane-runner: idle heartbeat (F1) + AI_HANDOFF_DISPATCH
+  child env (F3)") — the two `$script:InvokeCli` changes are a genuine
+  behavioral interleave, not a pick-one conflict.** Worktree confinement
+  (`Push-Location $Cwd`) now wraps the WHOLE call as the outermost scope; the
+  dispatch-guard-env set/restore is innermost, immediately around the native
+  child invocation, so it is acquired last and released first — matching the
+  nesting of the two `try/finally` blocks exactly. Both effects now apply to
+  every child the pane-runner launches: it runs in its own worktree AND signals
+  `AI_HANDOFF_DISPATCH=1` at the same time. New test (am) proves the interleave
+  directly: a single `$script:InvokeCli` call with an explicit non-default
+  `$Cwd` AND the env-guard child probe, asserting both effects landed on the
+  same invocation and both are torn down afterward. See handoff
+  202607121500-rebase-f2-pane-parity.
+
 ## [0.0.25] - 2026-07-12
 
 ### Security
@@ -95,6 +180,7 @@ adheres to [Semantic Versioning](https://semver.org).
   *shapes* but does no path matching, so `cp`/`mv`/`sed -i`/`tee`/`>` can still write any
   protected path. This change raises the wall; the door beside it is still open. Tracked
   separately — do not treat protected paths as unreachable.
+
 ## [0.0.24] - 2026-07-12
 
 ### Fixed
@@ -123,6 +209,7 @@ adheres to [Semantic Versioning](https://semver.org).
   tree and fails on any byte-divergence from its source — no hardcoded file
   list, so new files are covered automatically. Proven both directions:
   53 failures on the real stale tree, PASS once regenerated.
+
 ## [0.0.23] - 2026-07-12
 
 ### Added
