@@ -96,6 +96,39 @@ constraint requires the root location.
 | Path restriction | `toolsSettings.fs_write.allowedPaths` (hard) | `permissions.deny` or prompt (soft) | Prompt + PostToolUse hook (soft) |
 | Shell restriction | `toolsSettings.execute_bash.allowedCommands` (hard) | Prompt (soft) | Prompt + hook (soft) |
 
+### Per-agent shell command sets
+
+The `Shell scope` column in the agent table above is prose. For the three agents
+whose scope is narrow enough to enumerate, the concrete command set is fixed here
+so every CLI restricts the *same* list. This is the command-set SSOT — it does not
+restate the enforcement-strength asymmetry, which the table above already carries
+(Kiro hard / Claude soft / Kimi soft). It is the **list**; that table is the
+**strength**. Read them together.
+
+| Agent | Allowed commands | Kiro | Claude | Kimi |
+|---|---|---|---|---|
+| `refactorer` | `pytest`, `jest`, `vitest`, `go test`, `cargo test`, `npm test`, `npm run test`, `yarn test`, `pnpm test` | hard | soft | soft |
+| `security-auditor` | `semgrep`, `bandit`, `pip-audit`, `npm audit`, `trufflehog`, `gitleaks`, `trivy`, read-only `git log` / `git diff` | hard | soft | soft |
+| `data-migrator` | `alembic`, `prisma`, `drizzle-kit`, `knex`, `dbmate`, read-only `psql` / `sqlite3` / `mysql` | hard | soft | soft |
+
+**hard** = mechanically enforced by the CLI (`toolsSettings.execute_bash.allowedCommands`);
+the model cannot run an unlisted command. **soft** = stated in the agent's prompt only;
+no per-command scoping exists in `.claude/agents/*.md` frontmatter or in Kimi's agent
+config, so a soft restriction is a good-faith instruction the model can ignore. **Do not
+read a soft row as equivalent to a hard one.**
+
+`refactorer`'s command set was not enumerated in its own contract (it said only "test
+runners only"); the list above was chosen by claude-code, 2026-07-12. The other two sets
+are lifted from the agents' own existing prose.
+
+Scope of this restriction, stated plainly: it lowers the *default* blast radius of these
+three agents from "any shell command" to "the commands their job needs". It is **not** an
+adversarial control — a restricted-but-present Bash is still evadable via `eval`, `sh -c`,
+`$(...)`, or base64. See `.ai/known-limitations.md`. The other Bash-bearing agents are
+unchanged: their broad shell surface *is* their declared job.
+
+Design: `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli).
+
 ## CLI role lanes (ADR-0002)
 
 The 13-agent roster is implemented per CLI, but each CLI occupies a distinct
