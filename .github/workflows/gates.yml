@@ -33,10 +33,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Framework version-bump check
-        if: github.event_name == 'pull_request'
-        run: bash scripts/check-version-bump.sh "origin/${{ github.base_ref }}"
-
       - name: SSOT drift check
         run: bash .ai/tools/check-ssot-drift.sh
 
@@ -72,3 +68,15 @@ jobs:
       - name: Installer typecheck + tests
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
+
+      # ADR-0012: the framework version is assigned at MERGE, not on feature
+      # branches, so this is a DETECTIVE check on the resulting master push —
+      # comparing the previous master tip (github.event.before) to the new one.
+      # It runs LAST, after every substantive test above (drift / hooks /
+      # backstop / installer), so a missing bump can never mask a real failure
+      # (the old PR-time placement did exactly that). It is NOT run on PRs:
+      # feature branches deliberately do not bump. Making this a REQUIRED status
+      # check is branch-protection (a repo setting), out of this file's scope.
+      - name: Framework version-bump check (detective — master push only)
+        if: github.event_name == 'push'
+        run: bash scripts/check-version-bump.sh "${{ github.event.before }}"
