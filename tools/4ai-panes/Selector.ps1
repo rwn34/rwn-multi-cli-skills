@@ -313,12 +313,52 @@ function Get-BrowseMeta($path) {
     return $meta
 }
 
+# Resolve GIT Bash specifically — never WSL bash, never the Store alias.
+#
+# The old body trusted `Get-Command bash` FIRST. From the launcher's plain
+# Windows context (vbs -> powershell), the persisted PATH has C:\WINDOWS\system32
+# ahead of Git, and Git ships only ...\Git\cmd (git.exe, no bash.exe) — so that
+# resolved to the WSL launcher C:\Windows\System32\bash.exe. WSL bash re-parses
+# its args as a shell string and eats the backslashes of a Windows path
+# (C:\Users\... -> C:Users...), so every bash call died with exit 127. Git Bash
+# runs the same backslash path fine: pin Git Bash, reject WSL — do NOT convert paths.
+#
+# Same defect and same fix as Resolve-GitBash in pane-runner.ps1; kept
+# self-contained because test-selector-e2e.ps1 lifts this function by AST name.
 function Find-Bash {
-    $onPath = Get-Command bash -ErrorAction SilentlyContinue
-    if ($onPath) { return $onPath.Source }
-    foreach ($p in @("C:\Program Files\Git\bin\bash.exe", "C:\Program Files (x86)\Git\bin\bash.exe")) {
-        if (Test-Path $p) { return $p }
+    $windir = if ($env:WINDIR) { $env:WINDIR } else { 'C:\Windows' }
+    $sys32 = [System.IO.Path]::Combine($windir, 'System32')
+    $isDisallowed = {
+        param([string]$p)
+        if ([string]::IsNullOrWhiteSpace($p)) { return $true }
+        $n = $p -replace '/', '\'
+        if ($n.StartsWith($sys32, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+        return ($n -match '(?i)WindowsApps')
     }
+
+    # 1. Well-known Git for Windows locations, BEFORE anything on PATH.
+    foreach ($p in @(
+        "C:\Program Files\Git\bin\bash.exe"
+        "C:\Program Files\Git\usr\bin\bash.exe"
+        "C:\Program Files (x86)\Git\bin\bash.exe"
+    )) {
+        if ((& $isDisallowed $p)) { continue }
+        if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+    }
+    # 2. Derive from git.exe: ...\Git\cmd\git.exe -> ...\Git\{bin,usr\bin}\bash.exe
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        $gitHome = Split-Path -Parent (Split-Path -Parent $git.Source)
+        foreach ($rel in @('bin\bash.exe', 'usr\bin\bash.exe')) {
+            $c = Join-Path $gitHome $rel
+            if ((& $isDisallowed $c)) { continue }
+            if (Test-Path -LiteralPath $c -PathType Leaf) { return $c }
+        }
+    }
+    # 3. Last resort: PATH — but ONLY if it is not WSL/Store.
+    $onPath = Get-Command bash -ErrorAction SilentlyContinue
+    if ($onPath -and -not (& $isDisallowed $onPath.Source)) { return $onPath.Source }
+
     return $null
 }
 
