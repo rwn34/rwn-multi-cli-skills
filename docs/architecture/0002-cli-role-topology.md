@@ -52,6 +52,11 @@ marked.
     2. **Per-deploy human confirmation** — every mutating deploy command is
        individually confirmed by the human in-session. Deploys are Tier-C
        hard-gated (operating-prompt §8) no matter who executes them.
+       *[Amended 2026-07-12b by ADR-0011: this condition now applies to
+       **PRODUCTION** deploys only. **Staging** deploys are Tier B —
+       fleet-authorized, act-then-notify, no per-deploy human confirmation.
+       Conditions 1, 3 and 4 apply to BOTH environments, unchanged. A staging
+       deploy must never auto-promote to production.]*
     3. **Only commands enumerated in an approved deploy brief** (a handoff
        in the deploy inbox). Never improvise a command that is not in the
        brief — if the brief is wrong, STOP and report.
@@ -104,9 +109,9 @@ Separation of duties: author ≠ reviewer ≠ deployer.
 2. **Open PR** — same CLI's `infra-engineer`, only on explicit user request.
 3. **Peer review** — the OTHER executor's `reviewer` subagent (Kiro⇄Kimi), report to `.ai/reports/`.
 4. **Pre-merge gate** (branch up-to-date, CI green, linked issue addressed, peer review passed) — Claude, as final reviewer.
-5. **Merge** — Claude recommends, the user approves. A pre-authorized "merge-on-green" class for low-risk changes may be defined later by ADR amendment.
-6. **Deploy** — *[Amended 2026-07-08]* *[Amended 2026-07-09]* OpenCode executes (dry-run first + per-deploy human
-confirmation; refuses on dirty tree or failing tests). Claude's
+5. **Merge** — Claude recommends, the user approves. A pre-authorized "merge-on-green" class for low-risk changes may be defined later by ADR amendment. *[Amended 2026-07-12 by ADR-0011: merge is Tier B — the fleet merges a peer-reviewed, CI-green PR and notifies the owner after. No owner pre-approval.]*
+6. **Deploy** — *[Amended 2026-07-08]* *[Amended 2026-07-09]* *[Amended 2026-07-12b by ADR-0011: **staging** deploy is Tier B (the fleet's call — dry-run first, refuse on dirty tree or failing tests, no human confirmation); **production** deploy stays Tier C, owner-gated per deploy, with all four Stage-2 conditions intact. A staging deploy must never auto-promote to production.]* OpenCode executes (dry-run first + per-deploy human
+confirmation for production; refuses on dirty tree or failing tests). Claude's
 `release-engineer` is the FALLBACK deploy lane when OpenCode is
 unavailable, under the same conditions. Kimi and Kiro have NO deploy lane — unchanged: deploy actions are out of scope for their `release-engineer` subagents. Their release-engineer configs are to be scoped down accordingly — implementation change tracked separately; this ADR is the authority.
 

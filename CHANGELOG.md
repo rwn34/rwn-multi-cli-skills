@@ -24,7 +24,35 @@ promotion happened.
 
 ### Changed
 
-- [TODO: changes to existing behavior]
+- **Full git/GitHub authority to the fleet.** Operating-prompt §8 now states
+  that ALL git/GitHub mechanics are fleet-executed — commit, branch, push
+  (Tier A); open PR, merge to main, branch deletion, repo/tree/worktree cleanup
+  (Tier B). None of them is an owner ask. Per owner directive 2026-07-12:
+  *"Committing tree, merge, cleanup, push, or any activity related to GitHub is
+  yours to make."* Previously §8 named only commits and pushes, leaving cleanup
+  and PR/branch hygiene in an unclassified grey zone that drifted toward asking.
+- **Deploy split into STAGING (Tier B) and PRODUCTION (Tier C).** This
+  distinction did not previously exist anywhere in the framework — §8,
+  `.opencode/contract.md` and ADR-0002 all treated every deploy as an
+  undifferentiated Tier-C gate. Staging deploys are now the fleet's call
+  (act-then-notify) while keeping every operational guardrail: dry-run first,
+  brief-only commands, refuse on a dirty tree or failing tests. **Production
+  deploys are unchanged and no guardrail is weakened** — per-deploy human
+  confirmation on every mutating command, all four Stage-2 conditions intact.
+  New prohibited coupling: a staging deploy must never auto-promote to
+  production (sibling of the existing merge-never-auto-deploys rule).
+- **ADR authorship/amendment moved Tier C → Tier B**, resolving a live
+  contradiction: §4 says Claude Code *owns* ADRs (architect lane) while §8
+  required owner pre-approval before writing one. Authorship is now
+  act-then-notify; the requirement to surface it prominently (PR + summary +
+  activity log) is retained — only the pre-approval gate is removed.
+- Files: `.ai/instructions/operating-prompt/principles.md` (§4, §8, §13),
+  `.claude/skills/operating-prompt/SKILL.md` (replica),
+  `docs/architecture/0011-git-ops-execution-to-opencode.md` (Amendment
+  2026-07-12b), `docs/architecture/0002-cli-role-topology.md` (deploy language
+  aligned), `.opencode/contract.md` + `AGENTS.md` (OpenCode is the deploy
+  executor: staging fleet-authorized, production human-confirmed),
+  `CLAUDE.md`, `.claude/agents/orchestrator.md`.
 
 ### Deprecated
 

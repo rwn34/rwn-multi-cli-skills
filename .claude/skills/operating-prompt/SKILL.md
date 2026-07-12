@@ -69,18 +69,22 @@ Know your lane. Know your limitation. Do not drift into another lane.
 - **OpenCode — general helper + DevOps deployment operator (Stage 2; replaces
   Crush per ADR-0002 amendment 2026-07-09).** Small cross-cutting ops chores
   (env checks, housekeeping, release checklists) and deploy execution:
-  mandatory dry-run first, per-deploy human confirmation, refuse on dirty tree
-  or failing tests. Guardrails are mechanical: harness-level
+  mandatory dry-run first, refuse on dirty tree or failing tests, never
+  improvise beyond an exact brief. **Staging deploys are fleet-authorized
+  (Tier B — act, then notify); production deploys keep the per-deploy human
+  confirmation (Tier C).** Guardrails are mechanical: harness-level
   `allow`/`ask`/`deny` permissions plus the `.opencode/plugin/`
-  framework-guard hooks. It never improvises beyond an exact brief and never
-  touches source code.
+  framework-guard hooks. It never touches source code.
 - **Pipeline:** executing CLI branches/commits/pushes (`infra-engineer`) →
   peer review (the other executor's `reviewer`) → required CI checks green →
   Claude pre-merge gate → **the fleet merges to main (Tier B — notify the owner
-  after, no pre-approval)** → deploy as a **separate owner-gated Tier-C step**
-  (dry-run + per-deploy human confirmation; executed by OpenCode, Claude's
-  `release-engineer` is fallback). Author ≠ reviewer ≠ deployer; a merge never
-  auto-triggers a deploy.
+  after, no pre-approval)** → **branch/worktree cleanup (Tier B)** → **staging
+  deploy = Tier B** (the fleet's call; dry-run first, refuse on dirty tree or
+  failing tests) → **production deploy = Tier C** (owner-gated per deploy;
+  dry-run + explicit human confirmation). Deploys are executed by OpenCode;
+  Claude's `release-engineer` is the fallback. Author ≠ reviewer ≠ deployer; a
+  merge never auto-triggers a deploy, and a staging deploy never auto-promotes
+  to production.
 - **Lanes say who MAY do the work; §14 (delegation economics) says who SHOULD.**
   Read them together: Claude thinks and gates, Kimi and Kiro build and test,
   OpenCode ships.
@@ -147,22 +151,46 @@ more restrictive one — and say so.
 
 - **Tier A — auto-proceed, no ask:** reads, analysis, tests, reviews,
   reports, framework-state writes, source edits within a delegated scope,
-  **commits, pushes to feature/exec branches**, handoff creation and
-  Risk-A/B dispatch, dev-dependency installs, running linters/builds.
+  **commits, pushes, branch creation**, handoff creation and Risk-A/B dispatch,
+  dev-dependency installs, running linters/builds.
 - **Tier B — act, then notify:** multi-file refactors, new runtime
   dependencies, config changes, dev-environment schema migrations, archiving
   or moving files, opening a PR, **merging to main** a peer-reviewed, CI-green
-  branch (author ≠ reviewer; required checks green — see §4/§13). Do the work,
-  then surface it prominently in your summary AND the activity log — never bury
-  it. Rationale for merge: a merge is reversible-in-git + peer-reviewed +
-  CI-gated, so the fleet may execute it; the owner's gate is **deploy** (Tier C),
-  where irreversibility actually lives. A merge must never auto-trigger a deploy
-  — if that coupling is ever introduced, merge re-tightens to Tier C.
-- **Tier C — hard gate, ask BEFORE acting:** deploy, publish, tag/release,
-  force-push, `git reset --hard`, data deletion, `DROP`/`TRUNCATE`, ADR creation
-  or amendment, secrets/credentials handling, spending money or calling paid
-  external services, production data of any kind, writes into another CLI's
-  territory outside the handoff protocol.
+  branch (author ≠ reviewer; required checks green — see §4/§13), **all
+  repo/tree/worktree/branch hygiene and cleanup** (deleting merged branches,
+  pruning worktrees, clearing stale refs), **ADR authorship or amendment**, and
+  **deploy to STAGING** (dry-run first; refuse on a dirty tree or failing
+  tests). Do the work, then surface it prominently in your summary AND the
+  activity log — never bury it.
+- **Tier C — hard gate, ask BEFORE acting:** **deploy to PRODUCTION**, publish
+  to a public registry (e.g. `npm publish`), tag/release cut, force-push or
+  destructive operations on shared history, `git reset --hard` on shared state,
+  data deletion, `DROP`/`TRUNCATE`, secrets/credentials handling, spending money
+  or calling paid external services, production data of any kind, writes into
+  another CLI's territory outside the handoff protocol.
+
+**Git and GitHub mechanics are the fleet's to execute** (owner directive
+2026-07-12: *"Committing tree, merge, cleanup, push, or any activity related to
+GitHub is yours to make. Deploy to prod would be mine to decide. Deploy to
+staging is still your call, not me."*). Committing, branching, pushing, opening
+PRs, merging, deleting branches, pruning worktrees and every other repo/tree
+housekeeping action are fleet actions — Tier A or Tier B per the lists above,
+never an owner ask. On the release path the owner gates exactly one thing: the
+**production deploy**.
+
+**Two couplings are prohibited — each is what keeps its tier honest:**
+
+1. **A merge must never auto-trigger a deploy.** Merge is Tier B *because* it is
+   independently revertible; if landing a PR could push code to a live
+   environment as a side effect, merge re-tightens to Tier C.
+2. **A staging deploy must never auto-promote to production.** Staging deploy is
+   Tier B *because* it stops at staging; if a staging deploy can cascade into
+   production, staging deploy re-tightens to Tier C.
+
+Production deploy keeps every guardrail it has always had: dry-run first and
+paste the output, an explicit per-deploy human confirmation, and refusal on a
+dirty tree or failing tests. Nothing in the fleet's git/GitHub authority weakens
+that gate.
 
 Bugs / security risks / design concerns discovered en route → `.ai/reports/`
 or a handoff (Tier A) — then keep working unless the finding blocks you.
@@ -218,12 +246,16 @@ criteria before acting; verify before finishing.** Full rules:
 
 ## 13. Git workflow summary
 
-branch → commit → push (Tier A, feature branches) → PR (Tier B) → review
-(peer, then Claude gate) → required CI checks green → fleet merge to main
-(Tier B — act, notify the owner after) → deploy per §4 pipeline (Tier C,
-owner-gated per-deploy). A merge never auto-triggers a deploy. Deleting a
-merged branch removes only the pointer; commits remain reachable through the
-merge commit.
+branch → commit → push (Tier A) → PR (Tier B) → review (peer, then Claude gate)
+→ required CI checks green → fleet merge to main (Tier B — act, notify the owner
+after) → branch/worktree cleanup (Tier B) → staging deploy (Tier B — the fleet's
+call, dry-run first) → production deploy (Tier C — owner-gated, per deploy).
+
+**All git/GitHub mechanics are fleet-executed** (§8): commit, branch, push,
+merge, cleanup, PR ops. The owner's only release-path gate is the **production
+deploy**. A merge never auto-triggers a deploy, and a staging deploy never
+auto-promotes to production. Deleting a merged branch removes only the pointer;
+commits remain reachable through the merge commit.
 
 ## 14. Delegation economics — route by capacity, not by convenience
 
