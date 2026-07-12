@@ -30,6 +30,39 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.27] - 2026-07-12
+
+### Security
+
+- **Closed the Bash side-door around the Write/Edit territorial guard.**
+  `.claude/hooks/pretool-bash.sh` did no path checking, so `cp`/`mv`/`install`/
+  `ln`/`dd`/`tee`/`sed -i` and shell redirections (`>`, `>>`, `>|`) could write
+  into `.kimi/**`, `.kiro/**`, `.claude/hooks/**`, `.env`, or non-allowlisted root
+  files — defeating the guard PR #50 had just fixed on the Write/Edit surface. The
+  bash hook now extracts each write TARGET and routes it through the SAME policy
+  classifier the Write/Edit hook uses.
+- **Scope (not overclaimed).** This shuts the door that is open by default:
+  accidental and casual-deliberate territorial writes via ordinary `cp`/`mv`/
+  `sed -i`/`tee`/redirects, plus the trivial self-modification path. It does NOT
+  stop a determined self-evader (`$(...)`, backticks, `eval`, `sh -c`/`bash -c`,
+  base64/hex-decoded or variable-assembled paths and command names) — those either
+  fail CLOSED as unparseable ("blocked for safety") or remain out of scope for a
+  static pre-execution guard. Read-side exfiltration (`cp .env /tmp/x`) is out of
+  scope by design: the policy classifies write TARGETS, asserted by an explicit
+  ALLOW test. The durable complement is narrowing which subagents get an
+  unrestricted Bash tool at all (follow-up ADR).
+
+### Changed
+
+- Extracted path normalization AND territorial/sensitive/root policy into a shared
+  `.claude/hooks/lib/path-policy.sh`, sourced by BOTH hooks. Neither hook
+  re-implements normalization or policy; a cross-hook divergence test fails loudly
+  if they ever disagree. This closes the recurring "two enforcement surfaces, one
+  rule, nothing keeping them in lockstep" pattern for path policy.
+- Added Rule 1.5 (enforcement-layer self-protection): `.claude/hooks/**` guard
+  scripts are owner-apply-only on BOTH surfaces — no agent edits its own guard via
+  a tool. (`test_hooks` t87 retargeted to `.claude/agents/`; t96–t99 added.)
+
 ## [0.0.26] - 2026-07-12
 
 ### Fixed

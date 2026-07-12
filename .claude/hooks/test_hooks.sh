@@ -2,6 +2,15 @@
 # test_hooks.sh — regression suite for .claude/hooks/pretool-*.sh
 # Exit 0 if all pass, 1 otherwise.
 # Run from repo root: bash .claude/hooks/test_hooks.sh
+#
+# This is the #50 Write/Edit regression suite, UNCHANGED except:
+#   * t87 retargeted from .claude/hooks/x.sh -> .claude/agents/x.sh, because the
+#     bash-guard fix adds Rule 1.5 (enforcement-layer self-protection): the guard
+#     scripts under .claude/hooks/ are now owner-apply-ONLY on BOTH surfaces. t87's
+#     job (prove an absolute .claude path relativizes + allows) is preserved by the
+#     .claude/agents/ target; the hooks subdir is exercised by t96-t99 below.
+#   * t96-t99 added for Rule 1.5.
+#   * the tail delegates to test-bash-guard.sh so one entry point runs everything.
 
 WE=".claude/hooks/pretool-write-edit.sh"
 BH=".claude/hooks/pretool-bash.sh"
@@ -116,10 +125,6 @@ run_test_cd "t37 worktree ../ escape blocked"      "$T/.wt/projA/kiro" "$WE" '{"
 run_test_cd "t38 worktree in-tree subagent write allowed" "$T/.wt/projA/kiro" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"src/x.ts"}}' 0
 
 # --- write-edit: python-less environment must NOT fail open (validation campaign 2026-07-09) ---
-# In the live Claude hook runtime python3 can be a Windows Store alias stub that prints
-# nothing + exits 0. These run the hook with python off PATH to prove the pure-bash/sed
-# extractor + fail-CLOSED handling work without python. They FAIL against the pre-fix
-# hook (which returned 0 for both t39 and t40) and PASS after the fix.
 run_test_nopy() {
   local name="$1" hook="$2" payload="$3" expected="$4"
   local hook_abs="$PWD/$hook" actual
@@ -140,9 +145,6 @@ run_test_nopy "t43 no-python framework .ai allowed"           "$WE" '{"tool_inpu
 run_test      "t44 non-empty unparseable stdin blocked"       "$WE" '{"tool_input":{"garbage":true}}'              2
 
 # --- pretool-bash: python-less environment must NOT fail open (validation campaign 2026-07-09) ---
-# Same WindowsApps python-stub fail-open class as t39-t44, but on the higher-severity
-# destructive-command guard. These FAIL against the pre-fix bash hook (which returned 0
-# for t45/t46 because cmd came back empty) and PASS after the fail-CLOSED + sed-fallback fix.
 run_test_nopy "t45 no-python rm -rf / blocked (fail-closed)"  "$BH" '{"tool_input":{"command":"rm -rf /"}}'        2
 run_test_nopy "t46 no-python git push --force blocked"        "$BH" '{"tool_input":{"command":"git push --force origin main"}}' 2
 run_test_nopy "t47 no-python benign ls allowed"               "$BH" '{"tool_input":{"command":"ls -la"}}'          0
@@ -159,37 +161,14 @@ run_test_nopy "t51 no-python unparseable stdin blocked"       "$BH" '{"tool_inpu
 # MSYS form (/c/Users/...) — and prefix-compared it against file_path, which the
 # Write/Edit tools emit as a WINDOWS absolute path (C:\Users\...). The compare never
 # matched, `rel` stayed absolute, and every territorial `case "$rel" in .kimi|.kimi/*)`
-# arm silently missed. A SUBAGENT could write into .kimi/ or .kiro/ via an absolute
-# path — exit 0, ALLOWED. The main thread was saved only incidentally by Rule 2.5.
-#
-# THE SUITE WAS THE REASON THIS SURVIVED: every fixture above feeds a RELATIVE path,
-# so the suite's input domain was strictly narrower than the runtime's and it
-# certified the hole 54/54 green. The fixtures below close that gap PERMANENTLY —
-# every territorial rule, in every path shape the runtime can emit, on both the
-# subagent and the main-thread path.
-#
-# All of these run with cwd = a scratch project root that is NOT under .wt/, because
-# Rule 2.6 (worktree confinement) blocks absolute paths outright and would mask the
-# bug: it is only observable from a primary checkout.
-#
-# Platform note: the hook's canonicalizer is pure lexical bash, so Windows-shaped
-# inputs (C:\..., C:/..., /C/...) are meaningful on Linux CI too — there they simply
-# resolve OUTSIDE the scratch root, and every one of them targets a rule whose verdict
-# is BLOCK either way. Only the drive-letter-form-UNDER-the-root ALLOW case cannot be
-# constructed off Windows; it is skipped loudly, never silently (see SKIPPED below).
+# arm silently missed. All of these run with cwd = a scratch project root NOT under
+# .wt/, because Rule 2.6 blocks absolute paths outright and would mask the bug.
 
 P="$T/proj"                                   # scratch primary-shaped root (from fixture block above)
-mkdir -p "$P/.kimi" "$P/.kiro" "$P/.claude" "$P/.ai" "$P/src" "$P/docs"
+mkdir -p "$P/.kimi" "$P/.kiro" "$P/.claude/hooks" "$P/.claude/agents" "$P/.ai" "$P/src" "$P/docs"
 
 bs()  { printf '%s' "$1" | tr '/' '\\'; }                       # /a/b -> \a\b
 jbs() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }                 # escape backslashes for JSON
-# /c/x -> C:/x. Empty when no Windows form exists (Linux CI) -> loud skip, never silent.
-# NOTE the asymmetry, and that it is deliberate: the TEST may lean on cygpath, the HOOK
-# may not. The hook is an enforcement point and must canonicalize with bash alone (an
-# earlier draft's cygpath fallback failed OPEN on 'C:' / 'C:foo' — fixtures t81/t82).
-# A test harness has no such constraint: here cygpath is just a convenience for building
-# a Windows-shaped fixture out of an MSYS temp dir (/tmp/... is not under a drive letter
-# even on Git Bash, so the lexical branch alone would skip these on Windows too).
 root_win() {
   case "$1" in
     /[A-Za-z]/*) printf '%s:/%s' "$(printf '%s' "${1:1:1}" | tr 'a-z' 'A-Z')" "${1:3}" ; return ;;
@@ -241,10 +220,7 @@ w "t77 abs .KIMI uppercase (subagent)"     2 "{\"agent_type\":\"coder\",\"tool_i
 w "t78 abs root non-allowlisted"           2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/evil.txt\"}}"
 w "t79 abs backslash root non-allowlisted" 2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\evil.txt")\"}}"
 
-# --- root-prefix BOUNDARY: a sibling dir whose name merely starts with the root name
-# must NOT be treated as living under the root. Without the "/" boundary guard,
-# "<root>.ai/evil.txt" strips to ".ai/evil.txt" and the main thread is ALLOWED to
-# write it — a genuine bypass into a directory outside the project.
+# --- root-prefix BOUNDARY ---
 w "t80 root-prefix boundary not under root" 2 "{\"tool_input\":{\"file_path\":\"$P.ai/evil.txt\"}}"
 
 # --- fail-CLOSED on path shapes the canonicalizer cannot understand ---
@@ -256,7 +232,9 @@ w "t83 path == project root blocked"       2 "{\"agent_type\":\"coder\",\"tool_i
 w "t84 abs src (subagent) allowed"         0 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/src/main.rs\"}}"
 w "t85 abs backslash src (subagent)"       0 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$(jbs "$PBS\\src\\main.rs")\"}}"
 w "t86 main-thread abs .ai allowed"        0 "{\"tool_input\":{\"file_path\":\"$P/.ai/research/x.md\"}}"
-w "t87 main-thread abs .claude allowed"    0 "{\"tool_input\":{\"file_path\":\"$P/.claude/hooks/x.sh\"}}"
+# t87 RETARGETED: .claude/hooks/ is now Rule-1.5 protected (see header). Use
+# .claude/agents/ to preserve t87's original purpose (abs .claude relativize+allow).
+w "t87 main-thread abs .claude/agents allowed" 0 "{\"tool_input\":{\"file_path\":\"$P/.claude/agents/x.md\"}}"
 w "t88 main-thread abs .ai dot-segments"   0 "{\"tool_input\":{\"file_path\":\"$P/./.ai/./research/../research/x.md\"}}"
 
 # --- drive-letter form UNDER the root: only constructible on a Windows-ish shell ---
@@ -269,9 +247,6 @@ else
 fi
 
 # --- Rule 2.6 worktree confinement must survive canonicalization (ADR-0004) ---
-# In a worktree, an absolute path UNDER the worktree is legal and now normalizes to a
-# relative one (before the fix it was blocked as an "escape" — Rule 2.6 was
-# load-bearing while broken: it blocked ALL absolute writes, legal ones included).
 WT="$T/.wt/projA/kiro"
 run_test_cd "t91 worktree abs in-tree write allowed"   "$WT" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$WT/src/x.ts\"}}" 0
 run_test_cd "t92 worktree abs .kimi in-tree blocked"   "$WT" "$WE" "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$WT/.kimi/x.md\"}}" 2
@@ -279,18 +254,37 @@ run_test_cd "t93 worktree abs backslash escape blocked" "$WT" "$WE" "{\"agent_ty
 run_test_cd "t94 worktree dotdot escape blocked"        "$WT" "$WE" '{"agent_type":"coder","tool_input":{"file_path":"../../../projA/src/x.ts"}}' 2
 run_test_cd "t95 worktree junctioned .ai write allowed" "$WT" "$WE" '{"tool_input":{"file_path":".ai/handoffs/to-claude/open/x.md"}}' 0
 
+# --- Rule 1.5 — enforcement-layer self-protection (NEW: bash-guard fix) ---
+# .claude/hooks/ guard scripts are owner-apply-ONLY on the Write/Edit surface too
+# (defense-in-depth with the harness; and covers any subagent Write/Edit the
+# harness may not gate). The Bash surface's twin cases live in test-bash-guard.sh.
+w "t96 subagent .claude/hooks blocked (rel)"   2 '{"agent_type":"coder","tool_input":{"file_path":".claude/hooks/evil.sh"}}'
+w "t97 main-thread .claude/hooks blocked"      2 '{"tool_input":{"file_path":".claude/hooks/pretool-bash.sh"}}'
+w "t98 subagent .claude/agents STILL allowed (only hooks blocked)" 0 '{"agent_type":"coder","tool_input":{"file_path":".claude/agents/x.md"}}'
+w "t99 abs .claude/hooks blocked"              2 "{\"agent_type\":\"coder\",\"tool_input\":{\"file_path\":\"$P/.claude/hooks/x.sh\"}}"
+
 rm -rf "$T"
 
-total=$((pass+fail))
+we_total=$((pass+fail))
 if [ "$skip" -gt 0 ]; then
   echo "SKIPPED: $skip"
   for s in "${skips[@]}"; do echo "  - $s"; done
 fi
 if [ $fail -eq 0 ]; then
-  echo "PASS: $pass/$total"
+  echo "write-edit suite: PASS $pass/$we_total"
+else
+  echo "write-edit suite: FAIL $fail/$we_total"
+  for f in "${fails[@]}"; do echo "  - $f"; done
+fi
+
+# --- Delegate to the Bash side-door suite (shares the same classify_path). ---
+echo "--- running test-bash-guard.sh ---"
+if bash "$(dirname "$0")/test-bash-guard.sh"; then bg=0; else bg=1; fi
+
+if [ $fail -eq 0 ] && [ $bg -eq 0 ]; then
+  echo "ALL SUITES PASS"
   exit 0
 else
-  echo "FAIL: $fail/$total"
-  for f in "${fails[@]}"; do echo "  - $f"; done
+  echo "SUITE FAILURES — see above"
   exit 1
 fi
