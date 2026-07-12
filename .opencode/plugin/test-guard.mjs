@@ -1,8 +1,13 @@
 // Standalone test harness for framework-guard's decision function.
 // Run: node .opencode/plugin/test-guard.mjs
-import { decide, WRITABLE_LANE } from "./framework-guard.js";
+// WRITABLE_LANE now lives in ../lib/lane.js (a data module OUTSIDE the plugin glob)
+// so framework-guard.js can export only functions — see the load-path tests at the
+// bottom of this file and .ai/reports/opencode-2026-07-12-guard-dead-plugin-load-failure.md.
+import { decide, FrameworkGuard } from "./framework-guard.js";
+import { WRITABLE_LANE } from "../lib/lane.js";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 // Sandbox roots derived via path.resolve so they are genuinely absolute on the
@@ -299,6 +304,104 @@ for (const file of [".opencode/contract.md", "AGENTS.md"]) {
     true
   );
 }
+
+// ===========================================================================
+// LOAD-PATH TESTS (2026-07-12) — the invariant the plugin HOST requires.
+//
+// The 133 assertions above unit-test decide()/the lane; NONE of them load the
+// module the way OpenCode does, so a total plugin-load failure shipped green:
+// PR #45 added `export const WRITABLE_LANE = []` (an array) to framework-guard.js,
+// and OpenCode's host — which globs `{plugin,plugins}/*.{ts,js}` and calls
+// `if(!isFunction(export)) throw TypeError("Plugin export is not a function")`
+// over EVERY top-level export — rejected the whole module, so nothing was
+// lane-restricted at runtime. These tests reproduce the host's contract:
+//   (1) every top-level export of every host-loaded plugin module is a function;
+//   (2) the plugin actually INITIALIZES and its tool.execute.before hook blocks
+//       out-of-lane writes and allows in-lane ones (the real end-to-end path);
+//   (3) the WRITABLE_LANE data module is NOT in the plugin-load glob (so exporting
+//       a non-function array from it can never break loading again).
+// See .ai/reports/opencode-2026-07-12-guard-dead-plugin-load-failure.md.
+// ===========================================================================
+
+const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url));
+const OPENCODE_DIR = path.resolve(PLUGIN_DIR, "..");
+
+// Mirror OpenCode's discovery glob `{plugin,plugins}/*.{ts,js}` (non-recursive,
+// only .ts/.js — NOT .mjs, which is why test-guard.mjs itself is never loaded as
+// a plugin). Returns absolute paths of every file the host would import as a plugin.
+function hostLoadedPluginFiles() {
+  const files = [];
+  for (const dirName of ["plugin", "plugins"]) {
+    const dir = path.join(OPENCODE_DIR, dirName);
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (/\.(ts|js)$/.test(name) && fs.statSync(path.join(dir, name)).isFile()) {
+        files.push(path.join(dir, name));
+      }
+    }
+  }
+  return files;
+}
+
+async function checkAllExportsAreFunctions(absFile, label) {
+  const mod = await import(pathToFileHref(absFile));
+  const nonFns = Object.entries(mod).filter(([, v]) => typeof v !== "function");
+  check(
+    `${label}: every top-level export is a function (host invariant)`,
+    { allow: nonFns.length === 0, reason: `non-function exports: ${nonFns.map(([k, v]) => `${k}=${typeof v}`).join(", ")}` },
+    true
+  );
+}
+
+function pathToFileHref(absPath) {
+  // Cross-platform file:// URL so dynamic import() works on Windows too.
+  let p = absPath.replace(/\\/g, "/");
+  if (!p.startsWith("/")) p = "/" + p; // drive-letter form -> /C:/...
+  return "file://" + encodeURI(p);
+}
+
+// (1) HOST INVARIANT — every plugin module the host globs exports only functions.
+const hostFiles = hostLoadedPluginFiles();
+check("host discovers exactly framework-guard.js as a plugin", { allow: hostFiles.length === 1 && /framework-guard\.js$/.test(hostFiles[0]) }, true);
+for (const f of hostFiles) {
+  await checkAllExportsAreFunctions(f, path.basename(f));
+}
+
+// (3) The WRITABLE_LANE data module must NOT be in the host's plugin-load path.
+// It exports a non-function array on purpose; the load-bearing guarantee is that
+// the host never imports it as a plugin. It lives at ../lib/lane.js, outside the
+// `{plugin,plugins}/` glob.
+const laneModule = path.resolve(OPENCODE_DIR, "lib", "lane.js");
+check("lane.js data module exists at ../lib/lane.js", { allow: fs.existsSync(laneModule) }, true);
+check("lane.js is NOT in the plugin-load glob", { allow: !hostFiles.some((f) => path.resolve(f) === laneModule), reason: `lane.js was globbed as a plugin: ${hostFiles.join(", ")}` }, true);
+check("lane.js is outside any {plugin,plugins}/ dir", { allow: !/[\\/](plugins?)[\\/][^\\/]+$/.test(laneModule) }, true);
+
+// (2) END-TO-END — initialize the plugin exactly like the host and drive its hook.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "guard-loadtest-"));
+const plugin = await FrameworkGuard({ directory: tmpRoot });
+check("FrameworkGuard() returns an object", { allow: !!plugin && typeof plugin === "object" }, true);
+const hook = plugin && plugin["tool.execute.before"];
+check("plugin exposes a tool.execute.before hook function", { allow: typeof hook === "function" }, true);
+
+async function hookAllows(filePath) {
+  // Returns true if the hook lets the write through, false if it throws (BLOCKED).
+  try {
+    await hook({ tool: "write" }, { args: { filePath } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (typeof hook === "function") {
+  check("hook BLOCKS write src/x.js (must-block)", { allow: !(await hookAllows("src/x.js")) }, true);
+  check("hook ALLOWS write .ai/reports/x.md (in-lane)", { allow: await hookAllows(".ai/reports/x.md") }, true);
+  check("hook ALLOWS write .github/x.yml (repo-ops lane)", { allow: await hookAllows(".github/x.yml") }, true);
+  check("hook BLOCKS write .env (secret, must-block)", { allow: !(await hookAllows(".env")) }, true);
+  check("hook BLOCKS write .claude/x.md (other CLI territory)", { allow: !(await hookAllows(".claude/x.md")) }, true);
+}
+
+fs.rmSync(tmpRoot, { recursive: true, force: true });
 
 console.log(`PASS ${pass} / FAIL ${fail} (total ${pass + fail})`);
 if (fail > 0) {

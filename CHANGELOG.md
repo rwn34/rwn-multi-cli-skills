@@ -42,6 +42,21 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.35] - 2026-07-12
+
+### Fixed
+
+- OpenCode enforcement guard restored: `.opencode/plugin/framework-guard.js` no
+  longer fails to load. PR #45 had added a non-function top-level export
+  (`export const WRITABLE_LANE = []`), which OpenCode's plugin host rejects with
+  `TypeError("Plugin export is not a function")` — killing the entire plugin, so
+  at runtime NOTHING was lane-restricted (project source, secrets, other CLIs'
+  territory were all writable). The lane data moved to `.opencode/lib/lane.js`
+  (outside the host's `{plugin,plugins}/*.{ts,js}` discovery glob), so the guard
+  module now exports only functions. Added load-path tests to `test-guard.mjs`
+  that reproduce the host's export invariant and drive the initialized hook
+  end-to-end, so a total load failure can never ship green again.
+
 ## [0.0.34] - 2026-07-12
 
 ### Fixed

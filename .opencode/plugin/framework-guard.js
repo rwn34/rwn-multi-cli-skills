@@ -21,39 +21,18 @@
 //      every allow rule — the lane never licenses writing a secret file.
 // Node builtins only. Decision logic is a pure exported function so
 // test-guard.mjs can unit-test it without the plugin host.
+//
+// LOAD-BEARING EXPORT RULE: OpenCode's plugin host globs `{plugin,plugins}/*.{ts,js}`
+// and requires EVERY top-level export of a matched module to be a plugin function —
+// it throws `TypeError("Plugin export is not a function")` on the first non-function
+// export, killing the WHOLE plugin. So this file must export ONLY functions
+// (`decide`, `FrameworkGuard`). The writable-lane DATA lives in ../lib/lane.js
+// (outside the plugin glob) precisely so exporting it does not break plugin loading.
+// See ../lib/lane.js and .ai/reports/opencode-2026-07-12-guard-dead-plugin-load-failure.md.
 
 import path from "node:path";
 import fs from "node:fs";
-
-/**
- * OpenCode's writable lane — THE enforced list. `<prefix>/**` = subtree,
- * bare path = exact file. Matching is case-SENSITIVE (a case variant fails
- * closed, i.e. blocked).
- *
- * This constant is machine-checked against the LANE:BEGIN/LANE:END block in
- * .opencode/contract.md and AGENTS.md by test-guard.mjs. A doc that misdescribes
- * this list is the exact bug that blocked handoff 202607120021 (docs said
- * "CI workflow fixes are yours", the guard said "no .github/") — so drift is a
- * test failure, not a comment.
- *
- * .github/** was added 2026-07-12: the GitHub / repo-ops lane (operating-prompt
- * §14, ADR-0011) assigns CI config + workflow fixes to OpenCode. Deliberately NOT
- * added: infra/, scripts/, Dockerfile, docker-compose* — see the contract.
- *
- * .ai/activity/entries/** was added 2026-07-12 (ADR-0010 blocker): the activity log
- * becomes an entry-per-file spool, and this exact-string lane entry
- * (`rel === ".ai/activity/log.md"`) is one of the two layers that would block
- * OpenCode from writing an entry at all. Additive on purpose — `.ai/activity/log.md`
- * stays writable, because the migration has not happened yet and this permission
- * plumbing must be safe to land on its own.
- */
-export const WRITABLE_LANE = [
-  ".ai/activity/log.md",
-  ".ai/activity/entries/**",
-  ".ai/reports/**",
-  ".ai/handoffs/**",
-  ".github/**",
-];
+import { WRITABLE_LANE } from "../lib/lane.js";
 
 const LANE = `OpenCode's writable lane is ${WRITABLE_LANE.join(", ")} (see .opencode/contract.md)`;
 
