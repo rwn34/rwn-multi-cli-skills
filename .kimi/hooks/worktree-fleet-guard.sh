@@ -25,18 +25,90 @@ if [ -z "$path" ]; then
     exit 2
 fi
 
-project_root=$(pwd)
-project_root="${project_root%/}"
+# --- lexical path canonicalizer (pure bash; NO realpath/cygpath) -----------
+# The runtime emits Windows-ABSOLUTE paths (C:\..., C:/...) while pwd yields
+# the MSYS form (/c/...). The old prefix compare across those forms never
+# matched, so: (1) a sibling-prefix escape (/c/repo-evil/x) was read as
+# IN-TREE and allowed, and (2) a legitimate in-tree write emitted as
+# C:/<worktree>/... was blocked as a false-positive escape (handoff
+# 202607120059; same class as Kiro's T-K2 fix of 2026-07-09).
+#
+# canon_path handles: relative, C:\x, C:/x, /c/x, mixed separators, drive
+# case (C: vs c:), and . / .. segments — all LEXICALLY. Fail-CLOSED: a shape
+# we refuse (bare drive `C:`, drive-relative `C:foo`) blocks the write, and
+# a refusal is FINAL.
+#
+# Why not realpath/cygpath (proven traps):
+#   - cygpath -u 'C:' → '/c' and cygpath -u 'C:foo\bar' SUCCEEDS — the
+#     refused shapes come back looking canonical and sail through to exit 0.
+#   - realpath / cygpath -a resolve reparse points; per ADR-0004 .ai/ inside
+#     a worktree IS a Windows junction — resolving it relocates every .ai/
+#     write outside the worktree root and breaks legitimate handoff writes.
+canon_collapse() {
+    # Lexically collapse . and .. (no filesystem access). Absolute: .. at the
+    # root is a no-op. Relative: leading .. is preserved so the confinement
+    # rule below still sees the escape.
+    local p="$1" absolute=0 seg joined=""
+    case "$p" in /*) absolute=1 ;; esac
+    local parts=() stack=()
+    local old_ifs="$IFS"; IFS='/'
+    read -r -a parts <<< "$p"
+    IFS="$old_ifs"
+    for seg in "${parts[@]}"; do
+        case "$seg" in
+            ""|.) ;;
+            ..)
+                if [ "${#stack[@]}" -gt 0 ] && [ "${stack[$((${#stack[@]}-1))]}" != ".." ]; then
+                    stack=("${stack[@]:0:$((${#stack[@]}-1))}")
+                elif [ "$absolute" -eq 0 ]; then
+                    stack+=("..")
+                fi
+                ;;
+            *) stack+=("$seg") ;;
+        esac
+    done
+    for seg in ${stack[@]+"${stack[@]}"}; do joined="$joined/$seg"; done
+    if [ "$absolute" -eq 1 ]; then
+        printf '%s' "${joined:-/}"
+    else
+        joined="${joined#/}"
+        printf '%s' "${joined:-.}"
+    fi
+}
 
-# Normalize absolute path → relative if under project_root
-if [ "${path:0:${#project_root}}" = "$project_root" ]; then
-    rel="${path:${#project_root}}"
-    rel="${rel#/}"
+canon_path() {
+    # $1 = raw tool-emitted path. Prints the canonical form; returns 1 for a
+    # refused shape (bare drive / drive-relative).
+    local p d
+    p=$(printf '%s' "$1" | tr '\\' '/')
+    case "$p" in
+        [A-Za-z]:/*)
+            d=$(printf '%s' "${p:0:1}" | tr 'A-Z' 'a-z')
+            p="/$d${p:2}" ;;
+        [A-Za-z]:*)
+            return 1 ;;
+    esac
+    canon_collapse "$p"
+}
+
+project_root=$(canon_collapse "$(pwd | tr '\\' '/')")
+path_canon=$(canon_path "$path") || {
+    echo "BLOCKED: path '$path' has a refused shape (bare drive or drive-relative) — failing closed against worktree/fleet writes." >&2
+    exit 2
+}
+# Relativize ONLY when genuinely under project_root: case-folded compare plus
+# a trailing-'/' boundary, so /c/repo-evil/x is NOT read as under /c/repo.
+# Outside paths STAY ABSOLUTE — Rules 1 and 2 below match the absolute form.
+_pr=$(printf '%s' "$project_root" | tr 'A-Z' 'a-z')
+_pp=$(printf '%s' "$path_canon" | tr 'A-Z' 'a-z')
+if [ "$_pp" = "$_pr" ]; then
+    rel="."
+elif [ "${_pp:0:${#_pr}}" = "$_pr" ] && [ "${_pp:${#_pr}:1}" = "/" ]; then
+    rel="${path_canon:$((${#project_root}+1))}"
 else
-    rel="$path"
+    rel="$path_canon"
 fi
-# Normalize Windows backslashes
-rel=$(echo "$rel" | tr '\\' '/')
+unset _pr _pp
 
 block() {
     echo "BLOCKED by worktree-fleet-guard: $1" >&2

@@ -30,6 +30,52 @@ adheres to [Semantic Versioning](https://semver.org).
 
 - [TODO: vulnerabilities addressed]
 
+## [0.0.23] - 2026-07-12
+
+### Fixed
+
+- **All three Kimi enforcement hooks failed to enforce anything on absolute paths.**
+  `.kimi/hooks/worktree-fleet-guard.sh`, `framework-guard.sh`, and `root-guard.sh`
+  compared tool-emitted paths against `pwd` byte-for-byte, but the runtime emits
+  Windows-absolute forms (`C:\...`, `C:/...`) while Git Bash `pwd` yields the MSYS
+  form (`/c/...`). The compare never matched, so: `framework-guard.sh` let every
+  absolute/backslash/`..`-laundered write into `.claude/`, `.kiro/`, `.codegraph/`,
+  `.kimigraph/`, `.kirograph/` fall through to allow; `root-guard.sh`'s
+  "contains a slash ⇒ not at root" test allowed `C:/<repo>/evil.txt` — a write
+  straight at the repo root — unconditionally; `worktree-fleet-guard.sh` read a
+  sibling-prefix escape (`/c/repo-evil/x`) as in-tree and ALLOWED it, while blocking
+  legitimate in-tree writes emitted as `C:/<worktree>/...` as false-positive escapes.
+  The suite was 55/55 green because every fixture it fed was relative — the tests
+  and the runtime disagreed about the input domain. Same defect class Kiro fixed
+  2026-07-09 (T-K2) and Claude fixed on its own side (handoff
+  `202607120020-hook-abspath-bypass`); propagated to Kimi via handoff
+  `202607120059-kimi-guard-abspath-bypass`.
+- **Kimi hook suite was not hermetic.** `test_hooks.sh` passed 55/55 from the primary
+  checkout but failed 2/55 (t32/t35, fleet fixtures) from a worktree cwd — worktree
+  confinement legitimately blocked the absolute fixture paths before the fleet rule
+  ran. Under the ADR-0004 amendment dispatched CLIs run in worktrees, so the suite
+  failed in exactly the environment it now executes in. Fleet fixtures now pin cwd,
+  hook paths resolve from the script's location (not cwd), and path-shape fixtures
+  derive from the session root so the suite is green from both cwds (90/90).
+
+### Added
+
+- **Lexical pure-bash path canonicalizer in all three Kimi guards.** One repo-relative
+  form whether handed relative, `C:\x`, `C:/x`, `/c/x`, mixed separators, `c:` vs
+  `C:`, or `.`/`..` segments. Fail-CLOSED: bare-drive (`C:`) and drive-relative
+  (`C:foo`) shapes block the write. Only paths genuinely under the project root are
+  relativized (case-folded compare with a trailing-`/` boundary, so `/c/repo-evil`
+  is not read as under `/c/repo`); outside paths stay absolute for the
+  worktree/fleet rules. Deliberately NOT `realpath`/`cygpath`: `cygpath -u 'C:'`
+  and `cygpath -u 'C:foo\bar'` succeed (fail-open), and reparse-point resolution
+  would relocate `.ai/` junction writes outside a worktree (ADR-0004).
+- **Absolute-path fixtures for every territorial rule** in `test_hooks.sh` (55 → 90
+  assertions): each guard exercised in MSYS-absolute, Windows forward/backslash,
+  mixed-separator, lowercase-drive, `./`-prefixed and `..`-laundered forms, plus
+  sibling-prefix boundary and fail-closed shape refusals. Anti-tautology-verified:
+  the new fixtures produce 22 distinct failures against the pristine `origin/master`
+  guards.
+
 ## [0.0.21] - 2026-07-12
 
 ### Fixed
