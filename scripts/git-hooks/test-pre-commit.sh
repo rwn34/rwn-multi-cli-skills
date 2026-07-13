@@ -232,11 +232,48 @@ pf() {
 
 # mkrepo — materialize a throwaway repo from the current worktree's framework
 # files, wired to the hook, with a synced initial commit. Echoes the repo path.
+#
+# Isolation note (handoff 202607131242): $REPO_ROOT/.ai can be a Windows
+# directory junction (ADR-0004 worktree topology) pointing at the ONE
+# canonical .ai/ shared by every CLI's worktree. A sandbox copy that ever
+# aliased that junction instead of copying it would let this test's marker
+# injections (below) write straight through into live fleet state — silently,
+# since nothing here reads the result back through the junction to notice.
+#
+# -RL forces dereference explicitly (never rely on an unstated cp default —
+# GNU coreutils dereferences a command-line-argument symlink/junction under
+# -R without -P, but that is a default, not a documented contract, and a
+# different cp (BusyBox, an older coreutils, a future flag-default change)
+# could silently regress it into a reparse-point copy). The inode/device
+# assertion below is the actual guard: it does not trust cp's behavior, it
+# VERIFIES the result and aborts the whole run — loudly, before any marker is
+# ever written — if the sandbox and canonical .ai ever turn out to be the same
+# file on disk.
 mkrepo() {
     d="$(mktemp -d)"
-    cp -R "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
-          "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
+    cp -RL "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
+           "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
     cp "$REPO_ROOT/.gitattributes" "$d/" 2>/dev/null
+
+    # GUARD: assert the sandbox .ai is NOT the same file as canonical .ai.
+    # Compare a real file's (device, inode) pair via `stat -c` rather than
+    # trusting any directory-level "is this a junction" check, since a
+    # dereferencing copy can still alias individual files under some cp/OS
+    # combinations even when the top-level entry itself is a plain directory.
+    _probe_rel=".ai/instructions/karpathy-guidelines/examples.md"
+    if [ -f "$REPO_ROOT/$_probe_rel" ] && [ -f "$d/$_probe_rel" ]; then
+        _canon_id="$(stat -c '%d:%i' "$REPO_ROOT/$_probe_rel" 2>/dev/null)"
+        _sand_id="$(stat -c '%d:%i' "$d/$_probe_rel" 2>/dev/null)"
+        if [ -n "$_canon_id" ] && [ "$_canon_id" = "$_sand_id" ]; then
+            echo "FATAL: sandbox .ai is not isolated from canonical .ai" >&2
+            echo "  $REPO_ROOT/$_probe_rel  ($_canon_id)" >&2
+            echo "  $d/$_probe_rel  ($_sand_id)" >&2
+            echo "  refusing to run marker-injection tests against live fleet state" >&2
+            rm -rf "$d"
+            exit 1
+        fi
+    fi
+
     git -C "$d" init -q 2>/dev/null
     git -C "$d" config core.hooksPath scripts/git-hooks
     git -C "$d" config user.email test@example.com
