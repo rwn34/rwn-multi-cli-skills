@@ -20,6 +20,20 @@ promotion happened.
 
 ### Added
 
+- **Cockpit handoff ownership — the `Auto:` tag is the claim boundary.** New
+  `.ai/tools/claim-handoff.sh` + `.ai/tools/release-handoff.sh`: a cockpit
+  (interactive session) takes an `Auto: yes` handoff ONLY by atomically flipping
+  `Auto:` to `no` and writing a claim sidecar under `.ai/handoffs/.claims/`, so
+  the auto pane skips it on its next poll; the inverse restores pane ownership
+  for "claimed it, changed my mind". Staleness mirrors
+  `pane-runner.ps1 Test-HandoffClaimed` exactly (same-host dead pid → reclaim;
+  15-minute window otherwise; fail-closed on ambiguity). Rule documented in
+  `.ai/handoffs/README.md` (Polling section); the operating-prompt SSOT
+  one-liner and CLAUDE.md/AGENTS.md contract wording route through claude-code
+  (only claude-code may commit cross-CLI SSOT replicas atomically per the
+  ADR-0005 pre-commit policy). Covered by the new sibling suite
+  `tools/4ai-panes/test-claim-handoff.ps1`, which drives the real
+  `Get-QualifyingHandoff` gate. Symmetric across all four CLIs.
 - [TODO: new features]
 
 ### Changed
