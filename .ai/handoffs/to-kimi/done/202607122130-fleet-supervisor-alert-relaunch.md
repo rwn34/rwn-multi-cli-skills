@@ -1,5 +1,5 @@
 # Fleet supervisor: detect a dead fleet, alert the owner, relaunch it
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-12 21:30
