@@ -33,8 +33,11 @@ jobs:
         with:
           node-version: '20'
 
+      # The ONE drift authority is the generator itself: --check regenerates
+      # every replica into a temp tree and diffs. On failure it prints the
+      # copy-pasteable fix (`bash .ai/tools/sync-replicas.sh`) to stderr.
       - name: SSOT drift check
-        run: bash .ai/tools/check-ssot-drift.sh
+        run: bash .ai/tools/sync-replicas.sh --check
 
       - name: Claude hooks test suite
         run: bash .claude/hooks/test_hooks.sh
