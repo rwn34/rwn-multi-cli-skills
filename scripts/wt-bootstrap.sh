@@ -44,7 +44,9 @@ What it does, per executor:
   1. Create a git worktree at <parent>/.wt/<project>/<executor>/ on branch
      exec/<executor>/init (skipped cleanly if the worktree already exists).
   2. Replace that worktree's .ai/ with a junction (Windows) / symlink (POSIX)
-     to the canonical <project-dir>/.ai/. Re-established idempotently.
+     to the canonical <project-dir>/.ai/. Re-established idempotently. DIES
+     LOUD if .ai has degraded into a real directory holding uncommitted
+     content (split-brain guard), and verifies the link post-creation.
   3. Add ".ai" to the worktree's .git/info/exclude so the junction is never
      committed.
 
@@ -135,8 +137,20 @@ link_ai() {
   elif [ -d "$link" ] && is_windows && [ -n "$(cmd_islink "$link")" ]; then
     cmd //c rmdir "$(winpath "$link")" >/dev/null 2>&1 || true
   elif [ -e "$link" ]; then
-    # A real checked-out .ai copy from the worktree add — remove the copy so we
-    # can junction the canonical one in its place. Safe: contents are tracked.
+    # A real .ai DIRECTORY where the junction should be. Two cases:
+    #  - fresh `git worktree add` checkout: contents exactly match the index
+    #    -> safe to replace with the junction (nothing exists only here).
+    #  - DEGRADED junction: the link was replaced by a real dir after the last
+    #    bootstrap and may hold LIVE coordination-plane state (handoffs,
+    #    reports, log entries) that exists NOWHERE else. Replacing it blindly
+    #    would silently destroy fleet state and split-brain the plane
+    #    (2026-07-12: kimi's .ai degraded unnoticed and was re-junctioned by
+    #    hand). Verify clean, else die loud.
+    dirty_ai="$(git -C "$wt_path" status --porcelain -- .ai 2>/dev/null || true)"
+    if [ -n "$dirty_ai" ]; then
+      die "DEGRADED .ai at $link: real directory with uncommitted content, not a junction — refusing to replace it. Inspect by hand:
+$dirty_ai"
+    fi
     rm -rf "$link"
   fi
 
@@ -146,6 +160,18 @@ link_ai() {
   else
     ln -s "$PROJECT_DIR/.ai" "$link" \
       || die "ln -s failed for $link"
+  fi
+
+  # Post-condition (fail loud): .ai MUST now be a link into the canonical
+  # plane. A real directory here is a coordination-plane split-brain — a CLI
+  # silently reading the wrong queue, which is far worse than a failed
+  # branch cut.
+  if is_windows; then
+    [ -n "$(cmd_islink "$link")" ] \
+      || die ".ai junction verification failed at $link (not a reparse point after relink)"
+  else
+    [ -L "$link" ] \
+      || die ".ai symlink verification failed at $link (not a symlink after relink)"
   fi
 }
 

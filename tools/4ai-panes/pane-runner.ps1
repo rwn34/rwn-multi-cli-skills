@@ -47,7 +47,7 @@
 # The declared-base branch cut (Ensure-DeclaredBaseBranch below) IS a second,
 # native-PowerShell implementation of dispatch-handoffs.sh's
 # ensure_declared_base_branch(): that piece is plain git plumbing (fetch,
-# rev-parse, checkout -b) cheap enough to keep 1:1 in both languages, and
+# rev-parse, branch + symbolic-ref + restore) cheap enough to keep 1:1 in both languages, and
 # shelling out to bash for every git call the supervisor loop makes on every
 # poll cycle would be slower and adds a bash-availability dependency to the hot
 # path. Test (parity guard, see test-pane-runner.ps1) asserts the two
@@ -396,7 +396,7 @@ function Get-DeclaredBase {
 # NATIVE-STDERR GUARD (regression fix 2026-07-12, second-order): every git call
 # below is a NATIVE command, and git writes ordinary progress to STDERR — `git
 # fetch` emits "From https://github.com/..." whenever it actually retrieves refs,
-# and `git checkout` emits "Switched to a new branch '...'". This script runs
+# and `git branch <name> origin/<x>` emits "branch '<name>' set up to track...". This script runs
 # under $ErrorActionPreference='Stop' (set at the top), which PROMOTES a native
 # command's stderr record to a TERMINATING NativeCommandError. `*> $null` does NOT
 # suppress that promotion in PS 5.1 — the throw happens before the redirect. So a
@@ -439,19 +439,44 @@ function Ensure-DeclaredBaseBranchReal {
             return $false
         }
 
+        # Attach HEAD to exec/<cli>/<slug> WITHOUT a checkout. A plain `git
+        # checkout` (or `checkout -b`) ABORTS in every executor worktree the
+        # moment the junctioned .ai/ holds live coordination-plane state that
+        # differs from this worktree's (often stale) HEAD: git reads that as
+        # "local changes" and refuses to touch the files (2026-07-12/13 fleet
+        # outage — every auto-dispatch WORKTREE_FAIL -> quarantine; see
+        # .ai/handoffs/to-kiro/open/202607122330-fix-ai-junction-branch-cut-landmine.md).
+        # The dirty-check above excludes .ai/ BY DESIGN, so checkout's refusal
+        # was the contradictory second half of one rule. symbolic-ref moves
+        # HEAD without rewriting a single file; the restores then converge
+        # worktree+index onto the branch tip for everything EXCEPT .ai/ —
+        # which is LIVE through the junction and must never be written by git
+        # in a worktree — and the index alone for .ai/, so `git status` shows
+        # genuine plane churn instead of staged phantoms. `git restore` with
+        # an explicit --source defaults to --no-overlay: files absent on the
+        # branch are removed from the worktree too (verified empirically).
         git show-ref --verify --quiet "refs/heads/$branch" *> $null
-        if ($LASTEXITCODE -eq 0) {
-            git checkout --quiet $branch *> $null
+        if ($LASTEXITCODE -ne 0) {
+            git branch $branch $Base *> $null
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "  ERROR: could not check out existing branch $branch in $WtPath" -ForegroundColor Red
+                Write-Host "  ERROR: could not create branch $branch at $Base in $WtPath" -ForegroundColor Red
                 return $false
             }
-        } else {
-            git checkout --quiet -b $branch $Base *> $null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "  ERROR: could not cut $branch from $Base in $WtPath" -ForegroundColor Red
-                return $false
-            }
+        }
+        git symbolic-ref HEAD "refs/heads/$branch" *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: could not attach HEAD to $branch in $WtPath" -ForegroundColor Red
+            return $false
+        }
+        git restore --source=$branch --staged --worktree -- . ':!.ai' *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: could not sync $WtPath to $branch (excluding .ai/)" -ForegroundColor Red
+            return $false
+        }
+        git restore --source=$branch --staged -- .ai *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: could not sync the .ai/ index entries in $WtPath" -ForegroundColor Red
+            return $false
         }
         return $true
     } finally {
