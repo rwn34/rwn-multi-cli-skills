@@ -1,11 +1,26 @@
 # Write the missing PR #55 review report (delivery-integrity)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-12 19:30
 Auto: yes
 Risk: A
 Base: origin/master
+
+## Completion (kimi-cli, 2026-07-13 06:15 +0700)
+- Wrote `.ai/reports/kimi-2026-07-12-review-pr55.md` — the actual PR #55 review
+  (verdict APPROVE-WITH-NOTES; F1 widened-exception bypass non-blocking, F2/F3
+  notes), compiled from the surviving verbatim review record (the posted PR
+  comment) plus fresh re-verification against master @ `fadefea`.
+- Honest coverage statement (as ordered): test-pre-commit.sh (111/0) and
+  check-ssot-drift.sh (24 replicas, Drift 0) WERE re-run at write time; F1's
+  unanchored grep re-confirmed statically (`scripts/git-hooks/pre-commit:66-68`).
+  The throwaway-repo live-fires (F1 truncation commit, human-refusal matrix)
+  were NOT re-run — disposable repos no longer exist; outcomes are recorded as
+  executed at review time. ≥2 adversarial attempts WERE made (six; one succeeded
+  = F1). No evidence back-filled.
+- Touched: the report, the handoff (this file), `.ai/activity/log.md` prepend.
+  Landing: branch `exec/kimi/202607121930-…` → PR; merge routed to OpenCode.
 
 ## Goal
 Your PR #55 review verdict (**APPROVE-WITH-NOTES**) was posted as a PR comment and it
