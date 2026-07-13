@@ -24,7 +24,32 @@ promotion happened.
   PR (author ≠ reviewer, required CI gates, no self-merge) instead of
   owner-apply-only, replacing the hand-applied-patch escape hatch that made the
   owner a relay rather than a gate.
-- [TODO: new features]
+- Fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`): OS-level scheduled
+  task that detects dead pane-runners via persistent heartbeat files, alerts the
+  owner via Telegram, and relaunches the fleet. Two-level health model: L1
+  (liveness — heartbeat file mtime) and L2 (capability — last CLI invocation
+  outcome distinguishes auth/quota failure from idle-with-empty-queue).
+  ALIVE-but-NOT-CAPABLE alerts only (never relaunches — a dead API key is not
+  fixed by restarting the process). DEAD + open handoffs alerts and relaunches.
+  DEAD + empty queue alerts only (deduped, once per incident).
+- Persistent heartbeat in `pane-runner.ps1`: each pane writes a JSON heartbeat
+  file to `%LOCALAPPDATA%\rwn-auto\fleet-heartbeat\` on every poll (idle, running,
+  claim-blocked) carrying project, CLI, PID, timestamp, state, and last CLI
+  invocation outcome. Outside the repo to avoid `.ai/` coordination-plane churn.
+- CLI output capture (`Tee-Object`) in `pane-runner.ps1`'s `$script:InvokeCli`:
+  tees child CLI output to a temp file so `Get-LastCliOutcome` can classify
+  auth/quota/error patterns for the L2 capability signal.
+- Install/uninstall scripts (`install-fleet-supervisor.ps1` /
+  `uninstall-fleet-supervisor.ps1`): scripted, reversible Task Scheduler
+  registration. Runs "only when user is logged on" + Interactive so the task
+  CAN open Windows Terminal panes (verified empirically).
+- Safety: exponential backoff + max-attempts circuit breaker on relaunch
+  failure; alert dedupe on state transition (not per-poll); a live fleet is
+  NEVER relaunched (false-positive guard — the worst outcome is two fleets
+  racing the same handoff queue).
+- `test-fleet-supervisor.ps1`: 33-test Pester-free harness covering liveness
+  (fresh/stale/missing), false-positive guard, down+handoffs, down+empty-queue,
+  alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall.
 
 ### Changed
 
