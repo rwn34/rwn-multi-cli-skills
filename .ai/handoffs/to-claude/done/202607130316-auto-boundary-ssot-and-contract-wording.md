@@ -1,9 +1,9 @@
 # Apply the Auto:-boundary rule to the operating-prompt SSOT + CLAUDE.md/AGENTS.md (verbatim text inside)
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: claude-code
 Created: 2026-07-13 10:16
-Auto: yes
+Auto: no
 Risk: B
 Base: origin/master
 
@@ -84,3 +84,63 @@ one line each, identical text:
 
 Self-retire: set Status `DONE`, move to `.ai/handoffs/to-claude/done/`. Do NOT
 merge kimi's PR — merging is OpenCode's Tier-B lane (or the owner's).
+
+---
+
+## Completion note — claude-code (2026-07-14)
+
+Claimed first (dogfooding the very rule this handoff lands): a cockpit taking an
+`Auto: yes` + Risk-B item must claim it. `bash .ai/tools/claim-handoff.sh ... --owner claude-cockpit`
+→ exit 0, reclaimed a stale sidecar, `Auto:` flipped to `no`.
+
+**Items 1 and 3 were already landed on `origin/master` before this session** —
+kimi's PR merged. Verified with git, not globs (`.ai/` is a junction; path globs
+do not traverse it):
+
+- SSOT `.ai/instructions/operating-prompt/principles.md` @ blob `f2eacfa` →
+  `136:**The \`Auto:\` tag is the ownership boundary.**` — verbatim as specified.
+- Replicas: `.kimi/steering/` and `.kiro/steering/` share the SSOT blob sha
+  (`f2eacfa`); `.claude/skills/operating-prompt/SKILL.md` @ `c39bc44` line 143.
+  All three carry the paragraph.
+- ADR-0013 `docs/architecture/0013-auto-tag-as-handoff-ownership-boundary.md` @
+  blob `10804df` on `origin/master`. **Both of your observations are already
+  incorporated:** the "Explicit scope of the claim step" section states Risk C is
+  cockpit-owned regardless of `Auto:` and needs no claim (your obs. 1), and the
+  "Known limitation — owner-string collision" section documents the
+  `<cli>-cockpit` convention and pins the owner+host+`Auto:`-already-`no`
+  idempotency key (your obs. 2).
+
+**Item 2 was the only real gap, and is what this session did.** Added the
+one-line contract statement, identical verbatim text in both files (+ an
+`ADR-0013` pointer):
+
+- `CLAUDE.md` — after the Protocol-v3 paragraph in "Cross-CLI handoffs".
+- `AGENTS.md` — after the Protocol-v3 paragraph in "Cross-CLI handoffs".
+
+Neither file is an SSOT replica, so no `sync-replicas.sh` run was required for
+this change.
+
+### Deviation from your instructions (read this)
+
+You asked me to confirm `check-ssot-drift.sh` → `Drift: 0`. **It reports
+`Drift: 3` and exits 1 — and I did not fix it, because it is not this
+handoff's work.** Evidence:
+
+    DRIFT: .ai/instructions/operating-prompt/principles.md -> .claude/skills/operating-prompt/SKILL.md (16 lines differ)
+    DRIFT: ... -> .kimi/steering/operating-prompt.md (16 lines differ)
+    DRIFT: ... -> .kiro/steering/operating-prompt.md (16 lines differ)
+    Checked: 24 replicas, Drift: 3
+
+The drift is a **different, uncommitted SSOT edit** — the activity-log
+read-discipline block (§7, "Never read `.ai/activity/log.md` wholesale") — that
+exists on disk but in no replica and not in the `origin/master` blob. It is
+invisible to `git status` because the SSOT path carries the **skip-worktree**
+bit (`git ls-files -v` → `S .ai/instructions/operating-prompt/principles.md`).
+That is exactly the failure already tracked by
+`to-kimi/open/202607131900-skip-worktree-guard-ate-your-ssot-edit.md` and
+`to-kiro/open/202607131819-remove-skip-worktree-guard-land-detector.md`. Landing
+it here would have silently smuggled an unrelated policy change into this
+commit. Left it for its own handoffs.
+
+The `Auto:`-boundary paragraph itself is byte-identical between the on-disk SSOT
+and all three replicas — this handoff's deliverable is *not* part of the drift.

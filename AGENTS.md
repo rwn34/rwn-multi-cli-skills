@@ -152,6 +152,8 @@ to `DONE` and move the file from `open/` to `done/` yourself — the sender
 validates post-hoc. If blocked, leave it in `open/` as `BLOCKED` with a verbatim
 `## Blocker`. Check your own inbox between tasks — poll, don't wait to be told.
 
+The `Auto:` tag is the ownership boundary: `Auto: yes` + Risk A/B belongs to the auto pane (a cockpit must not hand-take it), `Auto: no` / Risk C is cockpit-owned; a cockpit takes an `Auto: yes` handoff only by first running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` + claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
+
 ## Delivery integrity (what counts as "done")
 
 No placeholder/stub/mock presented as finished work; verify by execution, not
