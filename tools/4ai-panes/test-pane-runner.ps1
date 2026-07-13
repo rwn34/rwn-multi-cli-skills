@@ -1165,6 +1165,14 @@ $loopSrc = (Get-Command Start-PaneRunner).Definition
 Assert-Equal $true ($loopSrc -match 'Write-Heartbeat') 'be: anti-rot - Start-PaneRunner calls Write-Heartbeat'
 Assert-Equal $true ($loopSrc -match 'try\s*\{[\s\S]*?Write-Heartbeat[\s\S]*?\}\s*catch') 'be2: anti-rot - the heartbeat write is fail-open (try/catch)'
 
+# (bf) ANTI-ROT WIRING GUARD: stale worktree fail-fast (ADR-0004 disarm).
+#      A pane whose branch is behind origin/master must refuse to start, because
+#      a junctioned .ai/ lets any checkout/restore/stash write stale blobs back
+#      into the primary.
+$freshSrc = (Get-Command Assert-WorktreeFresh).Definition
+Assert-Equal $true ($freshSrc -match 'git rev-list --count HEAD\.\.origin/master') 'bf: Assert-WorktreeFresh measures HEAD..origin/master'
+Assert-Equal $true ($loopSrc -match 'Assert-WorktreeFresh') 'bf2: Start-PaneRunner invokes the freshness guard before polling'
+
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $script:mockWtPath -Recurse -Force -ErrorAction SilentlyContinue
