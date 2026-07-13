@@ -1,11 +1,84 @@
 # check-ssot-drift.sh gives FALSE PASSES across worktrees
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-12 20:30
 Auto: yes
 Risk: B
 Base: origin/master
+
+## Completion report (kiro-cli, 2026-07-13 09:07)
+
+**Shape chosen: (1)** — resolve `$src`/`$dst` against the script's own repo
+root, fix the root cause in the generator (`sync-replicas.sh`), checker
+inherits it by construction. Per the handoff's own preference.
+
+**Important correction to the handoff's suggested implementation:** the
+handoff's shape-1 sketch (`git -C "$HERE" rev-parse --show-toplevel`) is
+NOT sufficient and would have reproduced the exact bug. This framework's
+worktrees junction their `.ai/` to the ONE canonical `.ai/` in the primary
+checkout (ADR-0004). `cd`-ing into `.ai/tools` (or asking git for the
+toplevel from there) resolves that junction and silently lands back in the
+PRIMARY checkout — not the worktree the script was invoked from. I proved
+this live: it produced `Drift: 0` on a genuinely-drifted worktree, same as
+the original bug. The actual fix derives `$ROOT` by PURE STRING
+MANIPULATION on `$0` (strip the trailing `/.ai/tools` two path components),
+which never touches the filesystem and therefore can't be redirected by a
+symlink/junction.
+
+**Before/after false-pass proof (verbatim, from the real production
+`exec/kiro/202607122030-drift-checker-cwd-false-pass` worktree):**
+
+```
+== 1. inject genuine drift in THIS worktree only ==
+== 2. checker from repo root (this worktree) -> must be RED ==
+DRIFT: .ai/instructions/operating-prompt/principles.md -> .kiro/steering/operating-prompt.md (1 lines differ)
+Checked: 24 replicas, Drift: 1
+
+== 3. checker BY ABSOLUTE PATH from a DIFFERENT cwd (primary checkout) -> must STILL be RED (this is the false-pass repro) ==
+DRIFT: .ai/instructions/operating-prompt/principles.md -> .kiro/steering/operating-prompt.md (1 lines differ)
+Checked: 24 replicas, Drift: 1
+
+== 4. sanity: primary checkout from its OWN cwd -> must be GREEN ==
+Checked: 24 replicas, Drift: 0
+```
+
+Before the fix, step 3 reported `Drift: 0` — confirmed live via
+`git worktree list` + `cat .git` showing `.ai` is a symlink to the primary
+checkout's `.ai/`.
+
+**Was CI ever affected? No, confirmed.**
+
+```
+$ grep -n "check-ssot-drift.sh" .github/workflows/framework-check.yml .github/workflows/gates.yml
+.github/workflows/framework-check.yml:33:        run: bash .ai/tools/check-ssot-drift.sh
+.github/workflows/gates.yml:37:        run: bash .ai/tools/check-ssot-drift.sh
+```
+
+Both invoke with no path argument, from the checked-out repo root — CWD
+always equals repo root there. CI's verdict has been valid; local/dispatched
+agents running the checker via absolute path from a different worktree were
+the exposure.
+
+**What this still does NOT close:**
+- No automated proof against a REAL Windows directory junction (`mklink /J`)
+  — the sandbox's `ln -s` silently degrades to a directory copy (no symlink
+  privilege on this host), so the added junction-case regression test SKIPs
+  gracefully rather than false-passing. Verified manually against the real
+  production worktree instead (identical physical-path-resolution hazard).
+- No new drift-detection capability — only makes existing detection correct
+  regardless of caller CWD.
+
+**PR:** https://github.com/rwn34/rwn-multi-cli-skills/pull/72 (branch
+`exec/kiro/202607122030-drift-checker-cwd-false-pass`, based on
+`origin/master`; PR #57 had already merged before this branch was cut, so no
+rebase/conflict). Peer review routed to Kimi via
+`.ai/handoffs/to-kimi/open/202607130206-review-pr72-drift-checker-cwd-fix.md`.
+Not merged — merge is Tier B, fleet-executed after review, no owner
+pre-approval per ADR-0011.
+
+**Tests:** `bash scripts/git-hooks/test-pre-commit.sh` — 114/114 pass (111
+pre-existing + 3 new regression tests for this fix).
 
 ## Goal
 `.ai/tools/check-ssot-drift.sh` — the gate the entire fleet trusts — **can report
