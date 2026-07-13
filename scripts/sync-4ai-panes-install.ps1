@@ -31,6 +31,34 @@
    ERRORS". Override: -Force or SYNC_FORCE=1 (prints FORCED, logs
    provenance=forced). Every run's log line carries branch=<b> primary=<yes|no>.
 
+ ANCESTOR GUARD (a THIRD property - added 2026-07-14 - on top of primary+master):
+   Being on a LOCAL branch literally named 'master' is not the same claim as
+   "this commit is reachable from origin/master". A local master that was
+   committed to directly, merged into locally, or simply never pushed would
+   pass the primary+master check above and still deploy code the fleet's peer
+   review / CI gate never saw. So once primary+master passes (or is forced),
+   a second, independent check runs: `git fetch origin master` (best-effort,
+   see below) then `git merge-base --is-ancestor HEAD origin/master`. HEAD not
+   an ancestor -> REFUSED, same fail-closed/exit-0/log-and-warn shape as the
+   guard above, and the PREVIOUSLY DEPLOYED files are left completely
+   untouched (no partial deploy). `origin/master` unresolvable (no remote, no
+   network, bare/local-only test repo) -> FAILS CLOSED, i.e. also REFUSED -
+   an unverifiable ancestor claim is not a license to deploy.
+   The `git fetch` is deliberately best-effort and swallows its own failure:
+   offline is a normal, recoverable state (not every dev box is always
+   online), and refusing to even ATTEMPT the ancestor check just because the
+   network is down would make every offline sync fail loud for no security
+   gain - the ancestor test below runs against whatever ref-tips are already
+   known locally, and if THAT is stale or missing, it fails closed on its own.
+   Override: this is a DIFFERENT hazard than "wrong worktree/branch", so it
+   gets its OWN, narrower escape hatch rather than overloading -Force/
+   SYNC_FORCE (which also bypasses the worktree and detached-HEAD checks - a
+   much bigger hammer). Set env var RWN_4AI_ALLOW_UNMERGED=1 to deploy an
+   unmerged (or provenance-unresolvable) commit; it prints a loud warning
+   naming the exact hazard and logs provenance=unmerged-allowed. This is for
+   deliberately dogfooding an in-development pane-runner/launcher change
+   before it merges - see the spec for the tradeoff.
+
  Copy is BYTE-EXACT ([IO.File]::Copy) - no Get-Content/Set-Content round-trip -
  so committed EOL is preserved and icon.ico (binary) stays intact. Each drifted
  file is written to a temp path in the target dir, hash-verified against source,
@@ -128,11 +156,12 @@ function Test-Ps1Syntax {
 
 # Append one line per run to the sync log (best-effort; never fatal). The
 # provenance tokens ride on EVERY line so the next post-mortem is trivial.
-# Reads the script-scope $commit/$branch/$primaryStr/$forced set by the guard.
+# Reads the script-scope $commit/$branch/$primaryStr/$forced/$unmergedAllowedUsed
+# set by the guards above.
 function Write-SyncLog {
     param([string]$Result, [string[]]$Actions)
     $stamp = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
-    $prov = if ($forced) { ' provenance=forced' } else { '' }
+    $prov = if ($forced) { ' provenance=forced' } elseif ($unmergedAllowedUsed) { ' provenance=unmerged-allowed' } else { '' }
     $logLine = "[$stamp] commit=$commit branch=$branch primary=$primaryStr result=$Result$prov"
     if ($Actions.Count -gt 0) { $logLine += ' | ' + ($Actions -join ' ') }
     try {
@@ -154,6 +183,7 @@ $branch = 'n/a'
 $toplevel = 'n/a'
 $isPrimary = $false
 $primaryStr = 'no'
+$unmergedAllowedUsed = $false
 $forced = [bool]$Force -or ($env:SYNC_FORCE -eq '1')
 
 $gitOk = $false
@@ -199,11 +229,62 @@ if ($forced) {
     exit 0
 }
 
+# --- Ancestor guard: HEAD must be reachable from origin/master --------------
+# A THIRD, independent property on top of primary+master (see header comment).
+# Being on a local branch named 'master' is not proof that HEAD is anything
+# origin/master actually contains - a local-only commit or merge would pass
+# the check above and still deploy unreviewed code. This check is skipped
+# only when the guard above was itself -Force/SYNC_FORCE-overridden (that
+# escape hatch already accepts the bigger hazard; re-litigating provenance
+# under it would just be confusing) - it is NOT skipped for a normal
+# primary+master pass, which is the whole point of adding it.
+$allowUnmerged = ($env:RWN_4AI_ALLOW_UNMERGED -eq '1')
+if (-not $forced) {
+    # Best-effort fetch: offline is a normal, recoverable state and must not
+    # itself cause a refusal - the ancestor test below runs against whatever
+    # origin/master ref-tip is already known locally, and fails closed on its
+    # own if that is stale, missing, or the repo has no 'origin' at all.
+    $prevEAP2 = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $SourceDir fetch origin master 2>$null | Out-Null
+    $ErrorActionPreference = $prevEAP2
+
+    $isAncestor = $false
+    $prevEAP3 = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $SourceDir rev-parse --verify --quiet 'origin/master' 2>$null | Out-Null
+    $originMasterResolves = ($LASTEXITCODE -eq 0)
+    if ($originMasterResolves) {
+        & git -C $SourceDir merge-base --is-ancestor HEAD origin/master 2>$null
+        $isAncestor = ($LASTEXITCODE -eq 0)
+    }
+    $ErrorActionPreference = $prevEAP3
+
+    if ($allowUnmerged) {
+        if (-not $originMasterResolves) {
+            Write-Warning "sync-4ai-panes-install: UNMERGED-ALLOWED (RWN_4AI_ALLOW_UNMERGED=1) - origin/master is UNRESOLVABLE, provenance of commit=$commit cannot be verified at all. Deploying anyway because the escape hatch is set."
+            $unmergedAllowedUsed = $true
+        } elseif (-not $isAncestor) {
+            Write-Warning "sync-4ai-panes-install: UNMERGED-ALLOWED (RWN_4AI_ALLOW_UNMERGED=1) - commit=$commit on branch=$branch is NOT an ancestor of origin/master. Deploying UNMERGED code to the live install because the escape hatch is set."
+            $unmergedAllowedUsed = $true
+        }
+    } elseif (-not $originMasterResolves) {
+        Write-Line "sync-4ai-panes-install: REFUSED - origin/master is UNRESOLVABLE (no remote, offline, or no such ref) so commit=$commit's provenance cannot be verified. Fail-closed. Override: RWN_4AI_ALLOW_UNMERGED=1."
+        Write-SyncLog -Result 'refused-unverifiable-origin' -Actions @()
+        exit 0
+    } elseif (-not $isAncestor) {
+        Write-Line "sync-4ai-panes-install: REFUSED - commit=$commit on branch=$branch is NOT an ancestor of origin/master. A locally-advanced or unpushed 'master' does not license a deploy. Override: RWN_4AI_ALLOW_UNMERGED=1."
+        Write-SyncLog -Result 'refused-unmerged' -Actions @()
+        exit 0
+    }
+}
+
 # --- Graceful skip when target absent --------------------------------------
 if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
     Write-Line "no install at $Target, skipping"
     exit 0
 }
+
 
 # --- Sync each allowlisted file --------------------------------------------
 $exitCode = 0

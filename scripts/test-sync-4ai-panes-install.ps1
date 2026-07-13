@@ -1,17 +1,31 @@
 # test-sync-4ai-panes-install.ps1 - Pester-free harness for the provenance guard
-# in scripts/sync-4ai-panes-install.ps1 (hole 1, 2026-07-13).
+# in scripts/sync-4ai-panes-install.ps1 (hole 1, 2026-07-13; ancestor guard added
+# 2026-07-14, handoff 202607122200).
 #
-# Builds a throwaway git repo (primary checkout on master) + a linked worktree
+# Builds a throwaway git repo (primary checkout on master) + a bare "origin"
+# remote (so the ancestor guard's `origin/master` resolves) + a linked worktree
 # in a temp dir, then drives the REAL sync script as a child process against
 # throwaway install dirs. Asserts:
 #   (a) linked worktree        -> REFUSED, exit 0, nothing copied, log written
 #   (b) primary, non-master    -> REFUSED, exit 0, branch named
 #   (c) primary, detached HEAD -> REFUSED, exit 0
-#   (d) primary + master       -> PROCEEDS, all 12 files copied, provenance logged
-#   (e) SYNC_FORCE=1           -> overrides refusal (FORCED, provenance=forced)
+#   (d) primary + master, HEAD is an ancestor of origin/master -> PROCEEDS,
+#       all 17 files copied, provenance logged
+#   (e) SYNC_FORCE=1           -> overrides refusal (FORCED, provenance=forced,
+#       and this ALSO skips the ancestor guard entirely)
 #   (f) -Force switch          -> overrides refusal (FORCED, provenance=forced)
 #   (g) not a git repo         -> REFUSED (fail closed), exit 0
 #   (h) provenance sidecar     -> .sync-provenance.json written on a real sync
+#   (i) local master AHEAD of origin/master (unpushed commit) -> REFUSED
+#       (refused-unmerged), exit 0, PREVIOUSLY DEPLOYED FILES LEFT INTACT
+#       (the RED proof the handoff asks for: a gate that can fail)
+#   (j) RWN_4AI_ALLOW_UNMERGED=1 on the case in (i) -> PROCEEDS anyway, prints
+#       the UNMERGED-ALLOWED warning, logs provenance=unmerged-allowed
+#   (k) origin/master unresolvable (no 'origin' remote at all) -> REFUSED
+#       (refused-unverifiable-origin), exit 0, fail-closed
+#   (l) RWN_4AI_ALLOW_UNMERGED=1 on the case in (k) -> PROCEEDS anyway, prints
+#       the UNMERGED-ALLOWED warning naming the unresolvable origin, logs
+#       provenance=unmerged-allowed
 #
 # Convention mirrors tools/4ai-panes/test-pane-runner.ps1 (PASS/FAIL + tally).
 
@@ -114,8 +128,11 @@ function Get-CopiedCount {
 
 try {
     # Build the primary repo: the sync script under scripts/, the real tool
-    # files under tools/4ai-panes/ (the allowlist requires ALL twelve present),
-    # one commit on master.
+    # files under tools/4ai-panes/ (the allowlist requires all seventeen
+    # present), one commit on master. Also build a bare "origin" remote and
+    # point the repo at it so the ancestor guard's `origin/master` resolves -
+    # without this every primary+master run would hit the fail-closed
+    # "origin/master UNRESOLVABLE" path instead of the happy path.
     & git init -b master $repo 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'git init failed' }
     Invoke-Git $repo @('config', 'user.email', 'sync-test@example.com') | Out-Null
@@ -126,6 +143,11 @@ try {
     Invoke-Git $repo @('add', '-A') | Out-Null
     Invoke-Git $repo @('commit', '-m', 'init') | Out-Null
     $repoSync = Join-Path $repo 'scripts\sync-4ai-panes-install.ps1'
+
+    $originDir = Join-Path $work 'origin.git'
+    Invoke-Git $work @('init', '--bare', '-b', 'master', $originDir) | Out-Null
+    Invoke-Git $repo @('remote', 'add', 'origin', $originDir) | Out-Null
+    Invoke-Git $repo @('push', 'origin', 'master') | Out-Null
 
     # (a) linked worktree -> REFUSED
     Invoke-Git $repo @('worktree', 'add', '-b', 'wt-branch', $wt) | Out-Null
@@ -159,14 +181,15 @@ try {
     Assert-Contains $rC.Text 'REFUSED' 'c2: detached HEAD refused'
     Assert-Contains $rC.Text 'branch=DETACHED' 'c3: refusal marks the detached HEAD'
 
-    # (d) primary checkout on master -> PROCEEDS
+    # (d) primary checkout on master, HEAD is an ancestor of origin/master
+    # (it IS origin/master, just pushed above) -> PROCEEDS
     Invoke-Git $repo @('checkout', 'master') | Out-Null
     $tD = New-Target 'install-d'
     $rD = Invoke-Sync $repoSync $tD
     Assert-Equal 0 $rD.Code 'd1: primary+master exits 0'
     Assert-True (-not $rD.Text.Contains('REFUSED')) 'd2: no refusal on primary+master'
     Assert-True (Test-Path (Join-Path $tD 'Selector.ps1') -PathType Leaf) 'd3: tool files copied'
-    Assert-Equal 12 (Get-CopiedCount $tD) 'd4: all 12 allowlisted files copied'
+    Assert-Equal 17 (Get-CopiedCount $tD) 'd4: all 17 allowlisted files copied'
     Assert-Contains (Get-LogText $tD) 'branch=master primary=yes' 'd5: log carries branch=master primary=yes'
 
     # (h) provenance sidecar written on a real sync
@@ -203,6 +226,83 @@ try {
     Assert-Equal 0 $rG.Code 'g1: non-repo source exits 0 (fail closed)'
     Assert-Contains $rG.Text 'REFUSED' 'g2: non-repo source refused'
     Assert-Equal 0 (Get-CopiedCount $tG) 'g3: non-repo refusal copies nothing'
+
+    # (i) local master AHEAD of origin/master (an unpushed commit) -> REFUSED
+    # (refused-unmerged), exit 0, and the RED proof: a PRIOR real deploy's
+    # files are left completely untouched (no partial deploy).
+    Invoke-Git $repo @('checkout', 'master') | Out-Null
+    $tI = New-Target 'install-i'
+    # Seed a known-good prior deploy first (HEAD == origin/master here).
+    $rI0 = Invoke-Sync $repoSync $tI
+    Assert-Equal 0 $rI0.Code 'i0: seed deploy (still an ancestor) exits 0'
+    Assert-True (Test-Path (Join-Path $tI 'Selector.ps1') -PathType Leaf) 'i0b: seed deploy actually copied files'
+    $seedHash = (Get-FileHash -LiteralPath (Join-Path $tI 'Selector.ps1') -Algorithm SHA256).Hash
+
+    # Now advance local master with an UNPUSHED commit - origin/master does
+    # not move, so HEAD is no longer an ancestor of it.
+    $unmergedFile = Join-Path $repo 'tools\4ai-panes\Selector.ps1'
+    Add-Content -LiteralPath $unmergedFile -Value "`n# unmerged-local-only-change`n"
+    Invoke-Git $repo @('add', '-A') | Out-Null
+    Invoke-Git $repo @('commit', '-m', 'unpushed local-only change') | Out-Null
+
+    $rI = Invoke-Sync $repoSync $tI
+    Assert-Equal 0 $rI.Code 'i1: unpushed-ahead-of-origin exits 0 (refusal is not an error)'
+    Assert-Contains $rI.Text 'REFUSED' 'i2: unpushed-ahead-of-origin prints REFUSED'
+    Assert-Contains (Get-LogText $tI) 'result=refused-unmerged' 'i3: log records result=refused-unmerged'
+    $postHash = (Get-FileHash -LiteralPath (Join-Path $tI 'Selector.ps1') -Algorithm SHA256).Hash
+    Assert-Equal $seedHash $postHash 'i4: RED proof - previously deployed file left completely untouched'
+
+    # (j) RWN_4AI_ALLOW_UNMERGED=1 on the exact case in (i) -> PROCEEDS anyway,
+    # prints the UNMERGED-ALLOWED warning, logs provenance=unmerged-allowed.
+    $tJ = New-Target 'install-j'
+    $prevAllow = $env:RWN_4AI_ALLOW_UNMERGED
+    $env:RWN_4AI_ALLOW_UNMERGED = '1'
+    try {
+        $rJ = Invoke-Sync $repoSync $tJ
+    } finally {
+        if ($null -eq $prevAllow) { Remove-Item Env:\RWN_4AI_ALLOW_UNMERGED -ErrorAction SilentlyContinue } else { $env:RWN_4AI_ALLOW_UNMERGED = $prevAllow }
+    }
+    Assert-Equal 0 $rJ.Code 'j1: RWN_4AI_ALLOW_UNMERGED=1 run exits 0'
+    Assert-Contains $rJ.Text 'UNMERGED-ALLOWED' 'j2: prints the UNMERGED-ALLOWED warning'
+    Assert-True (Test-Path (Join-Path $tJ 'Selector.ps1') -PathType Leaf) 'j3: escape hatch deploys the unmerged commit anyway'
+    Assert-Contains (Get-LogText $tJ) 'provenance=unmerged-allowed' 'j4: log records provenance=unmerged-allowed'
+
+    # (k) origin/master unresolvable (no 'origin' remote at all) -> REFUSED
+    # (refused-unverifiable-origin), exit 0, fail-closed.
+    $noOrigin = Join-Path $work 'no-origin'
+    & git init -b master $noOrigin 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'git init (no-origin) failed' }
+    Invoke-Git $noOrigin @('config', 'user.email', 'sync-test@example.com') | Out-Null
+    Invoke-Git $noOrigin @('config', 'user.name', 'sync-test') | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $noOrigin 'scripts') -Force | Out-Null
+    Copy-Item -LiteralPath $syncSrc -Destination (Join-Path $noOrigin 'scripts\sync-4ai-panes-install.ps1')
+    Copy-Item -LiteralPath $toolsSrc -Destination (Join-Path $noOrigin 'tools\4ai-panes') -Recurse
+    Invoke-Git $noOrigin @('add', '-A') | Out-Null
+    Invoke-Git $noOrigin @('commit', '-m', 'init, no origin remote') | Out-Null
+    $noOriginSync = Join-Path $noOrigin 'scripts\sync-4ai-panes-install.ps1'
+
+    $tK = New-Target 'install-k'
+    $rK = Invoke-Sync $noOriginSync $tK
+    Assert-Equal 0 $rK.Code 'k1: no-origin-remote exits 0 (refusal is not an error)'
+    Assert-Contains $rK.Text 'REFUSED' 'k2: no-origin-remote prints REFUSED'
+    Assert-Contains (Get-LogText $tK) 'result=refused-unverifiable-origin' 'k3: log records result=refused-unverifiable-origin'
+    Assert-Equal 0 (Get-CopiedCount $tK) 'k4: no-origin-remote refusal copies nothing'
+
+    # (l) RWN_4AI_ALLOW_UNMERGED=1 on the exact case in (k) -> PROCEEDS anyway,
+    # prints the UNMERGED-ALLOWED warning naming the unresolvable origin, logs
+    # provenance=unmerged-allowed.
+    $tL = New-Target 'install-l'
+    $prevAllow2 = $env:RWN_4AI_ALLOW_UNMERGED
+    $env:RWN_4AI_ALLOW_UNMERGED = '1'
+    try {
+        $rL = Invoke-Sync $noOriginSync $tL
+    } finally {
+        if ($null -eq $prevAllow2) { Remove-Item Env:\RWN_4AI_ALLOW_UNMERGED -ErrorAction SilentlyContinue } else { $env:RWN_4AI_ALLOW_UNMERGED = $prevAllow2 }
+    }
+    Assert-Equal 0 $rL.Code 'l1: RWN_4AI_ALLOW_UNMERGED=1 (no-origin) run exits 0'
+    Assert-Contains $rL.Text 'UNMERGED-ALLOWED' 'l2: prints the UNMERGED-ALLOWED warning'
+    Assert-True (Test-Path (Join-Path $tL 'Selector.ps1') -PathType Leaf) 'l3: escape hatch deploys anyway despite unresolvable origin'
+    Assert-Contains (Get-LogText $tL) 'provenance=unmerged-allowed' 'l4: log records provenance=unmerged-allowed'
 } finally {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'

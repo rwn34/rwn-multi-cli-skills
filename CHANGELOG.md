@@ -50,6 +50,20 @@ promotion happened.
 - `test-fleet-supervisor.ps1`: 33-test Pester-free harness covering liveness
   (fresh/stale/missing), false-positive guard, down+handoffs, down+empty-queue,
   alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall.
+- `scripts/sync-4ai-panes-install.ps1`: ancestor guard — a third, independent
+  provenance property on top of the existing primary-checkout + master-branch
+  guard. A local branch literally named `master` is not proof that `HEAD` is
+  reachable from `origin/master`; this closes that gap with
+  `git merge-base --is-ancestor HEAD origin/master` (best-effort `git fetch`
+  first, fails closed if `origin/master` is unresolvable or HEAD is not an
+  ancestor). Chose option (b) from the design brief — master-only by default
+  with an explicit, narrower opt-in escape hatch (`RWN_4AI_ALLOW_UNMERGED=1`,
+  separate from `-Force`/`SYNC_FORCE`) for deliberately dogfooding an
+  in-development pane-runner/launcher change before it merges. Refusal leaves
+  the previously-deployed files completely untouched (no partial deploy).
+  `scripts/test-sync-4ai-panes-install.ps1` extended to 52 assertions (was 24),
+  including a live RED proof: an unpushed local `master` commit is refused and
+  a prior real deploy's files are verified byte-identical afterward.
 
 ### Changed
 
