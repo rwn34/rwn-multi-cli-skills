@@ -68,6 +68,13 @@ Know your lane. Know your limitation. Do not drift into another lane.
   confirmation (Tier C).** Guardrails are mechanical: harness-level
   `allow`/`ask`/`deny` permissions plus the `.opencode/plugin/`
   framework-guard hooks. It never touches source code.
+  **Its provider / model / API-key config is owner-set and variable** (owner
+  directive 2026-07-13 — GLM/zhipu today, a Kimi Code key tomorrow, others over
+  time). The whole fleet — panes, cockpits, any CLI — **follows whatever is
+  configured and never changes it**: not as a wedge "fix", not as an
+  optimization, not as part of a relaunch or provisioning step. Whatever model
+  a log line reveals is the owner's current choice, not a finding to act on.
+  Config that looks wrong is **reported to the owner, never repaired**.
 - **Pipeline:** executing CLI branches/commits/pushes (`infra-engineer`) →
   peer review (the other executor's `reviewer`) → required CI checks green →
   Claude pre-merge gate → **the fleet merges to main (Tier B — notify the owner
@@ -115,9 +122,22 @@ Know your lane. Know your limitation. Do not drift into another lane.
 
 ## 7. Cross-CLI continuity
 
-Before non-trivial work: read `.ai/activity/log.md` (top), check
-`.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
-between tasks, re-check your open queue and process what's there.
+Before non-trivial work: check recent activity and your handoff queue.
+**Never read `.ai/activity/log.md` wholesale** — it is ~600 KB / 2,100+ lines
+(370+ entries), ~125k tokens of almost entirely irrelevant history. Newest
+entries are at the **top**, so everything you actually need sits in the first
+few dozen lines.
+
+- **Recent activity** → if your CLI injects the top of the log into context
+  each turn (an inject hook), it is already in your context — use it, do not
+  re-read. Otherwise read a **bounded top window only**: `head -40
+  .ai/activity/log.md`, or a read with a limit. That bounded read *is* the
+  step, not a lesser substitute.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
+  read with limit/offset. Never the whole file, never `cat`.
+- **Handoffs** → check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be
+  told:** when idle or between tasks, re-check your open queue and process
+  what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
 contract file; local wall-clock finish time; prepend order is authoritative).
