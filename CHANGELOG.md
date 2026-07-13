@@ -24,7 +24,11 @@ promotion happened.
 
 ### Changed
 
-- [TODO: changes in existing functionality]
+- `tools/4ai-panes/Selector.ps1`: default top-strip fraction (interactive
+  Claude+Kimi cockpits vs. the 4 auto pane-runners) raised from 50% to 65%
+  (owner request 2026-07-12), now env-tunable via `RWN_4AI_TOP_FRACTION`
+  (clamped to [0.2, 0.8], defensive parse, defaults to 0.65 on
+  garbage/empty input).
 
 ### Deprecated
 
