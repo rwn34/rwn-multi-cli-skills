@@ -20,6 +20,32 @@ promotion happened.
 
 ### Added
 
+- [TODO: new features]
+
+### Changed
+
+- [TODO: changes in existing functionality]
+
+### Deprecated
+
+- [TODO: features marked for removal]
+
+### Removed
+
+- [TODO: features removed this release]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.39] - 2026-07-13
+
+### Added
+
 - **Cockpit handoff ownership — the `Auto:` tag is the claim boundary.** New
   `.ai/tools/claim-handoff.sh` + `.ai/tools/release-handoff.sh`: a cockpit
   (interactive session) takes an `Auto: yes` handoff ONLY by atomically flipping
@@ -42,7 +68,6 @@ promotion happened.
   regeneration is junction-safe: it refuses writes through any symlink or
   Windows-junction ancestor and any registry destination under `.ai/`
   (ADR-0004 reverse-write class).
-- [TODO: new features]
 
 ### Changed
 
@@ -51,21 +76,6 @@ promotion happened.
   manual copy commands in `.ai/sync.md` are demoted to reference material in
   favor of the generator.
 
-### Deprecated
-
-- [TODO: features marked for removal]
-
-### Removed
-
-- [TODO: features removed this release]
-
-### Fixed
-
-- [TODO: bug fixes]
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.38] - 2026-07-13
 
