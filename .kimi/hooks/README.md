@@ -16,9 +16,9 @@ invoked by `~/.kimi-code/config.toml`.
 | Open handoffs reminder | `SessionStart` | — | `handoffs-remind.sh` | ✅ **WIRED** | List qualifying (Status: OPEN, Auto: yes, Risk A\|B) handoffs in `.ai/handoffs/to-kimi/open/` at session start |
 | Auto-dispatch own queue | `SessionStart` | — | `dispatch-own-queue.sh` | ✅ **WIRED** | Run `dispatch-handoffs.sh --exec --only kimi` for qualifying to-kimi handoffs at session start (recursion-guarded + 5-min debounce; closes the e2e-test non-delivery gap) |
 | Open handoff queue-counts | `Stop` | — | `handoff-queue-count.sh` | ✅ **WIRED** | Print per-queue open counts across all `to-*/open` queues at each turn end (gap B4 poll point) |
-| Activity log inject | `UserPromptSubmit` | — | `activity-log-inject.sh` | ⚠️ **NOT WIRED** | Inject top 40 lines of `.ai/activity/log.md` into context |
-| Activity log remind | `Stop` | — | `activity-log-remind.sh` | ⚠️ **NOT WIRED** | Remind to update activity log if not touched in 60 min |
-| Git dirty reminder | `Stop` | — | `git-dirty-remind.sh` | ⚠️ **NOT WIRED** | Remind about uncommitted changes beyond activity log |
+| Activity log inject | `UserPromptSubmit` | — | `activity-log-inject.sh` | ⚠️ **NOT WIRED** | Inject recent cross-CLI activity: newest 8 entry files from `.ai/activity/entries/` (ADR-0010 spool; dual-mode — falls back to top 40 lines of `.ai/activity/log.md` pre-freeze) |
+| Activity log remind | `Stop` | — | `activity-log-remind.sh` | ⚠️ **NOT WIRED** | Remind to write an entry in `.ai/activity/entries/` if none written in 60 min (dual-mode: falls back to `.ai/activity/log.md` mtime pre-freeze) |
+| Git dirty reminder | `Stop` | — | `git-dirty-remind.sh` | ⚠️ **NOT WIRED** | Remind about uncommitted changes beyond the activity log (spool entries and legacy `log.md` both excluded) |
 
 ## How hooks work
 

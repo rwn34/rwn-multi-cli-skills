@@ -959,12 +959,12 @@ function Get-DefaultOwner {
 
 function Get-InitialPrompt {
     param([string]$RelPath)
-    return "Process the open handoff at $RelPath per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
+    return "Process the open handoff at $RelPath per the protocol in .ai/handoffs/README.md. Execute the steps, write an activity-log entry, update the handoff Status, and report."
 }
 
 function Get-ContinuePrompt {
     param([string]$RelPath)
-    return "Continue processing the open handoff at $RelPath. You previously hit a step or tool cap before completing it; resume where you left off, finish the remaining steps, prepend an activity-log entry, set the handoff Status to DONE, and move it to the matching done/ folder."
+    return "Continue processing the open handoff at $RelPath. You previously hit a step or tool cap before completing it; resume where you left off, finish the remaining steps, write an activity-log entry, set the handoff Status to DONE, and move it to the matching done/ folder."
 }
 
 # -- RUN + DECIDE core (the unit-tested heart) --

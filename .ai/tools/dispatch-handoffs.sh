@@ -100,7 +100,7 @@ fi
 # tools/4ai-panes/pane-runner.ps1 Get-HeadlessCmd (also argv-array form).
 headless_cmd() {
     local cli="$1" file="$2"
-    local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, prepend an activity-log entry, update the handoff Status, and report."
+    local prompt="Process the open handoff at $file per the protocol in .ai/handoffs/README.md. Execute the steps, write an activity-log entry, update the handoff Status, and report."
     case "$cli" in
         # --dangerously-skip-permissions (not --permission-mode acceptEdits):
         # acceptEdits auto-approves ONLY Edit/Write; a Bash call outside
