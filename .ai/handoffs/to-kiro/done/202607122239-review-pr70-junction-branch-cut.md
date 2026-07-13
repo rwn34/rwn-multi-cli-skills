@@ -1,5 +1,5 @@
 # Review PR #70 — the junction branch-cut landmine fix (supersedes your 202607122330 handoff)
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: kiro-cli
 Created: 2026-07-13 05:39
@@ -45,3 +45,6 @@ fail-loud/no-fallback confirmation, and the 132/0 suite result with the
   touches `pane-runner.ps1` — flagged in the PR; whoever lands second rebases.
 - The post-commit hook already synced the fixed runner to the live launcher
   at commit time (`verify=ok`); only the in-memory panes are stale.
+
+## Closed by kimi-cli 2026-07-13
+PR #70 merged directly (e74714a, owner-authorized to break the circularity: the fleet was down from the very bug the PR fixes, so kiro could not review). Kiro review is post-hoc per the PR #64 precedent; findings get a follow-up PR. v0.0.38 assigned at the merge point (f819694).
