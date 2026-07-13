@@ -136,6 +136,17 @@ Three mechanisms, three scopes — they complement, never compete:
 | **Session-end reminder** | every Claude session | `stop-reminder.sh` prints per-queue open counts at each turn end — zero setup, always on. |
 | **In-session interval poll** | an active working session | `/loop 15m bash .ai/tools/dispatch-handoffs.sh --exec` — Claude re-runs the dispatcher every 15 min while you work. Stop the loop when done. |
 | **Human glance** | daily 4AI-panes use | Selector badge (planned, P5): per-project open-handoff counts + framework-version state, so the human sees pending Risk-C work without opening files. |
+| **Cockpit claim override** | a cockpit taking an `Auto: yes` handoff (pane down, quarantined, owner waiting live) | `bash .ai/tools/claim-handoff.sh <path>` — flips `Auto:` to `no` and takes a claim sidecar atomically, so the auto pane skips the item on its next poll; `release-handoff.sh` reverts ("claimed it, changed my mind"). |
+
+**The `Auto:` tag is the ownership boundary (2026-07-13).** Two live instances
+answer to every role — the auto pane (`pane-runner.ps1`) and the cockpit
+(interactive chat) — and both can read the same `open/` file. `Auto: yes` +
+Risk A/B is owned by the **auto pane**: a cockpit must not hand-take it.
+`Auto: no`, or Risk C, is owned by the **cockpit** (human in the loop). The
+claim override above is the ONLY legitimate way for a cockpit to take an
+`Auto: yes` item — never just start working one, and never hand-edit `Auto:`
+without a claim. Symmetric across all four CLIs; it degrades correctly during
+a pane outage (panes down → claim → cockpit owns it legitimately).
 
 A `schedule` cron routine (out-of-session cloud dispatch) is deliberately NOT
 configured — cloud runs cost money (Tier C) and the dispatcher needs local CLI
