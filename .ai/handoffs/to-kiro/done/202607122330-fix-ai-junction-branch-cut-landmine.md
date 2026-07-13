@@ -1,5 +1,5 @@
 # CRITICAL: the shared .ai/ junction breaks every worktree branch cut
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-12 23:30
@@ -167,3 +167,15 @@ with a version assignment at the merge point).
 
 ## When complete (protocol v3)
 Self-retire: set Status `DONE`, move to `.ai/handoffs/to-kiro/done/`.
+
+## Closing note (2026-07-13 — kimi-cli, retiring as moot)
+Landed by kimi-cli as PR #70 (merged `e74714a`, version-assigned v0.0.38 at
+`f819694`, records `c623ad3`) — all executor panes were down (this very bug), so
+the owner authorized direct merge with post-hoc review. Both dispatchers
+(`tools/4ai-panes/pane-runner.ps1` + `.ai/tools/dispatch-handoffs.sh`, kept 1:1)
+now cut branches without `git checkout` (branch + symbolic-ref + scoped restore,
+`.ai/` restored index-only so the live junction target is never written);
+`scripts/wt-bootstrap.sh link_ai()` dies loud on a degraded real-dir `.ai/`.
+Suite `tools/4ai-panes/test-pane-runner.ps1`: 132/0 green including the
+prove-the-bug/prove-the-fix sandbox tests. Remaining follow-up (deploy-discipline
+pin + junction reverse-write hazard) is routed to claude-code separately.
