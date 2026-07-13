@@ -9,10 +9,27 @@
  also live in the install dir. See docs/specs/4ai-panes-install-sync.md.
 
  Contract:
-   exit 0  - synced, already in sync (no-op), or target absent (graceful skip).
+   exit 0  - synced, already in sync (no-op), target absent (graceful skip),
+             or REFUSED by the provenance guard (refusal is CORRECT behavior in
+             a worktree / off-master checkout, not an error - see below).
    exit 1  - a .ps1 source file failed the syntax gate, OR a copy was attempted
              but post-copy hash verification failed, OR an allowlisted file is
              missing from the source tree. Loud stderr warn.
+
+ PROVENANCE GUARD (why a worktree must not deploy):
+   The git hooks fire this sync from whatever worktree ran the merge/checkout/
+   commit, on whatever branch. Without a guard, unmerged branch code silently
+   reaches the owner's live install (the 2026-07-13 incident: a worktree hook
+   fired at ~05:45 deployed branch code over the live launcher). So before any
+   file work the sync requires (a) the source to be the PRIMARY checkout
+   (git-dir == git-common-dir; in a linked worktree git-dir is
+   <common>/worktrees/<name>) and (b) HEAD on branch 'master' (detached HEAD
+   refuses) - only merged master code may deploy. Unverifiable provenance (git
+   unavailable / source not a repo) fails CLOSED. Refusal prints a one-liner,
+   still writes its install-sync.log line, and exits 0 - exit 1 stays reserved
+   for genuine failures because the hooks paint non-zero as "sync REPORTED
+   ERRORS". Override: -Force or SYNC_FORCE=1 (prints FORCED, logs
+   provenance=forced). Every run's log line carries branch=<b> primary=<yes|no>.
 
  Copy is BYTE-EXACT ([IO.File]::Copy) - no Get-Content/Set-Content round-trip -
  so committed EOL is preserved and icon.ico (binary) stays intact. Each drifted
@@ -40,7 +57,8 @@ param(
     [string]$Target,
     [switch]$DryRun,
     [switch]$Quiet,
-    [switch]$Verify
+    [switch]$Verify,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,18 +121,84 @@ function Test-Ps1Syntax {
     return $null
 }
 
+# Append one line per run to the sync log (best-effort; never fatal). The
+# provenance tokens ride on EVERY line so the next post-mortem is trivial.
+# Reads the script-scope $commit/$branch/$primaryStr/$forced set by the guard.
+function Write-SyncLog {
+    param([string]$Result, [string[]]$Actions)
+    $stamp = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
+    $prov = if ($forced) { ' provenance=forced' } else { '' }
+    $logLine = "[$stamp] commit=$commit branch=$branch primary=$primaryStr result=$Result$prov"
+    if ($Actions.Count -gt 0) { $logLine += ' | ' + ($Actions -join ' ') }
+    try {
+        $logPath = Join-Path $Target 'install-sync.log'
+        Add-Content -LiteralPath $logPath -Value $logLine -Encoding ascii
+    } catch {
+        Write-Warning "could not write install-sync.log: $($_.Exception.Message)"
+    }
+}
+
+# --- Provenance guard: only primary-checkout master code may deploy ---------
+# One choke point covering the hooks AND manual/agent invocation. Refusal is
+# CORRECT behavior, not an error: print one clear line, write the log line,
+# exit 0 (exit 1 is reserved for genuine failures - the hooks treat non-zero as
+# "sync REPORTED ERRORS" and would spam that banner on every legitimate branch
+# checkout in every worktree).
+$commit = 'n/a'
+$branch = 'n/a'
+$toplevel = 'n/a'
+$isPrimary = $false
+$primaryStr = 'no'
+$forced = [bool]$Force -or ($env:SYNC_FORCE -eq '1')
+
+$gitOk = $false
+# EAP=Stop + a native command writing stderr (e.g. symbolic-ref's "not a
+# symbolic ref" on a detached HEAD) throws even through 2>$null on PS 5.1 -
+# probe under Continue and gate each step on $LASTEXITCODE instead.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $gitDirOut = & git -C $SourceDir rev-parse --path-format=absolute --git-dir 2>$null
+    if ($LASTEXITCODE -eq 0 -and $gitDirOut) {
+        $commonOut = & git -C $SourceDir rev-parse --path-format=absolute --git-common-dir 2>$null
+        if ($LASTEXITCODE -eq 0 -and $commonOut) {
+            $gitOk = $true
+            # Primary checkout: git-dir IS the common dir. Linked worktree:
+            # git-dir is <common>/worktrees/<name>. The canonical test - no
+            # path pattern-matching. (PowerShell -eq on strings is
+            # case-insensitive, right for Windows paths; GetFullPath
+            # normalizes separators.)
+            $isPrimary = ([IO.Path]::GetFullPath($gitDirOut.Trim()) -eq [IO.Path]::GetFullPath($commonOut.Trim()))
+            $primaryStr = if ($isPrimary) { 'yes' } else { 'no' }
+
+            $topOut = & git -C $SourceDir rev-parse --show-toplevel 2>$null
+            if ($LASTEXITCODE -eq 0 -and $topOut) { $toplevel = $topOut.Trim() }
+
+            $c = & git -C $SourceDir rev-parse --short HEAD 2>$null
+            if ($LASTEXITCODE -eq 0 -and $c) { $commit = $c.Trim() }
+
+            # symbolic-ref fails on a detached HEAD - branch stays 'DETACHED'
+            # and the branch test below refuses it.
+            $b = & git -C $SourceDir symbolic-ref --short HEAD 2>$null
+            if ($LASTEXITCODE -eq 0 -and $b) { $branch = $b.Trim() } else { $branch = 'DETACHED' }
+        }
+    }
+} catch { $gitOk = $false }
+finally { $ErrorActionPreference = $prevEAP }
+
+if ($forced) {
+    Write-Line "sync-4ai-panes-install: FORCED - provenance guard overridden (-Force/SYNC_FORCE=1): toplevel=$toplevel branch=$branch primary=$primaryStr"
+} elseif (-not $gitOk -or -not $isPrimary -or $branch -ne 'master') {
+    Write-Line "sync-4ai-panes-install: REFUSED - not primary/master (toplevel=$toplevel branch=$branch primary=$primaryStr). Only merged master code may reach the live install. Override: -Force or SYNC_FORCE=1."
+    Write-SyncLog -Result 'refused' -Actions @()
+    exit 0
+}
+
 # --- Graceful skip when target absent --------------------------------------
 if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
     Write-Line "no install at $Target, skipping"
     exit 0
 }
-
-# --- Source commit (best-effort) -------------------------------------------
-$commit = 'n/a'
-try {
-    $c = & git -C $SourceDir rev-parse --short HEAD 2>$null
-    if ($LASTEXITCODE -eq 0 -and $c) { $commit = $c.Trim() }
-} catch { $commit = 'n/a' }
 
 # --- Sync each allowlisted file --------------------------------------------
 $exitCode = 0
@@ -197,13 +281,23 @@ foreach ($name in $Allowlist) {
 
 # --- Append one line per run to the sync log -------------------------------
 $result = if ($exitCode -eq 0) { if ($DryRun) { 'dry-run' } else { 'in-sync' } } else { 'ERRORS' }
-$stamp = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
-$logLine = "[$stamp] commit=$commit result=$result | " + ($actions -join ' ')
-try {
-    $logPath = Join-Path $Target 'install-sync.log'
-    Add-Content -LiteralPath $logPath -Value $logLine -Encoding ascii
-} catch {
-    Write-Warning "could not write install-sync.log: $($_.Exception.Message)"
+Write-SyncLog -Result $result -Actions $actions
+
+# --- Provenance sidecar for launch-time drift detection ---------------------
+# Written on every successful real run so run-pane-supervised.ps1 can warn at
+# launch when the live install drifts from the recorded repo's tools/4ai-panes/.
+if ($exitCode -eq 0 -and -not $DryRun) {
+    try {
+        $provJson = [ordered]@{
+            source_repo = $toplevel
+            commit      = $commit
+            branch      = $branch
+            synced_at   = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
+        } | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText((Join-Path $Target '.sync-provenance.json'), $provJson)
+    } catch {
+        Write-Warning "could not write .sync-provenance.json: $($_.Exception.Message)"
+    }
 }
 
 # --- Optional post-sync verification (opt-in, never called by the hooks) ----
