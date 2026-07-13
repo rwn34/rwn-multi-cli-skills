@@ -133,10 +133,10 @@ describe('sanitizeState', () => {
     copyFrameworkFiles(templateDir, target, false);
     sanitizeState(target, '0.0.1', false);
 
-    // Activity log should be clean header
-    const log = readFileSync(join(target, '.ai', 'activity', 'log.md'), 'utf-8');
-    expect(log).toContain('# Activity Log');
-    expect(log).not.toContain('## 2026');
+    // ADR-0010: activity log is an entry-per-file spool — no log.md (it becomes
+    // a generated view), and an empty entries/ spool holding only .gitkeep.
+    expect(existsSync(join(target, '.ai', 'activity', 'log.md'))).toBe(false);
+    expect(readdirSync(join(target, '.ai', 'activity', 'entries'))).toEqual(['.gitkeep']);
 
     // Handoff open/done dirs should be empty
     for (const cli of ['to-kiro', 'to-kimi', 'to-claude']) {

@@ -28,7 +28,32 @@ promotion happened.
 
 ### Changed
 
-- [TODO: changes in existing functionality]
+- **Activity log is now an entry-per-file spool (ADR-0010, Waves 1–2 of 3).**
+  Each CLI writes its own new file in `.ai/activity/entries/` (UTC filename +
+  random suffix); the whole-file prepend race — confirmed with real data loss on
+  2026-07-13 when a `kiro-cli` entry header was clobbered — becomes structurally
+  impossible: unique filename ⇒ no shared write ⇒ no lock ⇒ no clobber.
+  Concurrency demonstrated, not asserted: 40/40 same-second writers survived
+  with intact content. `.ai/activity/log.md` becomes a generated view rendered
+  on demand by the new `.ai/tools/render-activity-log.sh`. The Wave-3 freeze
+  (`git mv` of `log.md` to `archive/log-pre-spool.md` + `.gitignore`) is gated
+  on all three CLIs' inject hooks landing dual-mode on `master`, and is NOT in
+  this release.
+- Kimi hooks (`activity-log-inject`, `activity-log-remind`, `git-dirty-remind`)
+  are dual-mode: read the spool when it has entries, fall back to `log.md` so
+  pre-migration clones keep working.
+- Installers (`scripts/install-template.sh`, `tools/multi-cli-install`)
+  sanitize to an empty spool (`.ai/activity/entries/.gitkeep`) instead of a
+  seeded `log.md`; the manifest already excludes the whole `.ai/activity/`
+  subtree, so spool entries never enter adopter manifests.
+- Dispatch prompts (`dispatch-handoffs.sh`, `pane-runner.ps1`) instruct
+  recipients to "write an activity-log entry" instead of "prepend".
+- `.fleet/activity/log.md` (`scripts/fleet-init.sh`) deliberately stays a
+  single prepended file — one writer per project, so the race does not apply;
+  the decision is documented in the script per ADR-0010 § Migration.
+- Archival protocol (`.ai/activity/archive/README.md`) is now a `git mv` of
+  entry files into `archive/YYYY-MM/`; the cut-and-regroup rollup (itself a
+  whole-file rewrite racing live writers) is retired.
 
 ### Deprecated
 
@@ -36,7 +61,8 @@ promotion happened.
 
 ### Removed
 
-- [TODO: features removed this release]
+- `.ai/tools/activity-append.sh` and `.ai/tests/test-activity-append.sh` — the
+  serializing writer with zero callers (ADR-0010 § Alternatives (A)).
 
 ### Fixed
 
@@ -86,7 +112,6 @@ promotion happened.
   `sync-replicas.sh --check` (identical output contract and exit codes); the
   manual copy commands in `.ai/sync.md` are demoted to reference material in
   favor of the generator.
-
 
 ## [0.0.38] - 2026-07-13
 
