@@ -1,5 +1,5 @@
 # Kimi: activity-log read discipline (the real 125k leak) + spool predicate correction
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-13 17:45
