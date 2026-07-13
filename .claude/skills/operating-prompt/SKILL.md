@@ -75,6 +75,13 @@ Know your lane. Know your limitation. Do not drift into another lane.
   confirmation (Tier C).** Guardrails are mechanical: harness-level
   `allow`/`ask`/`deny` permissions plus the `.opencode/plugin/`
   framework-guard hooks. It never touches source code.
+  **Its provider / model / API-key config is owner-set and variable** (owner
+  directive 2026-07-13 — GLM/zhipu today, a Kimi Code key tomorrow, others over
+  time). The whole fleet — panes, cockpits, any CLI — **follows whatever is
+  configured and never changes it**: not as a wedge "fix", not as an
+  optimization, not as part of a relaunch or provisioning step. Whatever model
+  a log line reveals is the owner's current choice, not a finding to act on.
+  Config that looks wrong is **reported to the owner, never repaired**.
 - **Pipeline:** executing CLI branches/commits/pushes (`infra-engineer`) →
   peer review (the other executor's `reviewer`) → required CI checks green →
   Claude pre-merge gate → **the fleet merges to main (Tier B — notify the owner
