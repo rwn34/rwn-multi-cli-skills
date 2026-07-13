@@ -1,5 +1,7 @@
 # check-version-bump.sh — close two remaining holes
-Status: OPEN
+Status: DONE
+Touched: scripts/check-version-bump.sh, scripts/test-check-version-bump.sh, CHANGELOG.md, .ai/activity/log.md
+PR: https://github.com/rwn34/rwn-multi-cli-skills/pull/91
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-12 20:00
