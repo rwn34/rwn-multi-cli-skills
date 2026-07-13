@@ -190,8 +190,31 @@ cmd_islink() {
     | grep -i "$(basename "$1")" || true
 }
 
+# Pin the per-worktree committer identity to the executor that owns the tree.
+# Worktrees otherwise inherit the shared repo config's user.name — which flips
+# with whichever CLI last set it (observed 2026-07-13: 3 of 4 pane worktrees
+# carrying claude-code). The ADR-0005 pre-commit gate TRUSTS that identity: a
+# kiro commit mislabeled claude-code would inherit claude's cross-territory
+# replica exception. Idempotent; re-pinned every run so it also repairs drift.
+set_identity() {
+  local wt="$1" executor="$2" identity
+  case "$executor" in
+    kimi)     identity="kimi-cli" ;;
+    kiro)     identity="kiro-cli" ;;
+    claude)   identity="claude-code" ;;
+    opencode) identity="opencode" ;;
+    *)        log "warn   $executor — no identity mapping; leaving git user.name as-is"; return 0 ;;
+  esac
+  git -C "$wt" config --worktree user.name "$identity"
+  git -C "$wt" config --worktree user.email "$identity@users.noreply.github.com"
+}
+
 # ---------- bootstrap each executor ----------
 mkdir -p "$WT_CONTAINER"
+
+# Per-worktree config (used by set_identity) only takes effect when the main
+# repo config opts in; make sure fresh clones have it.
+git -C "$PROJECT_DIR" config extensions.worktreeConfig true
 
 CREATED=""
 SKIPPED=""
@@ -218,9 +241,11 @@ for executor in $EXECUTORS; do
   fi
 
   # Junction + exclude are re-established every run (idempotent) so they survive
-  # `git worktree prune` / branch deletion churn (design §8).
+  # `git worktree prune` / branch deletion churn (design §8). Identity is
+  # re-pinned too — it repairs drifted trees, not just fresh ones.
   link_ai "$wt_path"
   exclude_ai "$wt_path"
+  set_identity "$wt_path" "$executor"
 done
 
 # ---------- summary ----------

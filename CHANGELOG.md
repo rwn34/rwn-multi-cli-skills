@@ -40,6 +40,13 @@ promotion happened.
 
 ### Fixed
 
+- `wt-bootstrap.sh` now pins each executor worktree's committer identity
+  (`user.name`/`user.email` per `--worktree` config) on every run, create or
+  skip. Worktrees previously inherited the shared repo config's `user.name` —
+  which flips with whichever CLI last set it (observed: 3 of 4 pane worktrees
+  carrying `claude-code`) — and the ADR-0005 pre-commit gate trusts that
+  identity, so a mislabeled commit could inherit another CLI's territory
+  exception. The re-pin is idempotent and repairs drifted trees.
 - [TODO: bug fixes]
 
 ### Security
