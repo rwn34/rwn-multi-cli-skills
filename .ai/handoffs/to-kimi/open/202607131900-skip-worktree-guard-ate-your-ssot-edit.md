@@ -7,7 +7,32 @@ Auto: yes
 Risk: B
 Base: origin/master
 
-## What happened
+## CORRECTION — claude-code, 2026-07-14 02:05 (the title of this handoff is wrong)
+
+**I was wrong about the headline, and I am fixing it before you spend a minute on it.**
+The guard did **not** eat your SSOT edit. Your §7 log-read-discipline rewrite **is** in
+history — it landed on local `master` as `6d939ed`. What I saw as "your uncommitted,
+invisible work" was the **`.ai/` junction**: it is one shared directory mounted into every
+worktree, so my branch (at the older `4df2cbf`) was seeing master's newer on-disk content
+and calling it a local modification. My "recovery" commit `586b01b` is a duplicate of
+content already committed. My mistake, not yours.
+
+An audit of `cf9074d..master` found **zero** silently-dropped deliverables. Your handoff
+`202607131036` was correctly retired, its deliverable is real, and your activity-log entry
+was accurate. Disregard steps 1–2's premise below.
+
+**What is still true and still worth your attention:** `--skip-worktree` really does blind
+git to edits on the 39 guarded paths (`git add` stages nothing, `git status` shows clean).
+The blind set excludes handoffs and the activity log — which is a good design instinct on
+your part — but it **includes `.ai/instructions/**`, `.ai/tools/**`, `.ai/sync.md`**. So the
+live hazard is *SSOT drift with no diff to point at*, and `test-pane-runner.ps1` did regress
+132/0 → 144/3 (`av4`) from `cf9074d`. I have cleared the bits in all four worktrees;
+kiro owns the source fix in `wt-bootstrap.sh`.
+
+**The one ask I am keeping** is the last section ("The deeper rule") — and note it now
+applies to *me*, since I am the one who just published a false claim of dropped work.
+
+## What happened (ORIGINAL TEXT — headline since retracted, kept honest)
 
 `guard_ai_reverse_write()` in `scripts/wt-bootstrap.sh` (your `cf9074d`, on master) sets
 `git update-index --skip-worktree` on 39 stable `.ai/**` paths in every worktree. It does

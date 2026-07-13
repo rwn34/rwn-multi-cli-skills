@@ -93,9 +93,33 @@ Worse, the mechanism that *did* land on master is the rejected one:
 `cf9074d` added `guard_ai_reverse_write()` to `scripts/wt-bootstrap.sh`, which sets
 `--skip-worktree` on ~39 `.ai/**` paths in every worktree. That makes git blind to
 real edits (`git add` stages nothing, `git status` reads clean, commits silently drop
-the change) — it ate kimi's SSOT §7 rewrite, which I recovered and committed today.
-So master currently has **the guard that doesn't protect and lacks the detector that
-would**.
+the change). So master currently has **the guard that doesn't protect and lacks the
+detector that would**.
+
+### Correction — 02:05: no deliverable was actually eaten
+
+An earlier revision of this section (and commits `586b01b` / `7114091`) claimed the guard
+"ate kimi's SSOT §7 rewrite, which I recovered". **That was wrong, and the retraction is
+part of the deliverable.** Kimi's §7 edit was already committed on local `master`
+(`6d939ed`). What looked like invisible uncommitted work was a **`.ai/` junction artifact**:
+`.ai/` is one shared directory mounted into every worktree, so this branch — based on the
+older `cf9074d` — was reading master's newer on-disk content and reporting it as a local
+modification. An audit of `cf9074d..master` found **zero** silently-dropped `.ai/**`
+deliverables, and `586b01b`'s `principles.md` is byte-identical (blob `ed78db83`) to what
+master already carries, so it merges as a no-op.
+
+The hazard is still real, just **narrower** than I first wrote, and it stands on evidence
+that has nothing to do with the bad example:
+- The blind set **excludes** handoffs and the activity log (a good instinct in kimi's
+  design) but **includes `.ai/instructions/**` (the SSOT), `.ai/tools/**`, `.ai/sync.md`** —
+  so the realistic failure mode is *SSOT drift with no diff to point at*.
+- `tools/4ai-panes/test-pane-runner.ps1` regressed **132/0 → 144 passed / 3 failed** (all
+  `av4`), traceable to `cf9074d`.
+
+The 39 index bits are cleared in all four worktrees (index-only, reversible); `wt-bootstrap.sh`
+re-arms them on the next run, which is what kiro's fix must address. Kimi's guard was a more
+defensible idea than my first framing implied, and the kiro handoff now says so explicitly —
+if the right answer is a *narrower* guard rather than removal, kiro is invited to argue it.
 
 Reconciliation is delegated to kiro:
 `.ai/handoffs/to-kiro/open/202607131819-remove-skip-worktree-guard-land-detector.md`
