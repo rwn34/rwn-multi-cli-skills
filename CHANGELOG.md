@@ -66,6 +66,11 @@ promotion happened.
 
 ### Fixed
 
+- `pane-runner.ps1` now refuses to start if its worktree branch is behind
+  `origin/master`. A stale branch combined with a junctioned `.ai/` was the
+  reverse-write weapon that caused the 2026-07-13 primary `.ai/` clobber; the
+  guard exits cleanly (supervisor does not respawn) and prints the rebase/recreate
+  fix steps.
 - `wt-bootstrap.sh` now pins each executor worktree's committer identity
   (`user.name`/`user.email` per `--worktree` config) on every run, create or
   skip. Worktrees previously inherited the shared repo config's `user.name` —

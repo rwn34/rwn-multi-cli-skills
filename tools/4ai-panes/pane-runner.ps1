@@ -1065,6 +1065,37 @@ function Write-IdleHeartbeat {
     return $false
 }
 
+function Assert-WorktreeFresh {
+    <#
+    .SYNOPSIS
+        Fail-fast guard: refuse to start a pane whose worktree branch is behind
+        origin/master. A stale branch combined with a junctioned .ai/ is the
+        reverse-write weapon that caused the 2026-07-13 outage (ADR-0004).
+    #>
+    param([string]$ProjectDir)
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    Push-Location $ProjectDir
+    try {
+        git fetch origin *>$null
+        $behind = git rev-list --count HEAD..origin/master 2>$null
+        if ($behind -match '^\d+$') {
+            $behindN = [int]$behind
+            if ($behindN -gt 0) {
+                $branch = git branch --show-current 2>$null
+                Write-Host "  STALE: worktree branch '$branch' is $behindN commits behind origin/master." -ForegroundColor Red
+                Write-Host "  Refusing to start: a stale branch + junctioned .ai/ can rewrite the primary .ai/ with old blobs." -ForegroundColor Red
+                Write-Host "  Fix: stop this pane, rebase the branch onto origin/master, recreate the worktree, then restart." -ForegroundColor Yellow
+                return $false
+            }
+        }
+    } finally {
+        Pop-Location
+        $ErrorActionPreference = $prevEAP
+    }
+    return $true
+}
+
 function Start-PaneRunner {
     param(
         [string]$Cli,
@@ -1086,6 +1117,12 @@ function Start-PaneRunner {
     Write-Host "| IDLE poll every ${PollSeconds}s  |  MAX-continues=$MaxContinues" -ForegroundColor Cyan
     Write-Host "| 'p' = pause -> CLI   'q' = quit   Ctrl-C = stop  |" -ForegroundColor Cyan
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
+
+    # Fail-fast: stale branch + junctioned .ai/ is the reverse-write weapon.
+    # Exit cleanly (0) so the supervisor does not endlessly respawn a stale pane.
+    if (-not (Assert-WorktreeFresh -ProjectDir $ProjectDir)) {
+        return
+    }
 
     # Intent flag for the exit-code contract: set true on a deliberate stop (Ctrl-C
     # caught, or the 'q' quit key) so the outer finally exits 0 (do-not-respawn).
