@@ -135,7 +135,7 @@ Three mechanisms, three scopes — they complement, never compete:
 |---|---|---|
 | **Session-end reminder** | every Claude session | `stop-reminder.sh` prints per-queue open counts at each turn end — zero setup, always on. |
 | **In-session interval poll** | an active working session | `/loop 15m bash .ai/tools/dispatch-handoffs.sh --exec` — Claude re-runs the dispatcher every 15 min while you work. Stop the loop when done. |
-| **Human glance** | daily 4AI-panes use | Selector badge (planned, P5): per-project open-handoff counts + framework-version state, so the human sees pending Risk-C work without opening files. |
+| **Human glance** | daily 4AI-panes use | Selector badge (planned, P5): per-project open-handoff counts + framework-version state, so the human sees pending Risk-C work without opening files. The badge also carries a `stall:<cli>` marker when a recipient with open handoffs has a missing/stale pane heartbeat — the glance-level twin of `fleet-health.sh`'s STALL verdict. |
 | **Cockpit claim override** | a cockpit taking an `Auto: yes` handoff (pane down, quarantined, owner waiting live) | `bash .ai/tools/claim-handoff.sh <path>` — flips `Auto:` to `no` and takes a claim sidecar atomically, so the auto pane skips the item on its next poll; `release-handoff.sh` reverts ("claimed it, changed my mind"). |
 
 **The `Auto:` tag is the ownership boundary (2026-07-13).** Two live instances
@@ -147,6 +147,14 @@ claim override above is the ONLY legitimate way for a cockpit to take an
 `Auto: yes` item — never just start working one, and never hand-edit `Auto:`
 without a claim. Symmetric across all four CLIs; it degrades correctly during
 a pane outage (panes down → claim → cockpit owns it legitimately).
+
+A fourth mechanism watches the watchers (P6, 2026-07-13): `bash .ai/tools/fleet-health.sh`
+cross-checks each pane's heartbeat sidecar (`.ai/.heartbeat-<cli>.json`, written
+once per poll cycle by `pane-runner.ps1`) against its open queue and flags
+`STALL` (queue with nobody watching) / `WEDGED` (polling but not picking up) /
+`DOWN (idle)` (informational). Exit 1 on STALL/WEDGED so CI and hooks can gate;
+fail-open on its own errors. Detection and alerting only — it never restarts a
+pane. `stop-reminder.sh` surfaces STALL/WEDGED lines at every session end.
 
 A `schedule` cron routine (out-of-session cloud dispatch) is deliberately NOT
 configured — cloud runs cost money (Tier C) and the dispatcher needs local CLI

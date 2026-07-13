@@ -228,8 +228,17 @@ function Test-IsFrameworkSource {
 #                      will poll/execute them), the badge appends a stranded marker:
 #                      [H:3 stranded:kimi,opencode]. This surfaces work that would
 #                      otherwise sit silently with no consumer.
-# Cheap on purpose: two Test-Path calls + one shallow glob per project; any error
-# in a broken project dir yields an empty/partial badge, never a crash.
+#                      B7 (pane liveness): a recipient WITH open handoffs whose
+#                      heartbeat sidecar (.ai/.heartbeat-<cli>.json) is missing or
+#                      older than the 15-minute pane staleness window (mirrors
+#                      pane-runner.ps1 ProjectClaimStaleMinutes / fleet-health.sh)
+#                      has a queue nobody is watching -> [H:2 stall:opencode],
+#                      the badge twin of fleet-health.sh's STALL verdict.
+# Cheap on purpose: two Test-Path calls + one shallow glob per project, plus —
+# only when [H:n] is already non-zero — one Test-Path + one Get-Item per
+# recipient WITH handoffs (mtime tracks the heartbeat ts: the file is
+# atomically rewritten each poll cycle, so no JSON parse, no pid probe). Any
+# error in a broken project dir yields an empty/partial badge, never a crash.
 # -Project resolves under $projectsDir (default list); -Path takes an arbitrary
 # directory (browse mode). Both paths produce identical badges.
 function Get-ProjectBadges {
@@ -252,6 +261,7 @@ function Get-ProjectBadges {
         # shared $cliKey (derived from fleet-clis.ps1 $FleetCliProper at load).
         $handoffCount = 0
         $stranded = @()
+        $stalled = @()
         $handoffRoot = Join-Path $aiDir "handoffs"
         if (Test-Path $handoffRoot) {
             Get-ChildItem -Path $handoffRoot -Directory -Filter "to-*" -ErrorAction SilentlyContinue |
@@ -263,16 +273,22 @@ function Get-ProjectBadges {
                         $suffix = ($_.Name -replace '^to-', '').ToLower()
                         $key = $cliKey[$suffix]
                         if ($key -and $cliAvailable -and -not $cliAvailable[$key]) { $stranded += $suffix }
+                        # B7: pane-liveness twin of fleet-health.sh STALL — open handoffs
+                        # but no fresh heartbeat = a queue nobody is watching. mtime
+                        # tracks the heartbeat ts (atomic rewrite each poll cycle).
+                        $hbPath = Join-Path $aiDir ".heartbeat-$suffix.json"
+                        $hbFresh = (Test-Path $hbPath) -and `
+                            ((Get-Item $hbPath -ErrorAction SilentlyContinue).LastWriteTimeUtc -ge (Get-Date).ToUniversalTime().AddMinutes(-15))
+                        if (-not $hbFresh) { $stalled += $suffix }
                     }
                 }
         }
         if ($handoffCount -gt 0) {
-            if ($stranded.Count -gt 0) {
-                $list = ($stranded | Sort-Object -Unique) -join ','
-                $badges += "[H:$handoffCount stranded:$list]"
-            } else {
-                $badges += "[H:$handoffCount]"
-            }
+            $hBadge = "[H:$handoffCount"
+            if ($stranded.Count -gt 0) { $hBadge += " stranded:$(($stranded | Sort-Object -Unique) -join ',')" }
+            if ($stalled.Count -gt 0)  { $hBadge += " stall:$(($stalled | Sort-Object -Unique) -join ',')" }
+            $hBadge += "]"
+            $badges += $hBadge
         }
     } catch {}
     return $badges -join " "
@@ -282,7 +298,9 @@ function Get-ProjectBadges {
 # glyphs are never cryptic. Kept at <= 70 chars to fit the narrowest box (the box
 # truncates, so an overflowing legend loses its tail). Adding [v SRC] cost the
 # "stranded:no CLI" tail -- the stranded badge spells its own recipients out
-# ([H:3 stranded:kimi]), so it is the most self-describing thing here.
+# ([H:3 stranded:kimi]), so it is the most self-describing thing here. B7's
+# "stall:<cli>" follows the same self-describing pattern and likewise stays out
+# of the legend budget.
 $badgeLegend = " [v OK]=ok [v SRC]=fw src [! OLD]=stale [- none]=none [H:n]=handoffs"
 
 # History label for a target dir: the folder name, or its path relative to

@@ -70,6 +70,12 @@
 #        ensure_declared_base_branch) survives the same landmine state
 #   (av4) wt-bootstrap junction-degradation guard: degraded real-dir .ai with
 #        uncommitted content dies loud; clean real dir re-junctions
+#   (ba-be) PANE LIVENESS HEARTBEAT SIDECAR (fleet-health.sh dead-man's switch):
+#     (ba) Write-Heartbeat writes .ai/.heartbeat-<cli>.json w/ contract fields
+#     (bb) atomic temp+rename leaves no .tmp debris
+#     (bc) busy state records the current handoff leaf
+#     (bd) rewrite over an existing sidecar is a clean replace, still valid JSON
+#     (be) anti-rot: Start-PaneRunner calls Write-Heartbeat, fail-open wrapped
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -1113,6 +1119,51 @@ Assert-Equal $true ($wtSrc2 -match 'Resolve-GitBash') `
     'ay: anti-rot - InvokeWtBootstrap resolves bash via Resolve-GitBash'
 Assert-Equal $false ($wtSrc2 -match 'Get-Command\s+bash') `
     'ay2: anti-rot - the unguarded `Get-Command bash` is gone from InvokeWtBootstrap'
+
+# ---------------------------------------------------------------------------
+# (ba-be) PANE LIVENESS HEARTBEAT SIDECAR — fleet-health.sh's dead-man's switch.
+# The supervisor loop writes .ai/.heartbeat-<cli>.json once per poll cycle;
+# fleet-health.sh treats a missing/stale file as "queue unwatched" (STALL).
+# ---------------------------------------------------------------------------
+
+# (ba) Write-Heartbeat writes the sidecar with the full contract field set.
+$hbPath = Get-HeartbeatPath -ProjectDir $work -CliName 'kimi'
+Write-Heartbeat -ProjectDir $work -CliName 'kimi' -MyPid $PID -CurrentHandoff 'idle'
+Assert-Equal $true (Test-Path $hbPath) 'ba: Write-Heartbeat writes .ai/.heartbeat-<cli>.json'
+$hb = Get-Content -Path $hbPath -Raw | ConvertFrom-Json
+Assert-Equal 'kimi' $hb.cli 'ba2: sidecar carries cli'
+Assert-Equal $PID $hb.pid 'ba3: sidecar carries the writer pid'
+Assert-Equal ([System.Net.Dns]::GetHostName()) $hb.host 'ba4: sidecar carries the host'
+Assert-Equal 'idle' $hb.handoff 'ba5: idle cycle records handoff=''idle'''
+$hbTs = [datetime]::MinValue
+Assert-Equal $true ([datetime]::TryParse([string]$hb.ts, [ref]$hbTs)) 'ba6: ts parses as a datetime'
+Assert-Equal $true (((Get-Date).ToUniversalTime() - $hbTs.ToUniversalTime()).TotalMinutes -lt 1) 'ba7: ts is current (UTC)'
+
+# (bb) atomic write: temp+rename leaves NO .tmp.<pid> debris — the half-written
+#      file a concurrent reader (fleet-health.sh) could catch is the entire
+#      point of the Write-Claim pattern this mirrors.
+$hbDir = Split-Path -Parent $hbPath
+$tmpLeftovers = @(Get-ChildItem -Path $hbDir -Filter '.heartbeat-kimi.json.tmp.*' -File -ErrorAction SilentlyContinue)
+Assert-Equal 0 $tmpLeftovers.Count 'bb: atomic temp+rename leaves no .tmp debris'
+
+# (bc) a busy cycle records the current handoff leaf.
+Write-Heartbeat -ProjectDir $work -CliName 'kimi' -MyPid $PID -CurrentHandoff '202607130251-pane-liveness-watchdog.md'
+$hb2 = Get-Content -Path $hbPath -Raw | ConvertFrom-Json
+Assert-Equal '202607130251-pane-liveness-watchdog.md' $hb2.handoff 'bc: busy cycle records the handoff leaf'
+
+# (bd) rewriting over an existing sidecar is a clean replace (Move-Item -Force):
+#      still valid JSON afterwards, still no debris.
+$tmpLeftovers2 = @(Get-ChildItem -Path $hbDir -Filter '.heartbeat-kimi.json.tmp.*' -File -ErrorAction SilentlyContinue)
+Assert-Equal 0 $tmpLeftovers2.Count 'bd: rewrite over an existing sidecar leaves no debris'
+Assert-Equal $true ($null -ne $hb2.ts) 'bd2: rewritten sidecar is still valid JSON'
+
+# (be) ANTI-ROT WIRING GUARD: the supervisor loop must write the heartbeat once
+#      per poll cycle, fail-open — source-level, same technique as (at)/(ay).
+#      Without this, deleting the call makes fleet-health.sh blind while this
+#      suite stays green.
+$loopSrc = (Get-Command Start-PaneRunner).Definition
+Assert-Equal $true ($loopSrc -match 'Write-Heartbeat') 'be: anti-rot - Start-PaneRunner calls Write-Heartbeat'
+Assert-Equal $true ($loopSrc -match 'try\s*\{[\s\S]*?Write-Heartbeat[\s\S]*?\}\s*catch') 'be2: anti-rot - the heartbeat write is fail-open (try/catch)'
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
