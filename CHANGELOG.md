@@ -20,6 +20,10 @@ promotion happened.
 
 ### Added
 
+- ADR-0014: enforcement-layer (`.claude/hooks/**`) changes land via peer-reviewed
+  PR (author ≠ reviewer, required CI gates, no self-merge) instead of
+  owner-apply-only, replacing the hand-applied-patch escape hatch that made the
+  owner a relay rather than a gate.
 - [TODO: new features]
 
 ### Changed
