@@ -518,29 +518,25 @@ prune_legacy() {
 }
 
 write_clean_activity_log() {
-  local dst="$TARGET/.ai/activity/log.md"
+  # ADR-0010 (2026-07-13): the activity log is an entry-per-file spool, not a
+  # single log.md. A clean install gets an EMPTY spool directory; log.md becomes
+  # a generated, gitignored view (bash .ai/tools/render-activity-log.sh). Any
+  # log.md that rode along with the template copy is removed so adopters do not
+  # inherit the template's own history.
+  local log_file="$TARGET/.ai/activity/log.md"
+  local keep="$TARGET/.ai/activity/entries/.gitkeep"
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "DRY: reset $dst to clean header"
+    log "DRY: rm -f $log_file ; create $keep (empty entry spool, ADR-0010)"
     return 0
   fi
-  cat > "$dst" <<'EOF'
-# Activity Log
-
-Newest entries at the top. Each CLI prepends an entry after completing substantive work.
-
-**Timestamp rule:** the `HH:MM` in each entry heading is local wall-clock time at the
-moment of prepending (i.e. when the work finished, not when it started). CLIs on
-different local clocks may produce timestamps that don't sort monotonically;
-**prepend order is the authoritative sequencing**, timestamps are annotations.
-
-**Archive:** older entries live in `.ai/activity/archive/YYYY-MM.md` (one file per
-calendar month). See `.ai/activity/archive/README.md` for the rollover protocol.
-
----
-
-EOF
-  track ".ai/activity/log.md"
-  log "Reset activity log."
+  rm -f "$log_file"
+  # Clear any entries copied from the template tree (adopters must not inherit
+  # the template's own spool), then leave an empty spool behind.
+  rm -rf "$TARGET/.ai/activity/entries"
+  mkdir -p "$(dirname "$keep")"
+  : > "$keep"
+  track ".ai/activity/entries/.gitkeep"
+  log "Reset activity log: removed log.md, created empty entry spool (ADR-0010)."
 }
 
 clear_dir_contents() {

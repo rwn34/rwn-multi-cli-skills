@@ -1,22 +1,6 @@
 import { writeFileSync, readdirSync, rmSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const CLEAN_ACTIVITY_LOG = `# Activity Log
-
-Newest entries at the top. Each CLI prepends an entry after completing substantive work.
-
-**Timestamp rule:** the \`HH:MM\` in each entry heading is local wall-clock time at the
-moment of prepending (i.e. when the work finished, not when it started). CLIs on
-different local clocks may produce timestamps that don't sort monotonically;
-**prepend order is the authoritative sequencing**, timestamps are annotations.
-
-**Archive:** older entries live in \`.ai/activity/archive/YYYY-MM.md\` (one file per
-calendar month). See \`.ai/activity/archive/README.md\` for the rollover protocol.
-
----
-
-`;
-
 function clearDir(dir: string, dryRun: boolean): string[] {
   const modified: string[] = [];
   if (!existsSync(dir)) return modified;
@@ -30,11 +14,24 @@ function clearDir(dir: string, dryRun: boolean): string[] {
 export function sanitizeState(targetDir: string, version: string, dryRun: boolean): string[] {
   const modified: string[] = [];
 
-  // 1. Clean activity log
+  // 1. Clean activity log — ADR-0010 (2026-07-13): the activity log is an
+  // entry-per-file spool, not a single log.md. Remove any log.md that rode
+  // along with the template copy (adopters must not inherit the template's own
+  // history) and create an empty spool. log.md becomes a generated, gitignored
+  // view rendered by .ai/tools/render-activity-log.sh.
   const logPath = join(targetDir, '.ai', 'activity', 'log.md');
   if (existsSync(logPath)) {
     modified.push('.ai/activity/log.md');
-    if (!dryRun) writeFileSync(logPath, CLEAN_ACTIVITY_LOG);
+    if (!dryRun) rmSync(logPath, { force: true });
+  }
+  const entriesDir = join(targetDir, '.ai', 'activity', 'entries');
+  // Clear any entries copied from the template tree (adopters must not inherit
+  // the template's own spool), then leave an empty spool behind.
+  modified.push(...clearDir(entriesDir, dryRun).map(p => p.replace(targetDir + '/', '').replace(targetDir + '\\', '')));
+  modified.push('.ai/activity/entries/.gitkeep');
+  if (!dryRun) {
+    mkdirSync(entriesDir, { recursive: true });
+    writeFileSync(join(entriesDir, '.gitkeep'), '');
   }
 
   // 2. Clear handoff open/done dirs (keep README.md and template.md at handoffs/ root)
