@@ -166,7 +166,7 @@ try {
     Assert-Equal 0 $rD.Code 'd1: primary+master exits 0'
     Assert-True (-not $rD.Text.Contains('REFUSED')) 'd2: no refusal on primary+master'
     Assert-True (Test-Path (Join-Path $tD 'Selector.ps1') -PathType Leaf) 'd3: tool files copied'
-    Assert-Equal 12 (Get-CopiedCount $tD) 'd4: all 12 allowlisted files copied'
+    Assert-Equal 17 (Get-CopiedCount $tD) 'd4: all 17 allowlisted files copied'
     Assert-Contains (Get-LogText $tD) 'branch=master primary=yes' 'd5: log carries branch=master primary=yes'
 
     # (h) provenance sidecar written on a real sync
