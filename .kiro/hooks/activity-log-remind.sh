@@ -2,9 +2,18 @@
 # Hook: stop — remind about activity log + open handoff queues + unpushed changes.
 # Non-blocking (exit 0). Queue-count block mirrors Claude's stop-reminder.sh so
 # Kiro gets the same end-of-session handoff awareness (gap B4).
+#
+# Dual-mode (ADR-0010): once the entries/ spool exists and is non-empty, "was
+# the log updated recently" means "is there a fresh entry file"; until then,
+# fall back to the legacy shared log.md mtime check.
 
 # --- Reminder 1: activity log ---
-if [ -f .ai/activity/log.md ] && [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
+ENTRIES_DIR=.ai/activity/entries
+if [ -d "$ENTRIES_DIR" ] && [ -n "$(ls -A "$ENTRIES_DIR"/*.md 2>/dev/null)" ]; then
+  if [ -z "$(find "$ENTRIES_DIR" -name '*.md' -mmin -60 2>/dev/null)" ]; then
+    echo 'REMINDER: no new file in .ai/activity/entries/ in this session. If you made substantive changes (file edits, tests run, decisions), write an entry file before ending.'
+  fi
+elif [ -f .ai/activity/log.md ] && [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
   echo 'REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending.'
 fi
 
@@ -29,7 +38,7 @@ if [ -n "$queue_summary" ]; then
 fi
 
 # --- Reminder 2: uncommitted changes beyond the activity log ---
-DIRTY=$(git status --short 2>/dev/null | grep -v '.ai/activity/log.md')
+DIRTY=$(git status --short 2>/dev/null | grep -v '.ai/activity/log.md' | grep -v '.ai/activity/entries/')
 if [ -n "$DIRTY" ]; then
   echo ""
   echo 'REMINDER: Unpushed changes detected. Delegate to infra-engineer to commit and push.'

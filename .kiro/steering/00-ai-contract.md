@@ -10,27 +10,58 @@ share state via `.ai/` so no CLI has to copy-paste another's output to stay cohe
 `.ai/instructions/` is canonical. Your `.kiro/steering/*.md` files are replicas. If they
 disagree, `.ai/instructions/` wins — see `.ai/sync.md` to regenerate.
 
-## Cross-CLI activity log — `.ai/activity/log.md`
+## Cross-CLI activity log — `.ai/activity/entries/` (spool; ADR-0010)
 
-**Read** at the start of non-trivial work. Newest entries are at the top — scan recent
-ones to see what other CLIs did here.
+The activity log is an **entry-per-file spool**, not a shared file you edit. Each
+substantive action gets its **own new file** — you never open, prepend to, or
+rewrite anyone else's entry, and you never rewrite your own prior entries.
 
-**Prepend** one entry after completing substantive work (file edits, running tests,
-non-obvious decisions, finishing a task):
+**Read** at the start of non-trivial work: list the newest few files in
+`.ai/activity/entries/` (sorted by filename, which is a fixed-width UTC
+timestamp, so lexicographic order == chronological order) and read them to see
+what other CLIs did here.
+
+    ls .ai/activity/entries/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -60
+
+**Write one entry file** after completing substantive work (file edits, running
+tests, non-obvious decisions, finishing a task) — never edit or delete another
+entry:
+
+    .ai/activity/entries/<YYYYMMDDTHHMMSSZ>-kiro-cli-<slug>-<rand4>.md
+
+- `<YYYYMMDDTHHMMSSZ>` — **UTC**, second precision, ISO-8601 basic form (this is
+  the filename's sort key — it must be UTC even though the body heading below
+  stays local time).
+- `<slug>` — short kebab-case topic.
+- `<rand4>` — four random lowercase hex characters (distinguishes two concurrent
+  writers, e.g. an interactive and a headless Kiro session, at the same second).
+
+The file's **body** keeps the same heading + shape as before — only the storage
+location changed, not the content format:
 
     ## YYYY-MM-DD HH:MM — kiro-cli
     - Action: <one-line summary>
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">
 
-**Timestamp rule:** use your current local wall-clock time at the moment you prepend
-the entry — i.e. after the work is finished, not when you started. CLIs running in
-different timezones or with drifted clocks may produce timestamps that don't sort
-monotonically; **prepend order is the authoritative sequencing**, timestamps are
-annotations.
+**Timestamp rule (body heading):** use your current local wall-clock time at the
+moment you write the entry — i.e. after the work is finished, not when you
+started. This is unchanged from before; only the **filename** timestamp is UTC.
 
-Terse — one short paragraph max. One entry per substantive action, not per file edit.
-Never rewrite prior entries. Do not log trivial reads.
+**Ordering:** entries sort by filename (UTC timestamp), which is best-effort
+chronological — not causal, and not an authoritative "who-wrote-first" record
+the way the old shared-file prepend order was informally treated. On one
+machine with one clock this is reliable in practice.
+
+Terse — one short paragraph max per entry. One entry file per substantive
+action, not per file edit. Do not log trivial reads.
+
+**Fallback (transitional, until the spool is populated across the fleet):** if
+`.ai/activity/entries/` does not yet exist or is empty, `log.md` is still the
+live file — read and prepend to it exactly as before. Once entries start
+landing, switch to writing entry files. Never write to `log.md` once
+`entries/` is in active use elsewhere — that reintroduces the write race
+ADR-0010 exists to remove.
 
 ## Cross-CLI handoffs
 
