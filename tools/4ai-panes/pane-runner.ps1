@@ -684,6 +684,41 @@ function Remove-Claim {
     if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
 }
 
+# -- Pane liveness heartbeat sidecar (the fleet dead-man's switch) --
+#
+# Written once per poll cycle by the supervisor loop: .ai/.heartbeat-<cli>.json
+# carrying cli/pid/host/ts plus the current handoff leaf or 'idle'. Atomic
+# temp + rename, byte-for-byte the Write-Claim pattern (BOM-less UTF8). This is
+# the ONLY liveness signal that lives outside the pane itself: .ai/tools/
+# fleet-health.sh reads it and flags STALL when the file is missing or older
+# than the SAME 15-minute staleness window the claim-locks already use
+# ($script:ProjectClaimStaleMinutes) — one shared freshness policy, not a
+# second one. A pane that stops cycling (dead, or hung inside a single long
+# CLI invocation) stops refreshing ts — and that IS the alert.
+function Get-HeartbeatPath {
+    param([string]$ProjectDir, [string]$CliName)
+    return (Join-Path $ProjectDir ".ai/.heartbeat-$CliName.json")
+}
+
+function Write-Heartbeat {
+    param([string]$ProjectDir, [string]$CliName, [int]$MyPid, [string]$CurrentHandoff = 'idle')
+    $p = Get-HeartbeatPath -ProjectDir $ProjectDir -CliName $CliName
+    $dir = Split-Path -Parent $p
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $obj = [ordered]@{
+        project = (Split-Path -Leaf $ProjectDir)
+        cli     = $CliName
+        pid     = $MyPid
+        host    = [System.Net.Dns]::GetHostName()
+        ts      = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        handoff = $CurrentHandoff
+    }
+    $tmp = "$p.tmp.$MyPid"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
+    [System.IO.File]::WriteAllBytes($tmp, $bytes)
+    Move-Item -Path $tmp -Destination $p -Force
+}
+
 # -- Per-handoff claim-lock (cross-consumer contract, ADR-0009 section 3) --
 #
 # Finer-grained than the per-project claim above: a sidecar per handoff so two
@@ -1109,6 +1144,14 @@ function Start-PaneRunner {
                 }
 
                 $handoff = Get-QualifyingHandoff -ProjectDir $ProjectDir -CliName $Cli
+                # Liveness heartbeat: exactly once per poll cycle, before any
+                # skip/continue branch, so the sidecar always reflects the last
+                # cycle that RAN. Fail-open: a heartbeat write error must never
+                # break the pane loop (same contract as Send-FleetNotification).
+                try {
+                    Write-Heartbeat -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid `
+                        -CurrentHandoff $(if ($null -eq $handoff) { 'idle' } else { Split-Path -Leaf $handoff })
+                } catch {}
                 if ($null -eq $handoff) {
                     Write-IdleHeartbeat -CliName $Cli -LastEmitted ([ref]$lastHeartbeat) | Out-Null
                     Start-Sleep -Seconds $PollSeconds

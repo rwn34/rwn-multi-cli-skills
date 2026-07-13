@@ -493,11 +493,20 @@ function Test-Badges {
     Assert-That ($b -eq '[- none]') 'non-existent dir badges [- none] without throwing' "got '$b'"
 
     # The handoff badge is UNCHANGED for the source repo: [v SRC] + [H:n].
+    # B7: with open handoffs and NO heartbeat sidecar, the badge also carries
+    # the stall: marker (a queue nobody is watching — fleet-health.sh's STALL).
     New-Item -ItemType Directory -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open') -Force | Out-Null
     'x' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\a.md')
     'y' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\b.md')
     $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
-    Assert-That ($b -eq '[v SRC] [H:2]') 'source repo still gets the [H:n] handoff badge' "got '$b'"
+    Assert-That ($b -eq '[v SRC] [H:2 stall:kimi]') 'source repo gets [H:n] + stall: when the heartbeat is missing' "got '$b'"
+
+    # B7 positive case: a FRESH heartbeat sidecar clears the stall marker.
+    $hb = Join-Path $fwSrc '.ai\.heartbeat-kimi.json'
+    '{"cli":"kimi","pid":1,"host":"x","ts":"now","handoff":"idle"}' | Set-Content -Path $hb
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC] [H:2]') 'fresh heartbeat sidecar -> no stall: marker' "got '$b'"
+    Remove-Item -Path $hb -Force
 
     # Legend: documents the new badge and fits the narrowest box (<= 70 chars).
     $legend = & ([scriptblock]::Create((Get-SelectorAssignmentText -Ast (Get-SelectorAst) -VarName 'badgeLegend') + "`r`n" + '$badgeLegend'))
