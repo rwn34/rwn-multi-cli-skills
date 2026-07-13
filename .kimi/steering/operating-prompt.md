@@ -133,6 +133,13 @@ the recipient self-retires: set Status `DONE` and move the file from `open/` to
 `done/` yourself; the sender validates post-hoc. If blocked, leave it in `open/`
 as `BLOCKED` with a verbatim `## Blocker` section.
 
+**The `Auto:` tag is the ownership boundary.** `Auto: yes` + Risk A/B belongs
+to the auto pane — a cockpit must not hand-take it; `Auto: no` / Risk C is
+cockpit-owned. A cockpit taking an `Auto: yes` handoff (pane down,
+quarantined, owner waiting live) must FIRST run `bash .ai/tools/claim-handoff.sh
+<path>` (flips `Auto: no` + claim sidecar, atomically); `release-handoff.sh`
+reverts. Symmetric across all four CLIs.
+
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.
 Uncommitted files with no log entry are a protocol failure.
@@ -357,6 +364,51 @@ already in the conversation is the single easiest way to waste the fleet.
 This section is about **cost**, not permission. It never relaxes a Tier-C gate
 (§8) and never moves a lane boundary (§4): Kimi and Kiro still may not merge to
 main, author ADRs, or deploy — no matter how much budget they have left.
+
+---
+
+## 15. Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13. Every CLI in this fleet keeps making Linux
+assumptions and paying for them. **This is a Windows 11 host. The shell is
+PowerShell. There is no WSL.** Stop writing commands for a machine that does not
+exist here.
+
+### What is actually true
+
+| Thing | Reality |
+|---|---|
+| Host OS | Windows 11 |
+| Shell | **PowerShell** (Windows Terminal). Not bash, not WSL. |
+| Fleet tooling | `.ps1` — `tools/4ai-panes/pane-runner.ps1`, `Selector.ps1`, and their `test-*.ps1` suites run under PowerShell |
+| Paths | `C:\Users\...` — backslashes, drive letters, spaces in paths |
+| `bash` | Exists **only** via Git-for-Windows (MSYS). It is a guest, not the host. |
+| `.sh` tooling | `.ai/tools/*.sh` and the hooks are bash and are invoked **explicitly** (`bash foo.sh`) — the exec bit is not tracked (files are mode `100644`), so `./foo.sh` is not the convention here |
+
+### The mistakes that keep costing us (each one is a real incident)
+
+- **MSYS mangles colon-joined arguments.** `git show "<ref>:<path>"` gets
+  rewritten into a garbled Windows path. Use `git ls-tree` + `git cat-file -p
+  <blobsha>` instead — no colon-joined token for MSYS to "fix". (Cost us a
+  debugging cycle on 2026-07-13.)
+- **The bash guard refuses unparseable constructs**, e.g. a leading option before
+  a command (`-e ...`) → `BLOCKED by hook: unparseable command construct`. Write
+  plain, boring commands; do not be clever with the shell.
+- **Do not assume a Linux userland.** No `apt`/`yum`. Do not assume `/usr/bin`,
+  `/tmp`, or that a GNU flag exists. MSYS gives you a *subset*.
+- **In `.ps1`, use PowerShell idioms** — `Get-FileHash`, not `sha256sum`;
+  `Test-Path`, not `test -f`. Do not shell out to bash from PowerShell just to
+  reach for a coreutil.
+- **`.ai/` is a Windows junction** (`mklink /J`), not a symlink, shared into every
+  worktree. It behaves differently from a POSIX symlink under git — see §7 and
+  `docs/specs/junction-reverse-write-guard.md`.
+
+### The rule
+
+**Match the tool to the host.** PowerShell for fleet tooling and anything
+interactive; bash only for the `.sh` scripts that already exist, invoked as
+`bash <script>`. When you write a command, ask which shell will actually run it —
+and if you are guessing, you are about to file another one of these bullets.
 
 ---
 

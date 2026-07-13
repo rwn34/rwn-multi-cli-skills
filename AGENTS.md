@@ -12,6 +12,29 @@ operator (ADR-0002 Stage 2, Crush replacement per owner decision 2026-07-09)
 Each CLI stays in its lane; role definitions and limitations live in the
 operating-prompt SSOT (`.ai/instructions/operating-prompt/principles.md` §4).
 
+## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13 (SSOT §15). Applies to **every** CLI. **This is a
+Windows 11 host and the shell is PowerShell.** There is no WSL. The fleet keeps
+making Linux assumptions and keeps paying for them — stop.
+
+- Fleet tooling is `.ps1` (`tools/4ai-panes/*.ps1` + `test-*.ps1`). In PowerShell,
+  use PowerShell idioms: `Get-FileHash` not `sha256sum`, `Test-Path` not `test -f`.
+- `bash` exists **only** via Git-for-Windows (MSYS) — a guest, not the host.
+  `.ai/tools/*.sh` and the hooks are bash, invoked explicitly (`bash foo.sh`);
+  the exec bit is not tracked (mode `100644`), so `./foo.sh` is not the convention.
+- **MSYS mangles colon-joined args**: `git show "<ref>:<path>"` gets garbled — use
+  `git ls-tree` + `git cat-file -p <blobsha>` instead.
+- The bash guard refuses unparseable constructs (e.g. a leading option before a
+  command). Write plain, boring commands; don't be clever with the shell.
+- No Linux userland: no `apt`, no guaranteed `/usr/bin`, `/tmp`, or GNU flags.
+- `.ai/` is a Windows **junction** (`mklink /J`), not a POSIX symlink, shared into
+  every worktree — it behaves differently under git. See
+  `docs/specs/junction-reverse-write-guard.md`.
+
+**Rule: match the tool to the host.** If you're guessing which shell will run your
+command, you're about to file another incident.
+
 ## Shared framework
 
 - `.ai/README.md` — full layout explanation

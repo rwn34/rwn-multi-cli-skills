@@ -54,6 +54,27 @@ with the owner-interaction preference above — don't ask, *do* hand off.
 
 ## Your identity for the activity log: `claude-code`
 
+## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13 (SSOT §15). **This is a Windows 11 host and the shell
+is PowerShell.** There is no WSL. Stop writing commands for a machine that isn't
+here — the fleet keeps paying for Linux assumptions.
+
+- Fleet tooling is `.ps1` (`tools/4ai-panes/*.ps1` + its `test-*.ps1` suites).
+  In PowerShell use PowerShell idioms — `Get-FileHash` not `sha256sum`,
+  `Test-Path` not `test -f`.
+- `bash` exists **only** via Git-for-Windows (MSYS) — a guest, not the host.
+  `.ai/tools/*.sh` and the hooks are bash and are invoked explicitly
+  (`bash foo.sh`); the exec bit is not tracked (mode `100644`), so `./foo.sh` is
+  not the convention.
+- **MSYS mangles colon-joined args**: `git show "<ref>:<path>"` gets garbled. Use
+  `git ls-tree` + `git cat-file -p <blobsha>`.
+- The bash guard refuses unparseable constructs (e.g. a leading option before a
+  command). Write plain, boring commands.
+- No Linux userland — no `apt`, no guaranteed `/usr/bin`, `/tmp`, or GNU flags.
+- `.ai/` is a Windows **junction** (`mklink /J`), not a POSIX symlink, and it
+  behaves differently under git. See `docs/specs/junction-reverse-write-guard.md`.
+
 ## Single source of truth
 
 `.ai/instructions/` is canonical. Your `.claude/skills/...` files are replicas. If they
