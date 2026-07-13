@@ -284,7 +284,9 @@ function Test-ShouldRelaunch {
 
 # -- Relaunch ----------------------------------------------------------------
 
-# Detect available CLIs on this host (same detection as Selector.ps1).
+# Detect available CLIs on this host (same detection as Selector.ps1),
+# restricted to the canonical fleet list and excluding any that are already
+# supervised for this project (prevents duplicate panes on partial-fleet relaunch).
 function Get-AvailableClis {
     $clis = @(
         @{ name = 'claude';   detect = 'claude' },
@@ -292,11 +294,31 @@ function Get-AvailableClis {
         @{ name = 'kimi';     detect = 'kimi' },
         @{ name = 'opencode'; detect = 'opencode' }
     )
+    # If the canonical fleet list is loaded (production), only relaunch CLIs
+    # that belong to the supervised fleet.
+    if ($script:FleetClis) {
+        $clis = $clis | Where-Object { $script:FleetClis -contains $_.name }
+    }
     $available = @()
     foreach ($c in $clis) {
         if (Get-Command $c.detect -ErrorAction SilentlyContinue) { $available += $c.name }
     }
     return $available
+}
+
+# Returns $true if a run-pane-supervised process for this CLI+project is already
+# running. Used to avoid spawning duplicate supervisors when only some panes are
+# dead (the live ones are left alone).
+function Test-PaneAlreadyRunning {
+    param([string]$Cli, [string]$ProjectDir)
+    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -like "*run-pane-supervised.ps1*" -and
+            $_.CommandLine -like "*-Cli $Cli*" -and
+            $_.CommandLine -like "*-ProjectDir *$ProjectDir*"
+        }
+    return ($null -ne $procs -and $procs.Count -gt 0)
 }
 
 # Relaunch the fleet for a project. Uses the same pane-runner scripts and wt
@@ -318,10 +340,19 @@ function Invoke-FleetRelaunch {
         return $false
     }
 
-    $available = Get-AvailableClis
+    $available = Get-AvailableClis |
+        Where-Object { -not (Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir) }
+
+    $running = Get-AvailableClis |
+        Where-Object { Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir }
+
+    if ($running.Count -gt 0) {
+        Write-Host "  SKIP (already running): $($running -join ', ')" -ForegroundColor DarkGray
+    }
+
     if ($available.Count -eq 0) {
-        Write-Host "  ERROR: no CLIs detected on PATH - cannot relaunch" -ForegroundColor Red
-        return $false
+        Write-Host "  All fleet panes already running for $ProjectDir - nothing to relaunch" -ForegroundColor Green
+        return $true
     }
 
     $dq = '"'
