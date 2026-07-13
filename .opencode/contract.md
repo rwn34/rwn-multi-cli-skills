@@ -127,8 +127,22 @@ STOP and route via a handoff — not to work around the guard.
   entries, handoff files, commits, pushes, branch creation.
 - **Tier B (act, then notify):** opening a PR; merging a peer-reviewed,
   CI-green PR to main; branch deletion and repo/tree/worktree cleanup;
-  **deploy to STAGING** (dry-run first, refuse on dirty tree or failing tests).
+  **killing a confirmed-stale CLI child process** (§8.1); **deploy to STAGING**
+  (dry-run first, refuse on dirty tree or failing tests).
   Do it, then say you did it — summary + activity log.
+
+**Confirmed-stale CLI kills (§8.1, owner directive 2026-07-13).** A stale auto
+CLI is killed by the fleet, not the owner — waiting on a human costs delivery
+time. Guards: (1) **two independent staleness signals** (e.g. claim/heartbeat
+past the 15-min window AND no CPU progress + no log growth; or a dead parent
+runner AND an expired claim) — one signal is not confirmation; (2) kill the
+**CLI child only, never the pane-runner or supervisor** (the runner's `finally`
+releases the claim and re-polls — that is the recovery path); (3) any fleet
+member may kill any pane's confirmed-stale child — process lifecycle is not
+lane-governed; (4) log the evidence (PIDs, CPU/log timestamps, claim age) in the
+activity log at kill time; (5) ambiguous confirmation → escalate to the owner,
+never guess. This relaxes no Tier-C floor: `rm -rf`, force-push and the rest of
+rule 4 above still bind you.
 - **Tier C (ask first):** **deploy to PRODUCTION**, `npm publish`, tag/release
   cuts, force-push or destructive ops on shared history, secrets, production
   data of any kind, anything not in your brief.

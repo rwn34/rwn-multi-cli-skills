@@ -151,7 +151,8 @@ more restrictive one — and say so.
   or moving files, opening a PR, **merging to main** a peer-reviewed, CI-green
   branch (author ≠ reviewer; required checks green — see §4/§13), **all
   repo/tree/worktree/branch hygiene and cleanup** (deleting merged branches,
-  pruning worktrees, clearing stale refs), **ADR authorship or amendment**, and
+  pruning worktrees, clearing stale refs), **ADR authorship or amendment**,
+  **killing a confirmed-stale CLI child process** (§8.1), and
   **deploy to STAGING** (dry-run first; refuse on a dirty tree or failing
   tests). Do the work, then surface it prominently in your summary AND the
   activity log — never bury it.
@@ -184,6 +185,37 @@ Production deploy keeps every guardrail it has always had: dry-run first and
 paste the output, an explicit per-deploy human confirmation, and refusal on a
 dirty tree or failing tests. Nothing in the fleet's git/GitHub authority weakens
 that gate.
+
+### 8.1 Confirmed-stale CLI kills are fleet-executed (Tier B)
+
+Owner directive 2026-07-13: *"Killing a stale auto CLI — if it is confirmed
+stale — should be done by the AI, not me. Otherwise it takes too much time while
+other important stuff could be delivered."* Terminating a **confirmed-stale CLI
+child process** is **Tier B** — act, then notify. It is not an owner ask. Five
+guards keep it honest:
+
+1. **"Confirmed stale" needs two independent signals.** E.g. heartbeat/claim
+   stale beyond the mirrored 15-min window AND no CPU progress and no log-file
+   growth over a comparable window; or the process's parent runner is dead
+   (orphan) AND the claim is past its window. One signal (e.g. "orphaned but
+   1 minute old") is **not** confirmation — that is the discipline
+   `fleet-health.sh` already encodes.
+2. **Kill the stale CLI child only — never the pane-runner or supervisor.** The
+   runner's `finally` releases the claim and re-polls; that is the designed
+   recovery path. Killing a runner or supervisor stays owner/Claude-gated.
+3. **Cross-CLI is allowed.** Any fleet member (pane or cockpit) may kill a
+   confirmed-stale CLI child of any pane — process lifecycle is not file-lane
+   governed, and waiting for the "owning" CLI recreates the delay this rule
+   removes.
+4. **Evidence at kill time.** The actor prepends an activity-log entry with the
+   staleness evidence (PIDs, CPU/log timestamps, claim age) and the action taken.
+5. **Ambiguous → escalate, never guess.** If confirmation is incomplete, ask the
+   owner instead of killing.
+
+Detection tooling (`fleet-health.sh`, heartbeat/claim files) is unchanged — this
+rule removes the human gate on the *act* once confirmation exists, nothing else.
+Killing a process is not a destructive-history operation: no Tier-C floor and no
+hook guard is relaxed by it.
 
 Bugs / security risks / design concerns discovered en route → `.ai/reports/`
 or a handoff (Tier A) — then keep working unless the finding blocks you.

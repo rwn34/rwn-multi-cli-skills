@@ -17,8 +17,10 @@ branch creation, Risk-A/B handoff dispatch); act-then-notify on Tier B —
 tree, merge, cleanup, push, or any activity related to GitHub is yours to make"),
 so opening PRs, merging a peer-reviewed CI-green PR to main, branch deletion and
 repo/tree/worktree cleanup, **ADR authorship or amendment** (author it, then
-surface it prominently — no pre-approval), and **deploy to STAGING** (dry-run
-first; refuse on a dirty tree or failing tests) are all act-then-notify.
+surface it prominently — no pre-approval), **killing a confirmed-stale CLI child
+process** (SSOT §8.1 — two independent staleness signals, child only never the
+pane-runner, log the evidence; ambiguous → ask), and **deploy to STAGING**
+(dry-run first; refuse on a dirty tree or failing tests) are all act-then-notify.
 Hard-gate Tier C: **deploy to PRODUCTION** (the owner's only release-path gate —
 per-deploy confirmation, all guardrails intact), publish, tag/release, destructive
 ops on shared history, secrets, production data. A merge must never auto-trigger a
