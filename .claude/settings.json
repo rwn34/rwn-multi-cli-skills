@@ -31,7 +31,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "if [ -f .ai/activity/log.md ]; then echo '--- Recent cross-CLI activity (top of .ai/activity/log.md) ---'; head -40 .ai/activity/log.md; echo '--- end ---'; fi"
+            "command": "if [ -f .ai/activity/log.md ]; then echo '--- Recent cross-CLI activity (top of .ai/activity/log.md) ---'; head -40 .ai/activity/log.md; echo '--- end ---'; elif [ -d .ai/activity/entries ]; then echo '--- Recent cross-CLI activity (newest entries) ---'; ls .ai/activity/entries/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -80; echo '--- end ---'; fi"
           }
         ]
       }

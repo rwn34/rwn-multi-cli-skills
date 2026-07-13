@@ -73,7 +73,20 @@ spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today
 
 ## Activity log protocol (same for all CLIs)
 
-- **Read** `.ai/activity/log.md` at the start of non-trivial work. Newest entries on top.
+**Never read `.ai/activity/log.md` wholesale.** It is ~600 KB / 2,100+ lines
+(370+ entries) and grows ~5–10 KB/day; a full read costs ~125k tokens on almost
+entirely irrelevant history. Newest entries are at the **top**, so everything you
+actually need sits in the first few dozen lines.
+
+- **Recent activity** → if your CLI injects the top of the log into context each
+  turn (Claude Code's `UserPromptSubmit` hook does), it is **already in your
+  context before you ask** — use it, do not re-read. If your CLI has no inject
+  hook (OpenCode), read only a **bounded top window** (`head -40
+  .ai/activity/log.md`, or a `Read` with `limit`) — that bounded read *is* the
+  "read at the start of non-trivial work" step.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
+  read with `limit`/`offset`. Never the whole file, never `cat`.
+
 - **Prepend** one terse entry after substantive work. Format:
 
         ## YYYY-MM-DD HH:MM — <cli-name>
