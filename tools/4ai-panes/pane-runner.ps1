@@ -439,22 +439,24 @@ function Ensure-DeclaredBaseBranchReal {
             return $false
         }
 
-        # Attach HEAD to exec/<cli>/<slug> WITHOUT a checkout. A plain `git
-        # checkout` (or `checkout -b`) ABORTS in every executor worktree the
-        # moment the junctioned .ai/ holds live coordination-plane state that
-        # differs from this worktree's (often stale) HEAD: git reads that as
-        # "local changes" and refuses to touch the files (2026-07-12/13 fleet
-        # outage — every auto-dispatch WORKTREE_FAIL -> quarantine; see
+        # Attach HEAD to exec/<cli>/<slug> WITHOUT touching the working tree.
+        # A plain `git checkout` (or `checkout -b`) ABORTS in every executor
+        # worktree the moment the junctioned .ai/ holds live coordination-plane
+        # state that differs from this worktree's (often stale) HEAD: git reads
+        # that as "local changes" and refuses to touch the files (2026-07-12/13
+        # fleet outage — every auto-dispatch WORKTREE_FAIL -> quarantine; see
         # .ai/handoffs/to-kiro/open/202607122330-fix-ai-junction-branch-cut-landmine.md).
         # The dirty-check above excludes .ai/ BY DESIGN, so checkout's refusal
         # was the contradictory second half of one rule. symbolic-ref moves
-        # HEAD without rewriting a single file; the restores then converge
-        # worktree+index onto the branch tip for everything EXCEPT .ai/ —
-        # which is LIVE through the junction and must never be written by git
-        # in a worktree — and the index alone for .ai/, so `git status` shows
-        # genuine plane churn instead of staged phantoms. `git restore` with
-        # an explicit --source defaults to --no-overlay: files absent on the
-        # branch are removed from the worktree too (verified empirically).
+        # HEAD without rewriting a single file; the restore then converges
+        # worktree+index onto the branch tip for everything EXCEPT .ai/ — which
+        # is LIVE through the junction and must never be written by git in a
+        # worktree. The stable subset of .ai/ is further protected by the
+        # skip-worktree bit set by wt-bootstrap.sh, so git operations in the
+        # worktree cannot rewrite the canonical primary files even for tracked
+        # .ai paths. `git restore` with an explicit --source defaults to
+        # --no-overlay: files absent on the branch are removed from the worktree
+        # too (verified empirically).
         git show-ref --verify --quiet "refs/heads/$branch" *> $null
         if ($LASTEXITCODE -ne 0) {
             git branch $branch $Base *> $null
@@ -471,11 +473,6 @@ function Ensure-DeclaredBaseBranchReal {
         git restore --source=$branch --staged --worktree -- . ':!.ai' *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  ERROR: could not sync $WtPath to $branch (excluding .ai/)" -ForegroundColor Red
-            return $false
-        }
-        git restore --source=$branch --staged -- .ai *> $null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  ERROR: could not sync the .ai/ index entries in $WtPath" -ForegroundColor Red
             return $false
         }
         return $true
