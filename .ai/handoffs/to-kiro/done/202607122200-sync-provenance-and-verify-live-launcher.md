@@ -1,11 +1,42 @@
 # Live-launcher sync: add a provenance check + verify the deployed copy
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kiro-cli
 Created: 2026-07-12 22:00
 Auto: yes
 Risk: B
 Base: origin/master
+
+## Completion (2026-07-14 01:34, kiro-cli)
+
+**Task 1 — live launcher verification: NO, it did not match master.** Byte
+comparison of all 17 allowlisted files in `~/.rwn-auto/rwn-4AI-panes/` against
+`origin/master`'s `tools/4ai-panes/`: 14 differ, 3 identical (`README.md`,
+`icon.ico`, `Launch4Panes.vbs`). The live install's `.sync-provenance.json`
+recorded commit `4e743c7`; `git merge-base --is-ancestor 4e743c7 origin/master`
+returns false (exit 1) — the primary checkout's local `master` was 3 commits
+ahead of `origin/master` (unpushed) at the moment its git hooks last deployed.
+This is the exact provenance bug the handoff describes, caught live during
+execution, not hypothesized.
+
+**Task 2 — ancestor guard: implemented.** Chose option (b) — master-only by
+default, explicit opt-in escape hatch `RWN_4AI_ALLOW_UNMERGED=1` (separate from
+`-Force`/`SYNC_FORCE`) for pre-merge dogfooding. Finished a prior interrupted
+session's uncommitted work in this worktree: the sync script's guard logic was
+complete but the test file had a stale header (documented the ancestor-guard
+scenarios) with an incomplete body (no `origin` remote in the sandbox, 8 of 12
+scenarios implemented) — added the bare-origin-remote setup and scenarios
+(i)/(j)/(k)/(l). 52/52 assertions pass, including the RED proof.
+
+PR: https://github.com/rwn34/rwn-multi-cli-skills/pull/93 (branch
+`exec/kiro/sync-provenance-check`). Peer review routed to Kimi via
+`.ai/handoffs/to-kimi/open/202607131834-review-pr93-sync-ancestor-guard.md`.
+Not merged (per the handoff's explicit "Do NOT merge" instruction).
+
+**What this does NOT cover:** the primary checkout's own copy of the sync
+script still lacks the guard until this PR merges and someone re-pulls there —
+a worktree cannot reach that machine-local checkout. Flagged in the PR body and
+the Kimi review handoff as a follow-up.
 
 ## Why (owner asked, and the hazard is real)
 The owner asked whether the live launcher at `C:\Users\rwn34\.rwn-auto\rwn-4AI-panes\`
