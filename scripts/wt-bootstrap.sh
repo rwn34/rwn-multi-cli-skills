@@ -190,6 +190,28 @@ cmd_islink() {
     | grep -i "$(basename "$1")" || true
 }
 
+# Reverse-write guard (2026-07-13): mark the stable subset of .ai/ as
+# skip-worktree inside this worktree so a git checkout/reset/run in the
+# worktree cannot silently rewrite the canonical primary .ai/ through the
+# junction. Churn directories (handoffs, log, entries, reports, claims,
+# archives) remain writable because they are intentionally coordination-plane
+# state and are shared through the junction.
+guard_ai_reverse_write() {
+  wt_path="$1"
+  ( cd "$wt_path" && git ls-tree -r HEAD --name-only -- .ai 2>/dev/null ) | while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    case "$rel" in
+      .ai/activity/log.md)      continue ;;
+      .ai/activity/entries/*)   continue ;;
+      .ai/handoffs/*)           continue ;;
+      .ai/reports/*)            continue ;;
+      .ai/*/archive/*)          continue ;;
+      .ai/.claim-*.json)        continue ;;
+    esac
+    git -C "$wt_path" update-index --skip-worktree "$rel" 2>/dev/null || true
+  done
+}
+
 # Pin the per-worktree committer identity to the executor that owns the tree.
 # Worktrees otherwise inherit the shared repo config's user.name — which flips
 # with whichever CLI last set it (observed 2026-07-13: 3 of 4 pane worktrees
@@ -245,6 +267,7 @@ for executor in $EXECUTORS; do
   # re-pinned too — it repairs drifted trees, not just fresh ones.
   link_ai "$wt_path"
   exclude_ai "$wt_path"
+  guard_ai_reverse_write "$wt_path"
   set_identity "$wt_path" "$executor"
 done
 
