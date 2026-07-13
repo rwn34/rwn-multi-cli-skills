@@ -64,6 +64,38 @@ if (-not (Test-Path $RunnerPath)) {
 # Stamp this pane's CLI so restart-pane.ps1 still infers it from this pane's shell.
 $env:RWN_PANE_CLI = $Cli
 
+# --- Install drift warning (never blocks) ------------------------------------
+# The sync leaves .sync-provenance.json beside us in the install dir, recording
+# which repo/branch/commit the live files came from. If that repo's
+# tools/4ai-panes/ now differs from the live copies, the install is stale (the
+# sync could not have run since - the 2026-07-13 06:09 revert shape). Warn
+# loudly and continue: detection only, never a gate. Silent when the sidecar
+# is absent (pre-sidecar install) or the repo moved.
+try {
+    $provPath = Join-Path $PSScriptRoot '.sync-provenance.json'
+    if (Test-Path -LiteralPath $provPath -PathType Leaf) {
+        $prov = Get-Content -LiteralPath $provPath -Raw | ConvertFrom-Json
+        $repoTools = Join-Path $prov.source_repo 'tools\4ai-panes'
+        if (Test-Path -LiteralPath $repoTools -PathType Container) {
+            $drifted = @()
+            foreach ($f in @('pane-runner.ps1', 'run-pane-supervised.ps1', 'Selector.ps1')) {
+                $live = Join-Path $PSScriptRoot $f
+                $src = Join-Path $repoTools $f
+                if ((Test-Path -LiteralPath $live -PathType Leaf) -and (Test-Path -LiteralPath $src -PathType Leaf) -and
+                    ((Get-FileHash -LiteralPath $live).Hash -ne (Get-FileHash -LiteralPath $src).Hash)) {
+                    $drifted += $f
+                }
+            }
+            if ($drifted.Count -gt 0) {
+                Write-Host "!! DRIFT WARNING: live install differs from $($prov.source_repo)\tools\4ai-panes ($($drifted -join ', '))." -ForegroundColor Yellow
+                Write-Host "!! last sync: branch=$($prov.branch) commit=$($prov.commit) at $($prov.synced_at). Re-run scripts/sync-4ai-panes-install.ps1 from the primary checkout on master." -ForegroundColor Yellow
+            }
+        }
+    }
+} catch {
+    Write-Host "supervisor: drift check failed (ignored): $($_.Exception.Message)" -ForegroundColor DarkYellow
+}
+
 $proj = Split-Path -Leaf $ProjectDir
 Write-Host "== supervisor up: cli=$Cli project=$proj (respawn on crash, cap $MaxRetries/${RetryWindowMinutes}min) ==" -ForegroundColor Cyan
 

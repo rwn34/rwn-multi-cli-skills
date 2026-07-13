@@ -11,6 +11,12 @@
 >   commit (gap D2, 2026-07-11). Diffs `HEAD~1..HEAD`; skips the initial commit.
 >   Merge, checkout, AND same-branch commit now all auto-sync in lockstep.
 >
+> **Amendment (2026-07-13, hole 1):** the sync now carries a **provenance
+> guard** — only the primary checkout on `master` may deploy (see
+> **Provenance guard** below) — plus `scripts/test-sync-4ai-panes-install.ps1`
+> (34-assertion harness) and the `.sync-provenance.json` sidecar the
+> supervisor uses for a launch-time drift warning.
+>
 > The design content below remains valid as the rationale of record. See the
 > resolved **Open questions** for the decisions taken before implementation.
 
@@ -84,11 +90,15 @@ scripts/sync-4ai-panes-install.ps1
                          #          else ~/.rwn-auto/rwn-4AI-panes
     [-DryRun]            # report what would copy; change nothing
     [-Quiet]             # suppress per-file lines; still logs + warns
+    [-Verify]            # opt-in post-sync tool tests (never passed by hooks)
+    [-Force]             # override the provenance guard (see below);
+                         # env SYNC_FORCE=1 is the equivalent for hook shells
 ```
 
 Exit contract:
 - **0** — synced (files copied) OR already in sync (no-op) OR target absent
-  (graceful skip, see UX/behavior).
+  (graceful skip, see UX/behavior) OR **refused by the provenance guard**
+  (refusal is correct behavior, not an error — see below).
 - **non-zero** — a copy was attempted but post-copy verification failed, or the
   source tree is missing an allowlisted file. Loud warning to stderr.
 
@@ -168,6 +178,52 @@ Key properties:
   merge/checkout didn't touch `tools/4ai-panes/**` the hook exits immediately.
 - **Delegates the "what to copy" question entirely to the sync script** — the
   hook only decides *whether* to run it.
+
+### Provenance guard (hole 1, 2026-07-13)
+
+**The hole:** the hooks call the sync from whatever worktree fired them, on
+whatever branch. On 2026-07-13 ~05:45 a `post-checkout` in a linked worktree
+deployed unmerged branch code over the owner's live install (and the ~06:09
+revert then had to be hand-repaired).
+
+**The guard lives in the sync script, not the hooks** — one choke point covers
+the hooks AND manual/agent invocation, and cannot drift between two hook files.
+Before any file work (above the graceful-skip block) the sync requires:
+
+1. **Primary-checkout test.** `git rev-parse --path-format=absolute --git-dir`
+   must equal `--git-common-dir` for the source. Equal ⇒ primary checkout;
+   different (git-dir is `<common>/worktrees/<name>`) ⇒ linked worktree.
+   Canonical test — no path pattern-matching.
+2. **Branch test.** `git symbolic-ref --short HEAD` must be `master`. A
+   detached HEAD (`symbolic-ref` fails) refuses as `branch=DETACHED`.
+3. **Fail closed.** git unavailable or the source not a repo ⇒ refuse. An
+   unverifiable provenance is not a licence to deploy.
+
+**Refusal exits 0, not 1.** The hooks treat non-zero as "sync REPORTED ERRORS"
+with a loud banner; a refusal in a worktree is *correct behavior*, and exit 1
+would spam that banner on every legitimate branch checkout in every worktree.
+Refusal prints one clear line naming `toplevel`/`branch`/`primary`, still
+writes its `install-sync.log` line (`result=refused`), and copies nothing.
+Exit 1 stays reserved for genuine failures (syntax gate, hash verify, missing
+source).
+
+**Override:** `-Force` or `SYNC_FORCE=1` bypasses both tests, prints a loud
+`FORCED` line naming what was overridden, and records `provenance=forced` in
+the log line. This is the escape hatch for intentionally deploying from a
+worktree (e.g. pre-merge acceptance against a sandbox install via `-Target`).
+
+**Log provenance on every run:** the `install-sync.log` line carries
+`branch=<b> primary=<yes|no>` alongside the existing `commit=`, so the next
+post-mortem reads the provenance straight off the log.
+
+**Drift sidecar + launch warning:** a successful real sync (not `-DryRun`, not
+a refusal) writes `.sync-provenance.json` into the install
+(`source_repo`, `commit`, `branch`, `synced_at`). At launch,
+`tools/4ai-panes/run-pane-supervised.ps1` reads it and warns loudly — never
+blocks, wrapped in try/catch — when the live install's core files
+(`pane-runner.ps1`, `run-pane-supervised.ps1`, `Selector.ps1`) differ from the
+recorded repo's `tools/4ai-panes/`. This is the detection half that would have
+surfaced the 06:09 revert immediately; the guard is the causal fix.
 
 ### Data
 
