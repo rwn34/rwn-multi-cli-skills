@@ -153,7 +153,18 @@ changes via `.ai/handoffs/to-claude/open/`.
 
 ## Cross-CLI activity log — `.ai/activity/log.md`
 
-**Read** at the start of non-trivial work (newest entries at top).
+**Never read this file wholesale.** It is ~600 KB / 2,100+ lines (370+ entries)
+and grows ~5–10 KB/day; a full read costs ~125k tokens on history that is almost
+entirely irrelevant to your task. Newest entries are at the **top**, so what you
+need is in the first few dozen lines.
+
+- **Recent activity** (the "read at the start of non-trivial work" step) → read a
+  **bounded top window only**: `head -40 .ai/activity/log.md`. Unlike Claude Code,
+  you have no hook that pre-injects the log into your context, so this bounded read
+  is your one fetch — keep it bounded.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded read
+  with a limit/offset. Never `cat` the file, never read it end-to-end.
+
 **Prepend** one entry after substantive work:
 
     ## YYYY-MM-DD HH:MM — opencode

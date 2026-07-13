@@ -59,8 +59,16 @@ disagree, `.ai/instructions/` wins — see `.ai/sync.md` to regenerate.
 
 ## Cross-CLI activity log — `.ai/activity/log.md`
 
-**Read** at the start of non-trivial work. Newest entries are at the top — scan recent
-ones to see what other CLIs did here.
+**Do NOT `Read` this file wholesale.** It is ~600 KB / 2,100+ lines and grows
+~5–10 KB/day; reading it costs ~125k tokens and is almost entirely irrelevant
+history. The `UserPromptSubmit` hook **already injects the newest entries into
+your context on every single turn** — you have them before you ask. A wholesale
+`Read` re-fetches what you were just given.
+
+- **Recent activity** → already in your context. Use it; do not re-read.
+- **Specific history** → `grep` for the term (`grep -n "<topic>" .ai/activity/log.md`),
+  or read a bounded window (`Read` with `limit`/`offset`). Never the whole file.
+- Newest entries are at the top.
 
 **Prepend** one entry after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
