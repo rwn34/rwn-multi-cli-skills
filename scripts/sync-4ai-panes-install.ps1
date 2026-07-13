@@ -75,8 +75,13 @@ $Allowlist = @(
     'pane-runner.ps1',
     'run-pane-supervised.ps1',
     'restart-pane.ps1',
+    'fleet-supervisor.ps1',
+    'install-fleet-supervisor.ps1',
+    'uninstall-fleet-supervisor.ps1',
     'test-pane-runner.ps1',
     'test-selector-e2e.ps1',
+    'test-fleet-supervisor.ps1',
+    'test-pane-supervisor.ps1',
     'README.md',
     'icon.ico'
 )

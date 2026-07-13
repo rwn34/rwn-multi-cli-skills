@@ -329,13 +329,53 @@ to Kimi collided with Claude's 026 to Kimi.
 
 ## Concurrent activity-log writes
 
-**Status:** Untested (see `.ai/tests/concurrency-test-protocol.md`).
+**Status: CONFIRMED — no longer hypothetical.** First observed clobber
+2026-07-13, found by claude-code while processing
+`to-claude/202607130206-activity-log-daily-rotation`.
 
-**Risk:** three CLIs prepending to `.ai/activity/log.md` simultaneously could
-clobber entries. No atomic-append guarantee.
+**Risk:** four CLIs prepending to `.ai/activity/log.md` simultaneously clobber
+each other's entries. The prepend is a whole-file rewrite (read → insert at top →
+write back), so a writer whose read predates another's write destroys that
+entry. No atomic-append guarantee. The loss is **silent**: no error, no merge
+conflict, no gate that could ever detect it — a clobbered entry is
+indistinguishable from an entry that was never written.
 
-**Mitigation:** none yet. Run concurrency protocol to characterize actual
-behavior before deciding on file-lock vs. lease-based coordination.
+**The confirmed incident (evidence, not inference):**
+
+- Commit `9371a40` (kiro-cli, 2026-07-13 09:21) wrote the entry
+  `## 2026-07-13 09:20 — kiro-cli` (handoff `202607122215-top-strip-fraction-65-35`,
+  PR #73). The blob proves the entry was intact and well-formed at 09:21.
+- By ~09:55 the working copy of `log.md` had that **header line deleted** while
+  its three body lines (`- Action:` / `- Files:` / `- Decisions:`) survived —
+  an orphaned body with no owner. Two CLIs prepended in between (09:42 kiro,
+  09:55 claude); one of those whole-file rewrites dropped the line.
+- Structural fingerprint: every `- Action:` line in the file is preceded by a
+  `## ` header at N−1 — except that one, whose header slot was an empty line,
+  leaving a tell-tale double blank.
+- Repaired 2026-07-13 by claude-code by restoring the exact header line from the
+  `9371a40` blob (recovered, not reconstructed). A second scar in the same file
+  (a missing entry separator) was fixed in the same pass.
+
+**Why worktrees do not help:** `scripts/wt-bootstrap.sh`'s `link_ai()` junctions
+every worktree's `.ai/` to the one canonical `.ai/` in the primary checkout, so
+`.ai/activity/log.md` is the *same inode* in every worktree (ADR-0004, which
+scopes this race out explicitly).
+
+**Mitigation: none in effect.** ADR-0010 (Accepted, owner-approved 2026-07-11)
+decides the structural fix — an entry-per-file spool
+(`.ai/activity/entries/<UTC>-<cli>-<slug>-<rand4>.md`), where a unique filename
+per entry means no shared write, no lock, and no possible clobber. **It has
+never been implemented:** `.ai/activity/entries/` does not exist on disk,
+`log.md` is still tracked and still shared, and the two hard blockers named in
+the ADR's own migration table (`scripts/git-hooks/pre-commit`,
+`.opencode/plugin/framework-guard.js`) still hardcode the old path. Until that
+migration lands, every prepend by any CLI is another roll of this die.
+
+**Note on daily rotation** (`.ai/tools/rotate-activity-log.sh`, branch
+`exec/claude/202607130206-activity-log-daily-rotation`): it cuts the *read cost*
+of the log but does **not** address this race — it keeps `log.md` a single
+shared mutable file and adds one more whole-file rewriter to it. It is not a
+substitute for ADR-0010.
 
 ---
 
@@ -392,6 +432,52 @@ when the false alarm triggers a precautionary version bump.
   destructive command may clobber a healthy ref.
 - Do not bump a version pre-emptively to "sidestep" the divergence without
   first peeling and re-comparing — the divergence may not exist.
+
+---
+
+## Fleet supervision stops when the machine is off or asleep
+
+**Status:** Accepted limit (owner decision 2026-07-12 — record it, do not solve it). Recorded 2026-07-13 by kimi-cli with the fleet-supervisor build (handoff `to-kimi/202607122130`).
+
+**What:** The OS-level fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`, a Windows Task Scheduler task) detects dead pane-runners, alerts the owner, and relaunches the fleet — but only while the machine is running and the user is logged on.
+
+> **The fleet cannot self-heal when the machine is off or asleep.** A Windows scheduled
+> task cannot run on a powered-off box — it cannot relaunch the fleet, and it cannot
+> even send the alert. Every local supervision mechanism shares this hard boundary.
+> True always-available operation would require an always-on host (VPS / cloud runner /
+> home server), which drags in secrets handling, cost, and remote-tree topology.
+> **Owner decision 2026-07-12: accept this limit for now; record it, do not solve it.**
+
+**Partial mitigation (not a fix):** the supervisor's `-AtLogOn` trigger runs one cycle at user logon, so a fleet that died while the machine was off is detected and relaunched within a minute of the next logon — with the standard backoff/circuit-breaker. What is NOT covered: the offline window itself (no alerts, no consumers, handoffs wait silently), and sleep/hibernate (the task cannot wake the box; `StartWhenAvailable` only catches up after wake).
+
+**What NOT to do because of this:**
+- Do not claim the fleet is "always available" or "self-healing" without this qualifier.
+- Do not build a cloud/VPS watchdog without an owner decision — that is a different autonomy + secrets posture, explicitly declined for now.
+
+---
+
+## Fleet cannot self-heal when the machine is off or asleep (owner decision 2026-07-12)
+
+**Status:** Accepted boundary — recorded, not solved.
+
+**The limit.** A Windows scheduled task cannot run on a powered-off or asleep
+box. The fleet supervisor (`fleet-supervisor.ps1`, registered via Task
+Scheduler) can detect dead panes, alert the owner via Telegram, and relaunch
+the fleet — but only while the machine is on and the user is logged in. It
+cannot relaunch the fleet or even send the alert when the machine is off.
+
+Every local supervision mechanism shares this hard boundary. True
+always-available operation would require an always-on host (VPS / cloud
+runner / home server), which drags in secrets handling, cost, and remote-tree
+topology.
+
+**Owner decision 2026-07-12: accept this limit for now; record it, do not
+solve it.**
+
+**What the supervisor DOES cover:** terminal death (PowerShell restart, wt.exe
+crash, accidental close) while the machine is on. This is the failure mode
+that bit us on 2026-07-12 — four handoffs sat OPEN and unconsumed for over an
+hour after a PowerShell restart, with no alert anywhere.
 
 ---
 

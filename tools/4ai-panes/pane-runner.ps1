@@ -559,7 +559,16 @@ $script:InvokeCli = {
         # instead of re-dispatching the same handoff to a second instance.
         $prevDispatch = Enable-DispatchGuardEnv
         try {
-            & $exe @rest 2>&1 | Out-Host
+            # Tee CLI output to the capture file when heartbeat L2 is active, so
+            # Get-LastCliOutcome can classify auth/quota failures post-invocation.
+            # Tee-Object passes through to Out-Host (live console) AND writes the
+            # file; the pipeline stays clean (Out-Host emits nothing). Overwrites
+            # the file each invocation — only the most recent run's tail matters.
+            if ($script:CliOutputCapturePath) {
+                & $exe @rest 2>&1 | Tee-Object -FilePath $script:CliOutputCapturePath | Out-Host
+            } else {
+                & $exe @rest 2>&1 | Out-Host
+            }
         } finally {
             # Innermost-acquired, innermost-released: the env guard is undone
             # before EAP/cwd unwind, mirroring the try nesting exactly.
@@ -1019,11 +1028,12 @@ function Invoke-HandoffRun {
             Write-Host "== auto-continuing ($continues/$MaxContinues) [$CliName] $rel ==" -ForegroundColor Yellow
         }
         Write-Host "-- launching $CliName (streaming output below) --" -ForegroundColor DarkCyan
-        # Absorb only the returned exit code here; the CLI's own stdout/stderr is
-        # already streamed live to the pane inside $script:InvokeCli (Out-Host).
-        # This keeps Invoke-HandoffRun's return a clean @{Result;Continues;Invocations}.
-        # $wtPath (NOT $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
-        & $script:InvokeCli $CliName $prompt $wtPath | Out-Null
+        # Absorb the returned exit code (needed for heartbeat L2 outcome
+        # classification). The CLI's stdout/stderr is already streamed live to the
+        # pane inside $script:InvokeCli (Out-Host / Tee-Object). $wtPath (NOT
+        # $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
+        $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
+        $script:LastCliExitCode = [int](@($cliExit)[-1])
         $invocations++
 
         if (Test-HandoffDone -HandoffPath $HandoffPath) {
@@ -1096,6 +1106,116 @@ function Assert-WorktreeFresh {
     return $true
 }
 
+# -- Persistent heartbeat (L1 liveness + L2 capability) for the fleet supervisor --
+#
+# The fleet supervisor (fleet-supervisor.ps1) runs as an OS-level scheduled task,
+# ABOVE run-pane-supervised.ps1. It needs a PERSISTENT liveness signal that
+# survives terminal death: a heartbeat FILE with a recent mtime, written by each
+# runner on every poll. Console-only heartbeats (Write-IdleHeartbeat) prove a
+# live pane is alive but say nothing when the pane is GONE.
+#
+# Two health levels:
+#   L1 (liveness):   heartbeat file exists AND ts is fresh (within stale threshold).
+#   L2 (capability): last_invoke_outcome is not a persistent auth/quota failure.
+#     A live process that cannot call its LLM (dead API key, exhausted quota) is
+#     indistinguishable from healthy by L1 alone. L2 records the outcome of the
+#     runner's last real CLI invocation so the supervisor can tell "idle with an
+#     empty queue" from "alive but brain-dead".
+#
+# Location: %LOCALAPPDATA%\rwn-auto\fleet-heartbeat\<project>__<cli>.json
+#   - Outside the repo: .ai/ is junctioned across worktrees and shared by every
+#     pane; per-poll churn there pollutes the coordination plane and git.
+#   - Per-project-per-CLI: the supervisor checks each pane independently.
+#   - JSON, atomically written (temp + rename, like Write-Claim).
+
+$script:FleetHeartbeatStaleSeconds = 90   # 3x default 10s poll + generous margin
+$script:CliOutputCapturePath = $null       # set by Start-PaneRunner; $null disables tee
+$script:LastCliExitCode = 0                # set by Invoke-HandoffRun after each CLI invocation
+
+function Get-FleetHeartbeatDir {
+    $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
+    return (Join-Path $localAppData 'rwn-auto\fleet-heartbeat')
+}
+
+function Get-FleetHeartbeatPath {
+    param([string]$ProjectDir, [string]$CliName)
+    $proj = Split-Path -Leaf $ProjectDir
+    return (Join-Path (Get-FleetHeartbeatDir) "${proj}__${CliName}.json")
+}
+
+# Write (or update) the persistent heartbeat file. Fail-open: a heartbeat write
+# error must never break the pane loop. Atomic (temp + rename, BOM-less UTF-8).
+function Write-FleetHeartbeat {
+    param(
+        [string]$ProjectDir,
+        [string]$CliName,
+        [string]$State = 'idle',
+        [string]$LastInvokeOutcome = '',
+        [string]$LastInvokeTs = '',
+        [int]$ConsecutiveFailures = 0
+    )
+    try {
+        $p = Get-FleetHeartbeatPath -ProjectDir $ProjectDir -CliName $CliName
+        $dir = Split-Path -Parent $p
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $obj = [ordered]@{
+            project              = (Split-Path -Leaf $ProjectDir)
+            cli                  = $CliName
+            pid                  = $PID
+            host                 = [System.Net.Dns]::GetHostName()
+            ts                   = $now
+            state                = $State
+            project_dir          = $ProjectDir
+            last_invoke_ts       = $LastInvokeTs
+            last_invoke_outcome  = $LastInvokeOutcome
+            consecutive_failures = $ConsecutiveFailures
+        }
+        $tmp = "$p.tmp.$PID"
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
+        [System.IO.File]::WriteAllBytes($tmp, $bytes)
+        Move-Item -Path $tmp -Destination $p -Force
+    } catch { }
+}
+
+# Read a heartbeat file. Returns the parsed object, or $null if missing/unparseable.
+function Read-FleetHeartbeat {
+    param([string]$HeartbeatPath)
+    if (-not (Test-Path $HeartbeatPath)) { return $null }
+    try { return (Get-Content -Path $HeartbeatPath -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+# Classify CLI output tail + exit code into an L2 outcome. Auth/quota failures
+# must be distinguishable from "idle with an empty queue" — today they look
+# identical (both produce a live process that does no work). Returns one of:
+#   success | auth_failure | quota_exceeded | error
+function Get-CliOutcomeClassification {
+    param([int]$ExitCode, [string]$OutputTail = '')
+    if ($ExitCode -eq 0) { return 'success' }
+    if ($OutputTail -match '(?i)(unauthorized|401\s|authentication\s+(failed|error)|invalid\s+(api\s+)?key|login\s+required|not\s+logged\s+in)') {
+        return 'auth_failure'
+    }
+    if ($OutputTail -match '(?i)(quota\s+(exceeded|exhausted)|rate[\s_-]limit|429\s|too\s+many\s+requests|usage\s+limit)') {
+        return 'quota_exceeded'
+    }
+    return 'error'
+}
+
+# Read the tail of the CLI output capture file and classify the outcome.
+# Returns 'success' when no capture file exists (tests, or tee disabled).
+function Get-LastCliOutcome {
+    param([int]$ExitCode = 0)
+    if (-not $script:CliOutputCapturePath -or -not (Test-Path $script:CliOutputCapturePath)) {
+        return (Get-CliOutcomeClassification -ExitCode $ExitCode)
+    }
+    try {
+        $tail = Get-Content -Path $script:CliOutputCapturePath -Tail 50 -Raw -ErrorAction SilentlyContinue
+        return (Get-CliOutcomeClassification -ExitCode $ExitCode -OutputTail $tail)
+    } catch {
+        return (Get-CliOutcomeClassification -ExitCode $ExitCode)
+    }
+}
+
 function Start-PaneRunner {
     param(
         [string]$Cli,
@@ -1132,6 +1252,14 @@ function Start-PaneRunner {
     # Idle-heartbeat state (F1): $null = never emitted -> the first idle poll
     # emits immediately, then Write-IdleHeartbeat throttles by wall-clock.
     $lastHeartbeat = $null
+
+    # Persistent heartbeat state (L1 + L2 for the fleet supervisor).
+    # The capture file tees CLI output so Get-LastCliOutcome can classify
+    # auth/quota failures. State variables persist across loop iterations.
+    $script:CliOutputCapturePath = Join-Path ([System.IO.Path]::GetTempPath()) "fleet-cli-capture-$Cli-$PID.log"
+    $hbLastOutcome = ''
+    $hbLastInvokeTs = ''
+    $hbConsecFailures = 0
 
     # Keyboard hatch guard: [Console]::KeyAvailable throws InvalidOperationException
     # in a headless / redirected / no-console context, and it sits INSIDE the loop -
@@ -1191,12 +1319,25 @@ function Start-PaneRunner {
                 } catch {}
                 if ($null -eq $handoff) {
                     Write-IdleHeartbeat -CliName $Cli -LastEmitted ([ref]$lastHeartbeat) | Out-Null
+                    # Persistent heartbeat: every idle poll proves L1 liveness to the
+                    # fleet supervisor. Carries the last known L2 outcome forward so
+                    # "idle after a successful run" reads differently from "idle after
+                    # repeated auth failures".
+                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $Cli -State 'idle' `
+                        -LastInvokeOutcome $hbLastOutcome -LastInvokeTs $hbLastInvokeTs `
+                        -ConsecutiveFailures $hbConsecFailures
                     Start-Sleep -Seconds $PollSeconds
                     continue
                 }
 
                 if (Test-ClaimBlocks -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid) {
                     # Another live pane already owns this project - skip, re-poll.
+                    # Still write a heartbeat: this pane IS alive (it just polled),
+                    # it's just not the owner. Without this the supervisor would
+                    # see a stale heartbeat and wrongly conclude the pane is dead.
+                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $Cli -State 'idle' `
+                        -LastInvokeOutcome $hbLastOutcome -LastInvokeTs $hbLastInvokeTs `
+                        -ConsecutiveFailures $hbConsecFailures
                     Start-Sleep -Seconds $PollSeconds
                     continue
                 }
@@ -1207,6 +1348,9 @@ function Start-PaneRunner {
                     $held = Test-HandoffClaimed -Recipient $Cli -HandoffPath $handoff
                     $by = if ($held -and $held.owner) { $held.owner } else { 'another consumer' }
                     Write-Host "-- skip $(Split-Path -Leaf $handoff) (claimed by $by) --" -ForegroundColor DarkGray
+                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $Cli -State 'idle' `
+                        -LastInvokeOutcome $hbLastOutcome -LastInvokeTs $hbLastInvokeTs `
+                        -ConsecutiveFailures $hbConsecFailures
                     Start-Sleep -Seconds $PollSeconds
                     continue
                 }
@@ -1219,6 +1363,11 @@ function Start-PaneRunner {
 
                 Write-Claim -ProjectDir $ProjectDir -CliName $Cli -MyPid $myPid
                 $hbase = Get-HandoffBasename -HandoffPath $handoff
+                # Persistent heartbeat: state=running so the supervisor knows this
+                # pane is actively working (not idle, not dead).
+                Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $Cli -State 'running' `
+                    -LastInvokeOutcome $hbLastOutcome -LastInvokeTs $hbLastInvokeTs `
+                    -ConsecutiveFailures $hbConsecFailures
                 # PICKED notify (fail-open: a notify error must not break the loop).
                 try { Send-FleetNotification -Kind picked -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
                 try {
@@ -1226,6 +1375,22 @@ function Start-PaneRunner {
                     # Defensive: if the run leaked extra pipeline objects, the decision
                     # record is the last one.
                     $runResult = @($runResult)[-1]
+                    # Update L2 capability state from the CLI invocation outcome.
+                    # Get-LastCliOutcome reads the tee'd output capture file and
+                    # classifies auth/quota/error. $script:LastCliExitCode was set
+                    # by Invoke-HandoffRun after the final invocation.
+                    $hbLastOutcome = Get-LastCliOutcome -ExitCode $script:LastCliExitCode
+                    $hbLastInvokeTs = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                    if ($hbLastOutcome -in @('auth_failure', 'quota_exceeded', 'error')) {
+                        $hbConsecFailures++
+                    } else {
+                        $hbConsecFailures = 0
+                    }
+                    # Write heartbeat with the fresh outcome so the supervisor sees
+                    # it immediately (not waiting for the next idle poll).
+                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $Cli -State 'idle' `
+                        -LastInvokeOutcome $hbLastOutcome -LastInvokeTs $hbLastInvokeTs `
+                        -ConsecutiveFailures $hbConsecFailures
                     if ($runResult -and $runResult.Result -eq 'DONE') {
                         Clear-HandoffAttempts -Recipient $Cli -HandoffPath $handoff
                         # DONE notify (fail-open).
@@ -1286,6 +1451,10 @@ function Start-PaneRunner {
     } finally {
         # Ctrl-C / any exit: always release our claim.
         Remove-Claim -ProjectDir $ProjectDir -CliName $Cli
+        # Clean up the CLI output capture file (temp, per-PID).
+        if ($script:CliOutputCapturePath -and (Test-Path $script:CliOutputCapturePath)) {
+            Remove-Item -Path $script:CliOutputCapturePath -Force -ErrorAction SilentlyContinue
+        }
         Write-Host "== pane-runner stopped ($Cli) - claim released ==" -ForegroundColor DarkGray
         # Exit-code contract: force the process code so the supervisor can tell an
         # intentional stop (0, don't respawn) from a crash (non-zero, respawn). This
