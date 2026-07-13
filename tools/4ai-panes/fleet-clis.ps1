@@ -8,5 +8,6 @@
 # tree and in the flat install dir, where every tool file sits side by side):
 #     . (Join-Path $PSScriptRoot 'fleet-clis.ps1')
 
-$script:FleetClis      = @('claude', 'kimi', 'kiro', 'opencode')                              # canonical lowercase
-$script:FleetCliProper = @{ claude = 'Claude'; kimi = 'Kimi'; kiro = 'Kiro'; opencode = 'OpenCode' }   # lower -> Proper
+# NOTE 2026-07-14: claude paused by owner (budget conservation). Re-add when ready.
+$script:FleetClis      = @('kimi', 'kiro', 'opencode')                              # canonical lowercase
+$script:FleetCliProper = @{ kimi = 'Kimi'; kiro = 'Kiro'; opencode = 'OpenCode' }   # lower -> Proper
