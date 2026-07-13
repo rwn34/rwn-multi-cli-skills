@@ -20,16 +20,7 @@ promotion happened.
 
 ### Added
 
-- Tests for the branch-cut fix below, in the failure class that burned the fleet
-  all night: `test-pane-runner.ps1` (av)–(av4) reproduce the landmine in a REAL
-  sandbox worktree with a REAL `mklink /J` junction — a raw `git checkout -b`
-  is asserted to FAIL in the stale-HEAD + live-`.ai/` state (prove-the-bug, so
-  the test can never pass vacuously), then both dispatch paths are asserted to
-  cut the declared-base branch and preserve the live `.ai/` byte-for-byte
-  (prove-the-fix). Non-`.ai/` dirt still refuses the cut; a degraded real-dir
-  `.ai/` fails `wt-bootstrap.sh` loud. The bash twin is driven end-to-end
-  through a real `dispatch-handoffs.sh --exec` invocation (stub CLI binary),
-  keeping the two implementations in behavioral lockstep.
+- [TODO: new features]
 
 ### Changed
 
@@ -42,6 +33,29 @@ promotion happened.
 ### Removed
 
 - [TODO: features removed this release]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+## [0.0.38] - 2026-07-13
+
+### Added
+
+- Tests for the branch-cut fix below, in the failure class that burned the fleet
+  all night: `test-pane-runner.ps1` (av)–(av4) reproduce the landmine in a REAL
+  sandbox worktree with a REAL `mklink /J` junction — a raw `git checkout -b`
+  is asserted to FAIL in the stale-HEAD + live-`.ai/` state (prove-the-bug, so
+  the test can never pass vacuously), then both dispatch paths are asserted to
+  cut the declared-base branch and preserve the live `.ai/` byte-for-byte
+  (prove-the-fix). Non-`.ai/` dirt still refuses the cut; a degraded real-dir
+  `.ai/` fails `wt-bootstrap.sh` loud. The bash twin is driven end-to-end
+  through a real `dispatch-handoffs.sh --exec` invocation (stub CLI binary),
+  keeping the two implementations in behavioral lockstep.
 
 ### Fixed
 
@@ -68,14 +82,9 @@ promotion happened.
   destroying any fleet state that existed only there. A real dir now dies loud
   when it holds uncommitted content (split-brain guard), re-junctions cleanly
   when it matches the index (fresh `worktree add` state), and the link is
-  verified post-creation. **Deployment: the post-commit hook syncs
-  `tools/4ai-panes/*` to the live launcher, but pane-runners hold the script
-  in memory — the owner must restart the panes after this merges, then clear
-  `.ai/handoffs/.quarantine/` (8 records) so the stalled queue retries.**
-
-### Security
-
-- [TODO: vulnerabilities addressed]
+  verified post-creation. **Deployment: pane-runners hold the script in
+  memory — the owner must restart the panes after this merges, then clear
+  `.ai/handoffs/.quarantine/` so the stalled queue retries.**
 
 ## [0.0.37] - 2026-07-12
 
