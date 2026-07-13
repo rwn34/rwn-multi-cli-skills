@@ -33,18 +33,45 @@ foreach ($c in $FleetClis) { $cliKey[$c] = $FleetCliProper[$c]; $cliLower[$Fleet
 
 # ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
 # RWN_PANE_LAYOUT selects the WT tab layout built per project:
-#   '6pane' (default/unset) = TOP row (~50% tall) holding 2 side-by-side NON-polling
+#   '6pane' (default/unset) = TOP row (~65% tall by default, see topStripFraction
+#                             below) holding 2 side-by-side NON-polling
 #                             interactive cockpits (top-left app-Claude/claude-code,
 #                             top-right bare Kimi) OVER a BOTTOM row of 4 self-driving
 #                             pane-runner workers (incl. auto-Claude). 2-over-4 fleet.
-#   '5pane'                 = fallback: TOP full-width ~50% strip running bare
-#                             interactive Claude only + BOTTOM 4 self-driving workers.
+#   '5pane'                 = fallback: TOP full-width strip (same topStripFraction)
+#                             running bare interactive Claude only + BOTTOM 4
+#                             self-driving workers.
 #   '4grid'                 = legacy 4-pane grid (instant fallback if the new WT
 #                             split misbehaves on this machine).
 $paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '6pane' }
-# Top ROW height as a fraction of the tab (0.50 = 50%, now holding 2 operators).
-# Bottom region (the 4-column fleet) = 1 - this.
-$topStripFraction = 0.50
+# Top ROW height as a fraction of the tab (0.65 = 65%, holding the 2 interactive
+# operators -- owner request 2026-07-12: "50%:50% ... can be enlarged ... to
+# 65:35 for now"). Bottom region (the 4-column fleet) = 1 - this.
+#   RWN_4AI_TOP_FRACTION : top-strip fraction, default 0.65 ("for now" -- owner
+#                          expects to retune this, hence the knob rather than a
+#                          second hardcode).
+# Parsed defensively (non-numeric / empty -> default) and CLAMPED to [0.2, 0.8]:
+# below 0.2 the two interactive cockpits are squeezed to a sliver; above 0.8 the
+# four auto pane-runners lose usable height. Out-of-range input is clamped WITH
+# A WARNING (not silently dropped to the default) so a fat-fingered "0.95" still
+# lands close to what was asked, rather than snapping back to 0.65 with no signal.
+function Get-TopStripFraction {
+    param([Parameter(Mandatory = $true)][double]$Default, [double]$Min = 0.2, [double]$Max = 0.8)
+    $raw = [Environment]::GetEnvironmentVariable('RWN_4AI_TOP_FRACTION')
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+    $parsed = 0.0
+    if (-not [double]::TryParse($raw.Trim(), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+        Write-Host "RWN_4AI_TOP_FRACTION='$raw' is not a number -- using default $Default" -ForegroundColor Yellow
+        return $Default
+    }
+    if ($parsed -lt $Min -or $parsed -gt $Max) {
+        $clamped = [math]::Min([math]::Max($parsed, $Min), $Max)
+        Write-Host "RWN_4AI_TOP_FRACTION=$parsed out of range [$Min, $Max] -- clamped to $clamped" -ForegroundColor Yellow
+        return $clamped
+    }
+    return $parsed
+}
+$topStripFraction = Get-TopStripFraction -Default 0.65
 
 # ── Launch pacing (owner defect 2026-07-11: batch launches landed scrambled) ──
 # Firing one `wt` call that chains dozens of new-tab/split-pane subcommands makes
@@ -1441,21 +1468,24 @@ $use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
 
 # ── 6-pane dual-operator-over-fleet layout (ADR-0009 / owner-directed 2026-07-10) ──
 # Build ONE composite WT tab as a 2-over-4 grid:
-#   TOP row  (topStripFraction = 50% tall) = 2 side-by-side NON-polling interactive
+#   TOP row  (topStripFraction = 65% tall by default, owner-tunable via
+#            RWN_4AI_TOP_FRACTION) = 2 side-by-side NON-polling interactive
 #            cockpits: top-LEFT = app-Claude (identity claude-code), top-RIGHT = bare
 #            Kimi. Neither runs the pane-runner (no auto-continue, no claim, no poll).
 #            ROLE INTENT: top-LEFT Claude is the owner's app-paired / remote-control
 #            session (session-sharing with the Claude app) -- NOT a fleet executor.
 #            top-RIGHT Kimi is the owner's general operator for asides / ad-hoc
 #            questions -- NOT an executor lane.
-#   BOTTOM row (50% tall) = up to N equal columns, each running the self-driving
-#            pane-runner worker (the Claude column self-IDs as claude-auto). Same
-#            fleet behavior as the 5pane bottom.
+#   BOTTOM row (1 - topStripFraction, 35% tall by default) = up to N equal columns,
+#            each running the self-driving pane-runner worker (the Claude column
+#            self-IDs as claude-auto). Same fleet behavior as the 5pane bottom.
 #
 # WT split sequence (each split acts on the FOCUSED pane; -s sizes the NEW pane):
-#   1. new-tab               -> P0 : top pane, full width (top-LEFT interactive Claude).
-#   2. split-pane -H -s 0.5  -> B0 : bottom pane, full width, 50% tall (runner CLI[0]);
-#                                    focus moves to B0.
+#   1. new-tab                        -> P0 : top pane, full width (top-LEFT
+#                                              interactive Claude).
+#   2. split-pane -H -s (1-topStripFraction) -> B0 : bottom pane, full width, sized to
+#                                              (1 - topStripFraction) of the tab
+#                                              (runner CLI[0]); focus moves to B0.
 #   3. split-pane -V (xN-1)  -> cut the bottom into N equal columns (pane-runners); the
 #                                    k-th split gives the new pane (N-k)/(N-k+1) of the
 #                                    focused region, leaving 1/N per column overall.

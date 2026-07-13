@@ -43,6 +43,10 @@
                (one wt invocation per tab), never one packed invocation.
     Test 6  -- Delay knobs: defaults when unset, honored when set, defaults on
                garbage/negative input, and 0 restores the atomic behavior.
+    Test 7  -- Top-strip fraction: default 0.65 (bottom auto-panes 0.35), env
+               override RWN_4AI_TOP_FRACTION, clamp to [0.2, 0.8] on out-of-range
+               input, default on garbage/empty, and the override reaching
+               Build-FleetTabStages's actual stage strings end-to-end.
 
   Tests 3-6 never invoke Windows Terminal: the launch plan is built by PURE
   production functions (Build-FleetTabStages / Get-FleetLaunchPlan) and asserted
@@ -549,6 +553,11 @@ function Invoke-BuildFleetTabStages {
         }
         $activeCLIs = $ActiveCLIs
         $paneLayoutMode = $LayoutMode
+        # topStripFraction is now `Get-TopStripFraction -Default 0.65` rather than a
+        # bare literal -- lift the real function definition into scope too, or the
+        # assignment throws "command not found" when executed verbatim below.
+        $topStripFractionFuncs = Get-SelectorFunctionText -Ast $ast -Names @('Get-TopStripFraction')
+        . ([scriptblock]::Create($topStripFractionFuncs['Get-TopStripFraction']))
         $topStripFraction = & ([scriptblock]::Create(
             (Get-SelectorAssignmentText -Ast $ast -VarName 'topStripFraction') + "`r`n" + '$topStripFraction'))
         # Real launcher dir: pane-runner.ps1 + run-pane-supervised.ps1 must exist for the
@@ -582,6 +591,14 @@ function Invoke-GetDelayMs {
     return (Get-DelayMs -Name $Name -Default $Default)
 }
 
+function Invoke-GetTopStripFraction {
+    param([Parameter(Mandatory = $true)][double]$Default)
+    $ast = Get-SelectorAst
+    $funcs = Get-SelectorFunctionText -Ast $ast -Names @('Get-TopStripFraction')
+    . ([scriptblock]::Create($funcs['Get-TopStripFraction']))
+    return (Get-TopStripFraction -Default $Default)
+}
+
 # ---------------------------------------------------------------------------
 # Test 4: staged emission == the legacy atomic chain, stage for stage
 # ---------------------------------------------------------------------------
@@ -599,6 +616,7 @@ function Test-StagedEmission {
     Assert-That ($stages[0] -like 'new-tab *') 'stage 0 is the new-tab' "got '$($stages[0])'"
     Assert-That (@($stages | Where-Object { $_ -like 'new-tab *' }).Count -eq 1) 'exactly one new-tab per project group'
     Assert-That ($stages[1] -like 'split-pane -H *') 'stage 1 is the horizontal split (top over bottom)' "got '$($stages[1])'"
+    Assert-That ($stages[1] -like 'split-pane -H -s 0.35 *') 'stage 1 bottom split is sized to 0.35 (default topStripFraction 0.65)' "got '$($stages[1])'"
     Assert-That ($stages[2] -like 'split-pane -V *' -and $stages[3] -like 'split-pane -V *' -and $stages[4] -like 'split-pane -V *') `
         'stages 2-4 are the bottom vertical splits'
     Assert-That ($stages[5] -eq 'move-focus up') 'stage 5 returns focus to the top pane' "got '$($stages[5])'"
@@ -759,6 +777,67 @@ function Test-DelayKnobs {
 }
 
 # ---------------------------------------------------------------------------
+# Test 7: RWN_4AI_TOP_FRACTION (top-strip / auto-pane split, owner req 2026-07-12)
+# ---------------------------------------------------------------------------
+function Test-TopStripFraction {
+    Write-Log "===== Test 7: RWN_4AI_TOP_FRACTION ====="
+
+    # Contract guard: the production assignment must read THIS env name with THIS
+    # default. If it is renamed, the knobs below would silently test nothing.
+    $ast = Get-SelectorAst
+    $funcText = (Get-SelectorFunctionText -Ast $ast -Names @('Get-TopStripFraction'))['Get-TopStripFraction']
+    Write-Log "  $funcText"
+    Assert-That ($funcText -match 'RWN_4AI_TOP_FRACTION') 'Get-TopStripFraction reads RWN_4AI_TOP_FRACTION' "got: $funcText"
+    $assign = Get-SelectorAssignmentText -Ast $ast -VarName 'topStripFraction'
+    Assert-That ($assign -match '0\.65') '$topStripFraction default is 0.65' "got: $assign"
+
+    $prev = $env:RWN_4AI_TOP_FRACTION
+    try {
+        Remove-Item Env:RWN_4AI_TOP_FRACTION -ErrorAction SilentlyContinue
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.65) 'top fraction: default 0.65 when unset'
+
+        $env:RWN_4AI_TOP_FRACTION = '0.5'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.5) 'top fraction: override to 0.5 restores the old 50/50 split'
+
+        $env:RWN_4AI_TOP_FRACTION = ' 0.4 '
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.4) 'top fraction: surrounding whitespace tolerated'
+
+        $env:RWN_4AI_TOP_FRACTION = 'banana'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.65) 'top fraction: garbage falls back to the default'
+
+        $env:RWN_4AI_TOP_FRACTION = ''
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.65) 'top fraction: empty falls back to the default'
+
+        $env:RWN_4AI_TOP_FRACTION = '0.99'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.8) 'top fraction: 0.99 clamps to the 0.8 max (not the default)'
+
+        $env:RWN_4AI_TOP_FRACTION = '0.01'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.2) 'top fraction: 0.01 clamps to the 0.2 min (not the default)'
+
+        $env:RWN_4AI_TOP_FRACTION = '0.2'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.2) 'top fraction: 0.2 (the min) is honored, not clamped away'
+
+        $env:RWN_4AI_TOP_FRACTION = '0.8'
+        Assert-That ((Invoke-GetTopStripFraction -Default 0.65) -eq 0.8) 'top fraction: 0.8 (the max) is honored, not clamped away'
+    } finally {
+        if ($null -eq $prev) { Remove-Item Env:RWN_4AI_TOP_FRACTION -ErrorAction SilentlyContinue } else { $env:RWN_4AI_TOP_FRACTION = $prev }
+    }
+
+    # End-to-end: the override actually reaches Build-FleetTabStages's stage strings.
+    $prev2 = $env:RWN_4AI_TOP_FRACTION
+    try {
+        $env:RWN_4AI_TOP_FRACTION = '0.5'
+        $proj = Join-Path $sandboxRoot 'topfrac-proj'
+        New-Item -ItemType Directory -Path $proj -Force | Out-Null
+        $stages = Invoke-BuildFleetTabStages -TargetDir $proj
+        Assert-That ($stages[1] -like 'split-pane -H -s 0.5 *') `
+            'RWN_4AI_TOP_FRACTION=0.5 end-to-end: stage 1 bottom split becomes 0.5' "got '$($stages[1])'"
+    } finally {
+        if ($null -eq $prev2) { Remove-Item Env:RWN_4AI_TOP_FRACTION -ErrorAction SilentlyContinue } else { $env:RWN_4AI_TOP_FRACTION = $prev2 }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Safety fingerprints: nothing outside the sandbox may change.
 # ---------------------------------------------------------------------------
 function Get-DirFingerprint($path) {
@@ -886,6 +965,7 @@ try {
     Test-StagedEmission
     Test-BatchPacing
     Test-DelayKnobs
+    Test-TopStripFraction
 } catch {
     # A thrown contract guard (or any fatal error) must not be able to masquerade
     # as "0 failed". Record it, still run the safety checks, then report ABORTED.
