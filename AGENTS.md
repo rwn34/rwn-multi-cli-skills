@@ -45,6 +45,15 @@ smallest in the fleet, so it routes this work to OpenCode as handoffs in
 `.ai/handoffs/to-opencode/open/`. Guardrails are unchanged: no source-code edits,
 dry-run first for anything mutating a live environment.
 
+**Confirmed-stale CLI kills are fleet-executed (Tier B)** (owner directive
+2026-07-13; operating-prompt §8.1): killing a **confirmed-stale CLI child
+process** needs no owner ask — act, then notify. Guards: two independent
+staleness signals (one is not confirmation), kill the **CLI child only, never
+the pane-runner or supervisor**, any fleet member may kill any pane's stale
+child, log the evidence (PIDs, CPU/log timestamps, claim age) at kill time, and
+escalate instead of guessing when confirmation is ambiguous. No Tier-C floor is
+relaxed by this.
+
 **Deploy — the environment decides the gate** (ADR-0011 amendment 2026-07-12b):
 **staging deploy is Tier B** (OpenCode's call — dry-run first, refuse on a dirty
 tree or failing tests, then notify), **production deploy is Tier C** (owner-gated,
