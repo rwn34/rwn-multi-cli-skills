@@ -16,12 +16,17 @@ The activity log is an **entry-per-file spool**, not a shared file you edit. Eac
 substantive action gets its **own new file** — you never open, prepend to, or
 rewrite anyone else's entry, and you never rewrite your own prior entries.
 
-**Read** at the start of non-trivial work: list the newest few files in
-`.ai/activity/entries/` (sorted by filename, which is a fixed-width UTC
-timestamp, so lexicographic order == chronological order) and read them to see
-what other CLIs did here.
+**Recent activity is already in your context — do not re-read it.** Your
+`agentSpawn` hook (`.kiro/hooks/activity-log-inject.sh`) injects the newest
+activity automatically at session start (`log.md`'s top 40 lines pre-freeze,
+the newest 8 `entries/` files post-freeze — see the Fallback note below for the
+exact switch). Re-reading it yourself wastes tokens on something already
+sitting in front of you.
 
-    ls .ai/activity/entries/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -60
+**Specific history** (a topic from before the injected window) →
+`grep -n "<topic>" .ai/activity/log.md` pre-freeze, or grep across
+`.ai/activity/entries/*.md` post-freeze. Never read either wholesale — `log.md`
+is 600KB+/2,100+ lines and almost entirely irrelevant to any one task.
 
 **Write one entry file** after completing substantive work (file edits, running
 tests, non-obvious decisions, finishing a task) — never edit or delete another
@@ -56,12 +61,15 @@ machine with one clock this is reliable in practice.
 Terse — one short paragraph max per entry. One entry file per substantive
 action, not per file edit. Do not log trivial reads.
 
-**Fallback (transitional, until the spool is populated across the fleet):** if
-`.ai/activity/entries/` does not yet exist or is empty, `log.md` is still the
-live file — read and prepend to it exactly as before. Once entries start
-landing, switch to writing entry files. Never write to `log.md` once
-`entries/` is in active use elsewhere — that reintroduces the write race
-ADR-0010 exists to remove.
+**Fallback (transitional, until the freeze lands):** `.ai/activity/log.md` is
+still the live, authoritative file **as long as it exists** — read (bounded,
+never wholesale) and prepend to it exactly as before, even if
+`.ai/activity/entries/` already contains some files (other CLIs may be
+dogfooding the spool early; those entries are stale relative to `log.md` until
+the freeze). Only once `log.md` is gone (git-mv'd to archive — the freeze,
+Kimi's Wave 3) does `entries/` become authoritative and do you switch to
+writing entry files. Never write to `log.md` once it has been removed — that
+reintroduces the write race ADR-0010 exists to remove.
 
 ## Cross-CLI handoffs
 

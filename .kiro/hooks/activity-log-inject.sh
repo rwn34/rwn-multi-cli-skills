@@ -1,18 +1,20 @@
 #!/bin/bash
 # Hook: agentSpawn — inject activity log + git status + open handoffs
 #
-# Dual-mode (ADR-0010): prefer the entries/ spool once it exists and is
-# non-empty; fall back to the legacy shared log.md until then. This keeps
-# today's behavior byte-for-byte until the spool is populated, and switches
-# over automatically once it is — no future edit needed here.
-ENTRIES_DIR=.ai/activity/entries
-if [ -d "$ENTRIES_DIR" ] && [ -n "$(ls -A "$ENTRIES_DIR"/*.md 2>/dev/null)" ]; then
-  echo '--- Recent cross-CLI activity (newest 8 entries in .ai/activity/entries/) ---'
-  ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -60
-  echo '--- end ---'
-elif [ -f .ai/activity/log.md ]; then
+# Dual-mode (ADR-0010): predicate on the FREEZE, not on entries/ emptiness.
+# log.md is authoritative pre-freeze even if entries/ already holds some
+# files (e.g. other CLIs' early spool dogfooding) — those entries are stale
+# relative to log.md until log.md is git-mv'd to archive (the freeze). Once
+# log.md is gone, entries/ becomes authoritative automatically — no future
+# edit needed here. See handoff 202607131035-fix-dualmode-predicate.
+if [ -f .ai/activity/log.md ]; then
   echo '--- Recent cross-CLI activity (top of .ai/activity/log.md) ---'
   head -40 .ai/activity/log.md
+  echo '--- end ---'
+else
+  ENTRIES_DIR=.ai/activity/entries
+  echo '--- Recent cross-CLI activity (newest 8 entries in .ai/activity/entries/) ---'
+  ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -60
   echo '--- end ---'
 fi
 echo ''

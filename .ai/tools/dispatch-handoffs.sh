@@ -402,6 +402,17 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
     [ -n "$ONLY" ] && [ "$cli" != "$ONLY" ] && continue
     for f in "$dir"/*.md; do
         [ -f "$f" ] || continue
+        # Ghost-handoff refusal (belt-and-braces, handoff 202607131035): even
+        # though reconcile-done-handoffs.sh already ran at the top of this
+        # script and should have retired any open/+done/ duplicate, a ghost
+        # that survives reconcile (e.g. this script invoked standalone, or a
+        # race with a concurrent writer) must still never be DISPATCHED. Same
+        # rule as the reconcile guard: done/ wins.
+        dup_done="$(dirname "$dir")/done/$(basename "$f")"
+        if [ -e "$dup_done" ]; then
+            echo "SKIP  [$cli] ${f#$root/} — ghost: duplicate exists at ${dup_done#$root/} (done/ wins, refusing to dispatch)"
+            continue
+        fi
         # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
         head -20 "$f" | grep -qiE '^Auto:[[:space:]]*yes' || continue
         head -20 "$f" | grep -qiE '^Status:[[:space:]]*OPEN' || continue

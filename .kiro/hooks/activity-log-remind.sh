@@ -3,18 +3,20 @@
 # Non-blocking (exit 0). Queue-count block mirrors Claude's stop-reminder.sh so
 # Kiro gets the same end-of-session handoff awareness (gap B4).
 #
-# Dual-mode (ADR-0010): once the entries/ spool exists and is non-empty, "was
-# the log updated recently" means "is there a fresh entry file"; until then,
-# fall back to the legacy shared log.md mtime check.
+# Dual-mode (ADR-0010): predicate on the FREEZE (log.md presence), not on
+# entries/ emptiness — see activity-log-inject.sh for the full rationale.
+# log.md absent => the freeze has landed => entries/ is authoritative.
 
 # --- Reminder 1: activity log ---
-ENTRIES_DIR=.ai/activity/entries
-if [ -d "$ENTRIES_DIR" ] && [ -n "$(ls -A "$ENTRIES_DIR"/*.md 2>/dev/null)" ]; then
+if [ -f .ai/activity/log.md ]; then
+  if [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
+    echo 'REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending.'
+  fi
+else
+  ENTRIES_DIR=.ai/activity/entries
   if [ -z "$(find "$ENTRIES_DIR" -name '*.md' -mmin -60 2>/dev/null)" ]; then
     echo 'REMINDER: no new file in .ai/activity/entries/ in this session. If you made substantive changes (file edits, tests run, decisions), write an entry file before ending.'
   fi
-elif [ -f .ai/activity/log.md ] && [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
-  echo 'REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending.'
 fi
 
 # --- Reminder 1b: open handoff queues (per-queue counts, glob-driven — never a
