@@ -1,5 +1,5 @@
 # Make `gates` + `framework-check` REQUIRED status checks on master
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: opencode
 Created: 2026-07-12 19:00
