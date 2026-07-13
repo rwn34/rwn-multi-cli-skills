@@ -20,7 +20,22 @@ promotion happened.
 
 ### Added
 
-- [TODO: new features]
+- Version gate: ship-list agreement self-check (`scripts/check-version-bump.sh`
+  check 4). `is_versioned` was a hand-maintained restatement of what the
+  installers ship, with nothing keeping the two in lockstep — and a live
+  divergence had already crept in (`scripts/wt-bootstrap.sh` shipped but
+  unclassified). The gate now DERIVES the ship list from the installers
+  themselves (`install-template.sh` copy calls + the Node manifests) on every
+  run and fails loudly if any shipped path — every tracked file under a shipped
+  dir included — lacks an explicit allow/deny verdict. `is_versioned` gained a
+  distinct "no opinion" return code so "deliberately denied" is
+  distinguishable from "never classified".
+- Version gate: Unreleased-provenance check (check 5). The promoted
+  `## [x.y.z]` bullets must appear verbatim in the base tip's
+  `## [Unreleased]` and be gone from HEAD's — wrong-PR, invented, copied-not-
+  moved, and reworded-at-promotion bullets now fail mechanically. Caveat for
+  release-engineers: promotion must be verbatim; make any wording edits in
+  `## [Unreleased]` first, then promote.
 
 ### Changed
 
