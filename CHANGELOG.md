@@ -35,11 +35,21 @@ promotion happened.
   `tools/4ai-panes/test-claim-handoff.ps1`, which drives the real
   `Get-QualifyingHandoff` gate. Symmetric across all four CLIs.
 - Fleet pane liveness watchdog (dead-man's switch): `pane-runner.ps1` writes an atomic heartbeat sidecar (`.ai/.heartbeat-<cli>.json`) once per poll cycle; `.ai/tools/fleet-health.sh` cross-checks heartbeat freshness against each pane's open queue and classifies `OK` / `STALL` (queue with nobody watching) / `WEDGED` (polling but not picking up) / `DOWN (idle)` (informational) — exit 1 on STALL/WEDGED so CI and hooks can gate, fail-open on its own errors. Surfaced in `stop-reminder.sh` (STALL/WEDGED lines at session end) and the 4AI-panes Selector badge (`stall:<cli>` marker). Detection and alerting only — no auto-restart. Staleness mirrors the pane-runner claim-lock policy (15-min window, same-host dead pid = stale, foreign host = time window only).
+- `sync-replicas.sh --check` — the replica generator is now the ONE SSOT drift
+  authority (detects **and** repairs); wired into both CI workflows
+  (`framework-check.yml`, `gates.yml`) so an SSOT-changing PR without
+  regenerated replicas fails with a copy-pasteable fix command. In-place
+  regeneration is junction-safe: it refuses writes through any symlink or
+  Windows-junction ancestor and any registry destination under `.ai/`
+  (ADR-0004 reverse-write class).
 - [TODO: new features]
 
 ### Changed
 
-- [TODO: changes in existing functionality]
+- `check-ssot-drift.sh` is now a thin compatibility shim that execs
+  `sync-replicas.sh --check` (identical output contract and exit codes); the
+  manual copy commands in `.ai/sync.md` are demoted to reference material in
+  favor of the generator.
 
 ### Deprecated
 
