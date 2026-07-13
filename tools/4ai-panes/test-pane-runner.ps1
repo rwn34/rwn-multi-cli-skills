@@ -70,6 +70,10 @@
 #        ensure_declared_base_branch) survives the same landmine state
 #   (av4) wt-bootstrap junction-degradation guard: degraded real-dir .ai with
 #        uncommitted content dies loud; clean real dir re-junctions
+#   (av5) REGRESSION for the reverted guard_ai_reverse_write (--skip-worktree
+#        on stable .ai/ paths, commit cf9074d): a fresh re-bootstrap carries
+#        ZERO skip-worktree bits, and a real edit to a stable SSOT-shaped path
+#        shows up in `git status` and stages with `git add` (not blinded)
 #   (ba-be) PANE LIVENESS HEARTBEAT SIDECAR (fleet-health.sh dead-man's switch):
 #     (ba) Write-Heartbeat writes .ai/.heartbeat-<cli>.json w/ contract fields
 #     (bb) atomic temp+rename leaves no .tmp debris
@@ -810,12 +814,70 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         Assert-Equal $true ($LASTEXITCODE -ne 0) 'av4: DEGRADED .ai (real dir + uncommitted content) -> wt-bootstrap dies loud'
         Assert-Equal $true ($av4Out -match 'DEGRADED') 'av4: failure message names the degradation'
         Remove-Item -Path $av4Ai -Recurse -Force
-        git -C $realWt1 checkout --quiet -- .ai 2>$null   # clean real dir matching the index
+        # Clean real dir matching the index: restore BOTH staged and worktree
+        # content for .ai from HEAD. `checkout -- .ai` alone only restores the
+        # worktree copy — it leaves a pre-existing STAGED diff on
+        # .ai/activity/log.md (inherited from the (av) block's declared-base
+        # cut, which deliberately excludes .ai from `git restore --staged`)
+        # untouched, so `git status --porcelain -- .ai` still reports
+        # "M  .ai/activity/log.md" and wt-bootstrap's degraded-dir check
+        # (correctly) refuses a dir that is not actually clean.
+        git -C $realWt1 restore --quiet --source=HEAD --staged --worktree -- .ai 2>$null
         $av4Out2 = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
         Assert-Equal 0 $LASTEXITCODE 'av4: clean real dir -> re-junction succeeds'
         Assert-Equal $true ($av4Out2 -match 'Done\.') 'av4: bootstrap completed'
         $av4Relinked = (Get-Item $av4Ai).Attributes -band [System.IO.FileAttributes]::ReparsePoint
         Assert-Equal $true ($av4Relinked -ne 0) 'av4: .ai is a reparse point (junction) again'
+
+        # (av5) REGRESSION TEST for the exact failure the reverted approach
+        # (guard_ai_reverse_write, commit cf9074d) introduced: a --skip-worktree
+        # bit on a STABLE .ai/ path makes git blind to a real edit on that
+        # path — `git add` stages nothing, `git status` shows clean, a commit
+        # silently drops the change. This is the regression test the reverted
+        # approach's own spec flagged as never having been run (only the churn
+        # half — .ai/activity/log.md — was exercised before landing cf9074d).
+        #
+        # Seed a stable SSOT-shaped path directly in the sandbox primary (this
+        # test's primary is a minimal seed repo with no real .ai/instructions/
+        # tree of its own) so the probe is self-contained and does not depend
+        # on this outer repo's real files.
+        $av5StablePath = '.ai/instructions/operating-prompt/principles.md'
+        # Route the seed commit through $avClone (created earlier in the (av)
+        # block), not $primary: $avClone's master already tracks the tip of
+        # origin/master ("log v2" + "seed v2"), while $primary's local master
+        # is intentionally stale behind that push (that staleness is the whole
+        # point of the (av) landmine setup) and its .ai/activity/log.md carries
+        # a live, uncommitted, junction-shared edit — merging or resetting
+        # $primary's branch here would either conflict with that live content
+        # or require touching it, which this probe must not do.
+        git -C $avClone pull --quiet origin master *> $null
+        $av5CloneFile = Join-Path $avClone $av5StablePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $av5CloneFile) -Force | Out-Null
+        'stable SSOT content v1' | Set-Content -Path $av5CloneFile -NoNewline
+        git -C $avClone add -- $av5StablePath
+        git -C $avClone commit --quiet -m 'seed stable .ai/instructions path for av5'
+        git -C $avClone push --quiet origin master
+
+        # Re-bootstrap so the worktree's HEAD carries the new commit (fetch +
+        # fast-forward the worktree's branch, which already tracks
+        # origin/master from the (av) declared-base cut above).
+        git -C $realWt1 fetch origin *> $null
+        git -C $realWt1 merge --quiet --ff-only origin/master *> $null
+
+        $av5Bits = git -C $realWt1 ls-files -v -- .ai 2>$null | Where-Object { $_ -match '^S' }
+        Assert-Equal 0 (@($av5Bits).Count) 'av5: zero --skip-worktree bits under .ai/ after re-bootstrap'
+
+        $av5WtFile = Join-Path $realWt1 $av5StablePath
+        Assert-Equal $true (Test-Path $av5WtFile) 'av5: stable SSOT path is visible through the worktree'
+        Add-Content -Path $av5WtFile -Value 'av5-regression-probe-line'
+        $av5Status = git -C $realWt1 status --porcelain -- $av5StablePath
+        Assert-Equal $true ($null -ne $av5Status -and $av5Status.Trim().Length -gt 0) 'av5: edit to a stable SSOT path IS visible in git status (not blinded)'
+        git -C $realWt1 add -- $av5StablePath 2>$null
+        $av5Staged = git -C $realWt1 diff --cached --name-only -- $av5StablePath
+        Assert-Equal $true ($null -ne $av5Staged -and $av5Staged.Trim().Length -gt 0) 'av5: edit to a stable SSOT path STAGES with git add (not blinded)'
+        # Clean up — this path is shared through the junction; leave it matching HEAD.
+        git -C $realWt1 reset --quiet -- $av5StablePath 2>$null
+        git -C $realWt1 checkout --quiet -- $av5StablePath 2>$null
         $ErrorActionPreference = $avPrevEAP
     } finally {
         Pop-Location

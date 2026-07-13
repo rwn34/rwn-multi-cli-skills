@@ -190,26 +190,32 @@ cmd_islink() {
     | grep -i "$(basename "$1")" || true
 }
 
-# Reverse-write guard (2026-07-13): mark the stable subset of .ai/ as
-# skip-worktree inside this worktree so a git checkout/reset/run in the
-# worktree cannot silently rewrite the canonical primary .ai/ through the
-# junction. Churn directories (handoffs, log, entries, reports, claims,
-# archives) remain writable because they are intentionally coordination-plane
-# state and are shared through the junction.
-guard_ai_reverse_write() {
+# Self-heal (2026-07-14): clear any leftover --skip-worktree bits under .ai/
+# in this worktree. A prior bootstrap (commit cf9074d, reverted by this one)
+# set skip-worktree on ~39 stable .ai/** paths to block a junction
+# reverse-write — but --skip-worktree makes git blind to REAL edits on those
+# paths too: `git add`/`git status` silently ignore them, so a genuine SSOT or
+# tooling change made from inside a guarded worktree is dropped with no error
+# and no diff to notice. Existing worktrees created before this revert still
+# carry the bits and will keep losing edits silently until re-bootstrapped —
+# this makes every bootstrap run (create OR skip/reuse) self-heal them, not
+# just fresh worktrees. Idempotent: `--no-skip-worktree` on an already-clear
+# bit is a no-op. See docs/specs/junction-reverse-write-guard.md and
+# .ai/tools/reverse-write-detector.sh for the replacement (detection, not
+# prevention).
+heal_skip_worktree() {
   wt_path="$1"
-  ( cd "$wt_path" && git ls-tree -r HEAD --name-only -- .ai 2>/dev/null ) | while IFS= read -r rel; do
+  bits="$(git -C "$wt_path" ls-files -v -- .ai 2>/dev/null | awk '/^S/{print $2}')"
+  [ -n "$bits" ] || return 0
+  n=0
+  while IFS= read -r rel; do
     [ -n "$rel" ] || continue
-    case "$rel" in
-      .ai/activity/log.md)      continue ;;
-      .ai/activity/entries/*)   continue ;;
-      .ai/handoffs/*)           continue ;;
-      .ai/reports/*)            continue ;;
-      .ai/*/archive/*)          continue ;;
-      .ai/.claim-*.json)        continue ;;
-    esac
-    git -C "$wt_path" update-index --skip-worktree "$rel" 2>/dev/null || true
-  done
+    git -C "$wt_path" update-index --no-skip-worktree "$rel" 2>/dev/null && n=$((n + 1))
+  done <<EOF
+$bits
+EOF
+  [ "$n" -gt 0 ] && log "heal   $(basename "$wt_path") — cleared $n leftover --skip-worktree bit(s) under .ai/"
+  return 0
 }
 
 # Pin the per-worktree committer identity to the executor that owns the tree.
@@ -267,7 +273,7 @@ for executor in $EXECUTORS; do
   # re-pinned too — it repairs drifted trees, not just fresh ones.
   link_ai "$wt_path"
   exclude_ai "$wt_path"
-  guard_ai_reverse_write "$wt_path"
+  heal_skip_worktree "$wt_path"
   set_identity "$wt_path" "$executor"
 done
 

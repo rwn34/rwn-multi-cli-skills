@@ -20,6 +20,20 @@ promotion happened.
 
 ### Added
 
+- Junction reverse-write detector: `.ai/tools/reverse-write-detector.sh` flags
+  a stable `.ai/**` file whose on-disk content matches an *earlier* committed
+  blob rather than the current one — the signature of a git op in a worktree
+  writing through the `.ai/` junction back onto the primary checkout's
+  canonical files. Warn-only, wired into `scripts/git-hooks/post-merge` and
+  `post-checkout` (primary-checkout-only, never CI — a fresh CI clone has no
+  junction to reproduce the failure mode). See
+  `docs/specs/junction-reverse-write-guard.md`.
+- `heal_skip_worktree()` in `scripts/wt-bootstrap.sh`: clears any leftover
+  `git update-index --skip-worktree` bits under `.ai/` on every bootstrap run
+  (create OR skip/reuse), so worktrees created under the reverted guard below
+  converge back to full `git status`/`git add` visibility without manual
+  intervention.
+
 - ADR-0014: enforcement-layer (`.claude/hooks/**`) changes land via peer-reviewed
   PR (author ≠ reviewer, required CI gates, no self-merge) instead of
   owner-apply-only, replacing the hand-applied-patch escape hatch that made the
@@ -88,6 +102,17 @@ promotion happened.
 
 - `.ai/tools/activity-append.sh` and `.ai/tests/test-activity-append.sh` — the
   serializing writer with zero callers (ADR-0010 § Alternatives (A)).
+- `guard_ai_reverse_write()` from `scripts/wt-bootstrap.sh` (was added in
+  commit `cf9074d`). It applied `--skip-worktree` to every stable `.ai/**`
+  path in every executor worktree to prevent a junction reverse-write — but
+  the same mechanism that blocks the clobber makes git blind to real edits
+  on those paths too: `git add`/`git status` silently ignore them. Confirmed
+  in production, not just theorized: a kimi-authored SSOT edit to
+  `.ai/instructions/operating-prompt/principles.md` went invisible to
+  `git status` for a full session under the guard. Replaced by
+  `heal_skip_worktree()` (see Added) and the pre-existing warn-only
+  `reverse-write-detector.sh`. See
+  `docs/specs/junction-reverse-write-guard.md` § "Prevention — REMOVED".
 
 ### Fixed
 
@@ -103,6 +128,18 @@ promotion happened.
   carrying `claude-code`) — and the ADR-0005 pre-commit gate trusts that
   identity, so a mislabeled commit could inherit another CLI's territory
   exception. The re-pin is idempotent and repairs drifted trees.
+- `tools/4ai-panes/test-pane-runner.ps1`'s `av4` sub-block (wt-bootstrap
+  junction-degradation guard) fixed a test-isolation bug that had it failing
+  144/3 instead of 147/0: it set up a "clean real dir matching the index" via
+  `git checkout -- .ai`, which restores the worktree copy but not a
+  pre-existing STAGED diff on `.ai/activity/log.md` inherited from an earlier
+  test block — so `git status --porcelain -- .ai` still reported the dir as
+  dirty and the (correct) degraded-dir refusal fired against contaminated
+  setup, not a real defect. Now uses `git restore --source=HEAD --staged
+  --worktree -- .ai`, which resets both. Unrelated to (and not caused or
+  fixed by) `guard_ai_reverse_write()`'s removal above — reproduced
+  identically with that removal reverted, confirming the correlation with
+  commit `cf9074d` was coincidental.
 - [TODO: bug fixes]
 
 ### Security

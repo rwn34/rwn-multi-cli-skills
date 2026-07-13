@@ -20,6 +20,32 @@ branch_flag="$3"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 SYNC_SCRIPT="$REPO_ROOT/scripts/sync-4ai-panes-install.ps1"
 
+# --- reverse-write-detector (warn-only, primary-checkout-only) -------------
+# Same guard + rationale as post-merge's copy (see that file's comment). This
+# call sits BELOW the `[ "$branch_flag" = "1" ] || exit 0` guard at the top of
+# this file, so it does NOT run on a file checkout (`git checkout -- <path>`,
+# branch_flag=0) — the exact command that performs the clobber. Not fatal:
+# that clobber runs from a worktree, whose hook invocation is primary-gated
+# off anyway (see the --git-dir/--git-common-dir check just below), so the
+# primary's own detector still catches it on the primary's NEXT branch
+# checkout or merge. Running the detector on every file checkout too would
+# cost ~2N git calls per stable path (N = --history-depth) on a command this
+# hot; not done without measuring whether that cost is worth it first.
+if [ "$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" = \
+     "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]; then
+    rwd_out="$(bash "$REPO_ROOT/.ai/tools/reverse-write-detector.sh" 2>&1)"
+    if printf '%s\n' "$rwd_out" | grep -q '^REVERSE-WRITE:'; then
+        {
+            echo "=============================================================================="
+            echo "post-checkout: reverse-write-detector found stable .ai/** paths that look clobbered"
+            echo "  (content matches an OLDER committed blob, not origin/master's current one)."
+            printf '%s\n' "$rwd_out"
+            echo "  See docs/specs/junction-reverse-write-guard.md for the mechanism + recovery."
+            echo "=============================================================================="
+        } >&2
+    fi
+fi
+
 # 1. Change range = prev-HEAD..new-HEAD.
 if [ -z "$prev_head" ] || [ -z "$new_head" ]; then
     exit 0

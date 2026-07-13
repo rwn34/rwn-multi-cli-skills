@@ -16,6 +16,27 @@
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 SYNC_SCRIPT="$REPO_ROOT/scripts/sync-4ai-panes-install.ps1"
 
+# --- reverse-write-detector (warn-only, primary-checkout-only) -------------
+# Runs unconditionally on every merge (cheap: bounded git ls-tree/hash-object
+# per stable .ai/** path, see .ai/tools/reverse-write-detector.sh). Guarded to
+# the PRIMARY checkout only — a linked worktree's --git-dir differs from its
+# --git-common-dir, a primary checkout's does not. Never blocks: any failure
+# here is a warning, exit stays 0.
+if [ "$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" = \
+     "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ]; then
+    rwd_out="$(bash "$REPO_ROOT/.ai/tools/reverse-write-detector.sh" 2>&1)"
+    if printf '%s\n' "$rwd_out" | grep -q '^REVERSE-WRITE:'; then
+        {
+            echo "=============================================================================="
+            echo "post-merge: reverse-write-detector found stable .ai/** paths that look clobbered"
+            echo "  (content matches an OLDER committed blob, not origin/master's current one)."
+            printf '%s\n' "$rwd_out"
+            echo "  See docs/specs/junction-reverse-write-guard.md for the mechanism + recovery."
+            echo "=============================================================================="
+        } >&2
+    fi
+fi
+
 # 1. Determine the change range. ORIG_HEAD..HEAD is the merge delta.
 if ! git rev-parse --verify -q ORIG_HEAD >/dev/null 2>&1; then
     exit 0   # no ORIG_HEAD (nothing merged we can diff) — nothing to do.
