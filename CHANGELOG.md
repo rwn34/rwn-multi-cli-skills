@@ -18,6 +18,21 @@ promotion happened.
 
 ## [Unreleased]
 
+### Fixed
+
+- `.ai/tools/check-ssot-drift.sh` and `.ai/tools/sync-replicas.sh` no longer
+  measure the wrong repository when invoked by absolute path from a different
+  working directory or worktree. Both scripts previously resolved every
+  source/destination path relative to the caller's CWD, so a genuinely
+  drifted replica in one worktree could be reported as `Drift: 0` if the
+  checker happened to be invoked from — or through — a different repo/worktree
+  (including via the `.ai/` directory junction that ADR-0004 uses to share
+  coordination state across worktrees). Both scripts now derive the repo root
+  by pure string manipulation on their own script path (never `cd` +
+  `git rev-parse`, which resolves the `.ai/` junction and silently measures
+  the wrong repo again), so the verdict is correct regardless of CWD.
+  CI is unaffected (it always invokes from the checked-out repo root).
+
 ### Added
 
 - [TODO: new features]

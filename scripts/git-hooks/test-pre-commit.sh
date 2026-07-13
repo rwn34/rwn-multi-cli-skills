@@ -317,6 +317,57 @@ else
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
 
+    echo "== checker/generator: CWD-independence (drift-checker-cwd-false-pass fix) =="
+    # Regression for the false-pass bug: invoking the checker BY ABSOLUTE PATH
+    # from a DIFFERENT directory must measure the repo it belongs to, never
+    # "whatever CWD happens to be". Two sub-cases: a plain different cwd, and
+    # the actual production shape — a worktree whose .ai/ is a SYMLINK/JUNCTION
+    # to another repo's .ai/ (ADR-0004). The junction case is the one an
+    # earlier "cd + git rev-parse" fix attempt got wrong (it resolves the
+    # symlink and silently measures the WRONG repo again) — this proves the
+    # actual shipped fix (pure string arithmetic on $0) does not regress to
+    # that failure mode.
+    d="$(mkrepo)"                       # repo A: will hold the genuine drift
+    other="$(mkrepo)"                   # repo B: a decoy, always clean
+    printf '\n<!-- cwd-independence drift -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    # sanity: repo A is red from its own root; repo B is green from its own root.
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "repo A is RED from its own root (sanity)" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    ( cd "$other" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "repo B (decoy) is GREEN from its own root (sanity)" "$?"
+    # Invoke repo A's checker BY ABSOLUTE PATH while cwd is repo B. Before the
+    # fix this silently measured repo B (the cwd) and reported green — the
+    # false pass. After the fix it must still report repo A's real drift.
+    ( cd "$other" && bash "$d/.ai/tools/check-ssot-drift.sh" >/dev/null 2>&1 )
+    pf "abs-path invocation from a DIFFERENT cwd still measures ITS OWN repo (not cwd)" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$other"
+
+    # Junction case: create a THIRD directory whose .ai is a symlink back to a
+    # PRISTINE repo's .ai (mirrors wt-bootstrap's `mklink /J`). A `cd
+    # <junctioned-dir>/.ai/tools && pwd`/`git rev-parse` resolves the symlink
+    # and lands in the pristine repo — exactly the failure this test guards
+    # against. Symlinks require no elevation (unlike Windows junctions), so
+    # this runs unprivileged; the resolution hazard (physical-path traversal)
+    # is identical for both.
+    pristine="$(mkrepo)"                # the "primary checkout" — always clean
+    wt="$(mktemp -d)"                   # the "worktree" — has its own drifted files
+    cp -R "$pristine/.claude" "$pristine/.kimi" "$pristine/.kiro" "$pristine/scripts" "$wt/" 2>/dev/null
+    cp "$pristine/.gitattributes" "$wt/" 2>/dev/null
+    ln -s "$pristine/.ai" "$wt/.ai"      # <-- the junction-equivalent
+    printf '\nWORKTREE-LOCAL DRIFT\n' >> "$wt/.kiro/steering/karpathy-guidelines.md"
+    if [ -L "$wt/.ai" ]; then
+        ( cd "$wt" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+        pf "junctioned .ai/: checker from the worktree root catches worktree-local drift" \
+            "$([ $? -ne 0 ] && echo 0 || echo 1)"
+        ( cd "$pristine" && bash "$wt/.ai/tools/check-ssot-drift.sh" >/dev/null 2>&1 )
+        pf "junctioned .ai/: abs-path invocation from the PRISTINE repo still catches the WORKTREE's drift" \
+            "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    else
+        echo "SKIP  junction case — symlink creation unavailable on this host"
+    fi
+    rm -rf "$d" "$pristine" "$wt"
+
     echo "== pre-commit: claude-code auto-stages replicas atomically =="
     d="$(mkrepo)"
     git -C "$d" config user.name claude-code

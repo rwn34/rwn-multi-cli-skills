@@ -19,28 +19,75 @@
 # Output is LF-normalized unconditionally (deterministic across OS). .gitattributes
 # pins *.md to eol=lf so the committed bytes match.
 #
+# CWD-INDEPENDENCE (2026-07-13, drift-checker-cwd-false-pass fix): all paths
+# ($SYNC_MD, every source, every destination) are resolved against $ROOT — the
+# directory two levels above THIS SCRIPT FILE (i.e. ".ai/tools/<this>.sh" ->
+# strip "/.ai/tools") — never against the caller's current directory.
+#
+# Root is derived by PURE STRING manipulation on $0, deliberately WITHOUT `cd`
+# or any operation that resolves symlinks (no `cd ... && pwd`, no `pwd -P`, no
+# `git rev-parse --show-toplevel` run FROM inside this script's own directory).
+# That distinction is load-bearing: in the framework's worktree-per-CLI layout
+# (ADR-0004), each worktree's `.ai/` is a directory JUNCTION to the ONE
+# canonical `.ai/` in the primary checkout. `cd`-ing into ".ai/tools" and then
+# asking for the physical path (or asking git for the toplevel FROM there)
+# resolves the junction and lands you back in the PRIMARY checkout — not the
+# worktree the script was actually invoked from. That was the second half of
+# the bug this fix closes: the first (obvious) fix attempt, `cd
+# "$(dirname "$0")" && git rev-parse --show-toplevel`, silently reproduces the
+# exact false-pass this script exists to prevent, because it still ends up
+# measuring the primary checkout whenever it's invoked via the junction. Pure
+# string arithmetic on $0's path never touches the filesystem, so it can't be
+# fooled by a symlink/junction in the middle of the path.
+#
+# Previously the script trusted CWD, so invoking it (or check-ssot-drift.sh,
+# which calls it) by absolute path from a different directory/worktree silently
+# regenerated and diffed against WHATEVER REPO the CWD happened to be — a false
+# pass hiding genuine drift in the caller's own tree. See
+# .ai/handoffs/to-kiro/done/202607122030-drift-checker-cwd-false-pass.md.
+#
 # Usage:
 #   bash .ai/tools/sync-replicas.sh                 # regenerate replicas in place
 #   bash .ai/tools/sync-replicas.sh --dest-root DIR # write under DIR/<dest> instead
+#                                                    # (relative DIR is resolved
+#                                                    # against the CALLER's CWD,
+#                                                    # not $ROOT — it's an output
+#                                                    # sink, not a repo path)
 #
 # stdout: one `SOURCE<TAB>DEST` line per generated replica (the manifest that
-#         check-ssot-drift.sh consumes). stderr: a human summary.
+#         check-ssot-drift.sh consumes) — SOURCE/DEST are $ROOT-relative, exactly
+#         as before. stderr: a human summary.
 # Exit: 0 on success; non-zero (with a clear message) on any error — FAIL CLOSED.
 
 set -u
 
-: "${SYNC_MD:=.ai/sync.md}"
-DEST_ROOT="."
+fail() { echo "sync-replicas.sh: $*" >&2; exit 1; }
+
+# Resolve $0 to an absolute path WITHOUT touching the filesystem (string-only —
+# no `cd`, no symlink resolution). $0 is either already absolute, or relative
+# to $PWD (bash never invokes a script via a bare basename lookup on PATH for
+# `bash <path>` / `./<path>` forms, both of which are how this tool is called).
+case "$0" in
+  /*) _self="$0" ;;
+  *)  _self="$PWD/$0" ;;
+esac
+HERE="$(dirname "$_self")"
+# $HERE is always "<root>/.ai/tools" by construction (this file lives there) —
+# strip the two trailing components lexically. No `cd`, no `git`, no symlink
+# ever enters the resolution, so a junctioned .ai/ cannot redirect it.
+ROOT="$(dirname "$(dirname "$HERE")")"
+[ -n "$ROOT" ] && [ -d "$ROOT" ] || fail "could not resolve repo root from script path '$0' (fail closed)"
+
+: "${SYNC_MD:="$ROOT/.ai/sync.md"}"
+DEST_ROOT="$ROOT"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dest-root) DEST_ROOT="${2:-}"; [ -n "$DEST_ROOT" ] || { echo "sync-replicas.sh: --dest-root needs a value" >&2; exit 2; }; shift 2 ;;
-    -h|--help)   sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,40p' "$0"; exit 0 ;;
     *)           echo "sync-replicas.sh: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
-
-fail() { echo "sync-replicas.sh: $*" >&2; exit 1; }
 
 [ -r "$SYNC_MD" ] || fail "registry unreadable: $SYNC_MD (fail closed)"
 
@@ -93,35 +140,45 @@ count=0
 # IFS=tab so paths keep any spaces; read src + dst from each manifest line.
 while IFS="$(printf '\t')" read -r src dst; do
   [ -n "$src" ] && [ -n "$dst" ] || continue
-  [ -f "$src" ] || fail "SSOT source missing: $src"
+
+  # $src/$dst from the registry are ROOT-relative strings (e.g.
+  # ".ai/instructions/...", ".kiro/steering/..."). Resolve them against $ROOT —
+  # never against CWD — so the generator is correct no matter where it is
+  # invoked from. $out (the write target) honors --dest-root, which is an
+  # output sink and intentionally CWD-relative when given as a relative path.
+  root_src="$ROOT/$src"
+  root_dst="$ROOT/$dst"
+  [ -f "$root_src" ] || fail "SSOT source missing: $root_src"
 
   out="$DEST_ROOT/$dst"
   mkdir -p "$(dirname "$out")" || fail "could not create $(dirname "$out")"
 
   case "$(basename "$dst")" in
     SKILL.md)
-      # Preamble comes from the EXISTING committed replica (read at repo-relative
-      # $dst even when writing elsewhere), body from the SSOT source. Buffer through
-      # a temp file: when regenerating IN PLACE ($out == $dst) a direct `> "$out"`
-      # would TRUNCATE the file before extract_preamble reads it, wiping the
-      # preamble. Build the full content first, then move it into place.
-      [ -f "$dst" ] || fail "preamble-carrying replica missing, cannot preserve preamble: $dst"
+      # Preamble comes from the EXISTING COMMITTED replica at $ROOT/$dst (never
+      # CWD-relative $dst, and never $out — when regenerating in place $out ==
+      # $root_dst, but when writing to --dest-root the preamble must still come
+      # from the real repo, not from a possibly-absent path under DEST_ROOT).
+      # Body comes from the SSOT source. Buffer through a temp file: when
+      # regenerating IN PLACE ($out == $root_dst) a direct `> "$out"` would
+      # TRUNCATE the file before extract_preamble reads it, wiping the preamble.
+      [ -f "$root_dst" ] || fail "preamble-carrying replica missing, cannot preserve preamble: $root_dst"
       buf="$(mktemp)" || fail "mktemp failed"
-      { extract_preamble "$dst"; cat "$src"; } | normalize_lf > "$buf" || { rm -f "$buf"; fail "write failed: $out"; }
+      { extract_preamble "$root_dst"; cat "$root_src"; } | normalize_lf > "$buf" || { rm -f "$buf"; fail "write failed: $out"; }
       mv "$buf" "$out" || { rm -f "$buf"; fail "write failed: $out"; }
       ;;
     *)
-      # src (.ai/instructions/**) and out (a replica) are never the same path, so a
-      # direct redirect is safe here.
-      normalize_lf < "$src" > "$out" || fail "write failed: $out"
+      # root_src (.ai/instructions/**) and out (a replica) are never the same
+      # path, so a direct redirect is safe here.
+      normalize_lf < "$root_src" > "$out" || fail "write failed: $out"
       ;;
   esac
 
-  printf '%s\t%s\n' "$src" "$dst"   # manifest line for check-ssot-drift.sh
+  printf '%s\t%s\n' "$src" "$dst"   # manifest line for check-ssot-drift.sh (ROOT-relative, unchanged format)
   count=$((count + 1))
 done <<EOF
 $pairs
 EOF
 
-echo "sync-replicas.sh: regenerated $count replicas into '$DEST_ROOT'" >&2
+echo "sync-replicas.sh: regenerated $count replicas from '$ROOT' into '$DEST_ROOT'" >&2
 exit 0
