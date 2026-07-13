@@ -1,11 +1,25 @@
 # check-version-bump.sh — close two remaining holes
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-12 20:00
 Auto: yes
 Risk: B
 Base: origin/master
+
+## Completion record (kimi-cli, 2026-07-13)
+- PR: https://github.com/rwn34/rwn-multi-cli-skills/pull/74 (branch
+  `exec/kimi/202607122000-version-gate-two-holes`, work commit `ececd90`).
+- Approach Hole 1: option 2 from the handoff — agreement check between the
+  existing surfaces, living INSIDE the gate (no new versioned file; PR owes
+  no bump — gate-verified).
+- Touched: `scripts/check-version-bump.sh`, `scripts/test-check-version-bump.sh`,
+  `CHANGELOG.md` (Unreleased bullets only, no version bump),
+  `.ai/activity/log.md`, this handoff, the to-kiro review handoff.
+- Suite: 95 passed / 0 failed (64 original preserved + 31 new). Both RED
+  proofs + both live demos executed; evidence in the chat report.
+- Peer review routed to Kiro: `.ai/handoffs/to-kiro/open/202607130239-review-pr74-version-gate.md`.
+  NOT merged per instructions.
 
 ## Goal
 Two holes in `scripts/check-version-bump.sh`, both self-reported honestly by the agents
