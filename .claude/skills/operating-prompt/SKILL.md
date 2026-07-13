@@ -122,8 +122,20 @@ Know your lane. Know your limitation. Do not drift into another lane.
 
 ## 7. Cross-CLI continuity
 
-Before non-trivial work: read `.ai/activity/log.md` (top), check
-`.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
+**Never read `.ai/activity/log.md` wholesale.** It is ~600 KB / 2,100+ lines
+(~125k tokens), and newest entries are at the **top** — almost everything you
+need is in the first few dozen lines.
+
+- **Recent activity** (the "read at the start of non-trivial work" step) → if
+  your CLI has an activity-log inject hook wired, the top entries are already
+  injected into context each turn — use that, do not re-read. Otherwise read a
+  **bounded top window only**: `head -40 .ai/activity/log.md`, or a `Read` with
+  `limit`. That bounded read *is* the step — not a lesser substitute.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
+  read with `limit`/`offset`. **Never the whole file, never `cat`.**
+
+Before non-trivial work: read the bounded top of `.ai/activity/log.md` (or rely
+on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
 between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
