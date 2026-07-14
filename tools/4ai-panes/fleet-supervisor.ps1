@@ -372,20 +372,49 @@ function Invoke-FleetRelaunch {
     }
 
     Write-Host "  Relaunching fleet for $leaf ($n panes: $($available -join ', '))" -ForegroundColor Cyan
-    $ok = $true
-    foreach ($stage in $stages) {
-        $wtCmd = "-w rwn4ai $stage"
-        Write-Host "    `"$wt`" $wtCmd" -ForegroundColor DarkGray
-        if (-not $DryRun) {
-            try {
-                & cmd.exe /c "`"$wt`" $wtCmd"
-            } catch {
-                Write-Host "    FAILED: $_" -ForegroundColor Red
-                $ok = $false
+    $ok = $false
+
+    # Primary path: Windows Terminal grid in the existing rwn4ai window.
+    if (Test-Path $wt) {
+        $wtOk = $true
+        foreach ($stage in $stages) {
+            $wtCmd = "-w rwn4ai $stage"
+            Write-Host "    `"$wt`" $wtCmd" -ForegroundColor DarkGray
+            if (-not $DryRun) {
+                try {
+                    & cmd.exe /c "`"$wt`" $wtCmd"
+                    # Give the new pane a moment to appear so the next split targets it.
+                    Start-Sleep -Milliseconds 500
+                } catch {
+                    Write-Host "    FAILED: $_" -ForegroundColor Red
+                    $wtOk = $false
+                    break
+                }
             }
-            Start-Sleep -Milliseconds 250
         }
+        $ok = $wtOk
     }
+
+    # Fallback: standalone PowerShell console windows. Used when wt.exe is missing,
+    # the rwn4ai window is gone, or the split-pane sequence fails. The scheduled
+    # task runs interactive, so these windows are visible and stay up.
+    if (-not $ok -and -not $DryRun) {
+        Write-Host "  Falling back to standalone PowerShell windows" -ForegroundColor Yellow
+        foreach ($cli in $available) {
+            try {
+                Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$supervisor`" -Cli $cli -ProjectDir `"$ProjectDir`"" -WorkingDirectory $ProjectDir
+                Write-Host "    started $cli in standalone window" -ForegroundColor Green
+                Start-Sleep -Milliseconds 250
+            } catch {
+                Write-Host "    FAILED to start $cli`: $_" -ForegroundColor Red
+                continue
+            }
+        }
+        # Verify at least one process appeared.
+        Start-Sleep -Seconds 2
+        $ok = ($available | Where-Object { Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir }).Count -gt 0
+    }
+
     return $ok
 }
 
