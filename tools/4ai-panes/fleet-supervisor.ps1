@@ -40,6 +40,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Persistent log for scheduled-task debugging. The console output is lost when the
+# supervisor runs hidden via wscript.exe, so tee everything to %LOCALAPPDATA%.
+$script:SupervisorLogDir = if ($StateDir) { $StateDir } else {
+    $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
+    Join-Path $localAppData 'rwn-auto\fleet-supervisor'
+}
+if (-not (Test-Path $script:SupervisorLogDir)) {
+    New-Item -ItemType Directory -Path $script:SupervisorLogDir -Force | Out-Null
+}
+$script:SupervisorLogFile = Join-Path $script:SupervisorLogDir 'supervisor.log'
+try {
+    Start-Transcript -Path $script:SupervisorLogFile -Append -Force -ErrorAction Stop | Out-Null
+    $script:SupervisorTranscriptActive = $true
+} catch {
+    # Transcription may fail in no-console contexts; continue silently.
+    $script:SupervisorTranscriptActive = $false
+}
+
 # Dot-source notify.ps1 for Send-FleetNotification (fail-open Telegram alerts).
 $notifyPath = Join-Path $ToolsDir 'notify.ps1'
 if (Test-Path $notifyPath) { . $notifyPath }
@@ -680,5 +698,9 @@ if (-not $NoRun) {
         Write-Host "  no heartbeats found (fleet not running or heartbeat dir empty)" -ForegroundColor DarkGray
     } elseif (@($actions | Where-Object { $_.Action -ne 'none' }).Count -eq 0) {
         Write-Host "  all projects healthy" -ForegroundColor Green
+    }
+
+    if ($script:SupervisorTranscriptActive) {
+        Stop-Transcript | Out-Null
     }
 }
