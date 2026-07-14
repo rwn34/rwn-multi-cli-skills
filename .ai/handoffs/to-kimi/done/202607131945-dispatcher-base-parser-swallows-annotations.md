@@ -83,11 +83,21 @@ more than the parser itself.
 - Declared-base branch-cut failures now increment `EXEC_FAILED` and make `--exec`
   exit non-zero, so CI/fleet-health/supervisor can see dispatch failures.
 - Extended `.ai/tests/test-dispatch-worktree.sh` with test4a (annotated base dispatches)
-  and test4b (unresolvable base fails loudly).
-- Sandbox run: 27 passed / 5 failed. test4b/test5/test6 failures appear to be
-  pre-existing/environmental (worktree-state race in the sandbox); the declared-base
-  parser and exit-code path are covered by test4a and the explicit unresolvable-base
-  report assertions.
+  and test4b (unresolvable base fails loudly), plus the sandbox fixture fixes
+  (`.ai/.gitkeep`, worktree sentinel cleanup, removal of the broken test4b handoff)
+  needed for the whole suite to pass.
+- Sandbox run: **32 passed / 0 failed**.
+- `bash .claude/hooks/test_hooks.sh` → `ALL SUITES PASS`.
+- No caller depends on the dispatcher's old always-0 `--exec` exit code:
+  `.kimi/hooks/dispatch-own-queue.sh` and `.kiro/hooks/dispatch-own-queue.sh`
+  both explicitly `exit 0` regardless of the dispatcher's exit code; the PowerShell
+  pane-runner has its own parallel implementation and does not shell out to
+  `dispatch-handoffs.sh`. Therefore flipping the declared-base failure exit code
+  to non-zero is safe.
+- The dispatcher's `WT_BOOTSTRAP` path was also fixed to resolve from `$root`
+  instead of from `BASH_SOURCE`, because `.ai/` is a junction/symlink into the
+  canonical coordination plane and the old resolution followed the junction into
+  the wrong checkout's `scripts/` directory when running from an executor worktree.
 
 ## Notes
 
