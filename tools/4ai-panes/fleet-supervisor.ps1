@@ -137,7 +137,12 @@ function Get-PaneHealth {
 function Get-ProjectHealth {
     param([int]$StaleThreshold, [int]$CapThreshold)
     $heartbeats = Get-AllHeartbeats
-    if ($heartbeats.Count -eq 0) { return @() }
+
+    # Canonical fleet list: if fleet-clis.ps1 is loaded, every CLI in the fleet
+    # must be accounted for. A missing heartbeat file means that CLI has never
+    # started (or its heartbeat was lost) -> dead. If the fleet list is not
+    # available, fall back to whatever heartbeats exist.
+    $canonicalClis = if ($script:FleetClis) { $script:FleetClis } else { @($heartbeats | ForEach-Object { $_.cli } | Sort-Object -Unique) }
 
     $projects = @{}
     foreach ($hb in $heartbeats) {
@@ -150,10 +155,12 @@ function Get-ProjectHealth {
                 IncapableClis = @()
                 HealthyClis   = @()
                 IncapableReasons = @{}
+                SeenClis      = @{}
             }
         }
         $health = Get-PaneHealth -Heartbeat $hb -StaleThreshold $StaleThreshold -CapThreshold $CapThreshold
         $cli = [string]$hb.cli
+        $projects[$proj].SeenClis[$cli] = $true
         switch ($health) {
             'dead'      { $projects[$proj].DeadClis += $cli }
             'incapable' {
@@ -163,6 +170,20 @@ function Get-ProjectHealth {
             'healthy'   { $projects[$proj].HealthyClis += $cli }
         }
     }
+
+    # Mark any canonical fleet CLI that has no heartbeat as dead for every
+    # discovered project. Without this, a freshly-reset heartbeat dir with only
+    # one pane's heartbeat looks "healthy" and the missing panes never relaunch.
+    foreach ($projName in $projects.Keys) {
+        $p = $projects[$projName]
+        foreach ($cli in $canonicalClis) {
+            if (-not $p.SeenClis.ContainsKey($cli)) {
+                $p.DeadClis += $cli
+            }
+        }
+    }
+
+    if ($projects.Count -eq 0) { return @() }
 
     $results = @()
     foreach ($projName in $projects.Keys) {
