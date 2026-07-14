@@ -326,6 +326,26 @@ function Test-HeartbeatFresh {
     } catch { return $false }
 }
 
+# Kill any existing supervisor process for a given CLI/project. Called before
+# relaunching so a stale/dead pane cannot coexist with the new one. This is the
+# second line of defence after Test-HeartbeatFresh: a heartbeat may be stale
+# because the pane process is hung but still alive, and without this guard the
+# supervisor would accumulate duplicate panes on every relaunch attempt.
+function Stop-ExistingSupervisor {
+    param([string]$Cli, [string]$ProjectDir)
+    try {
+        $procs = Get-CimInstance Win32_Process | Where-Object {
+            $_.CommandLine -like '*run-pane-supervised.ps1*' -and
+            $_.CommandLine -match "-Cli\s+\b$Cli\b" -and
+            $_.CommandLine -match [regex]::Escape($ProjectDir)
+        }
+        foreach ($p in $procs) {
+            Write-Host "  stopping existing $Cli supervisor PID $($p.ProcessId)" -ForegroundColor DarkGray
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
+}
+
 # Relaunch the fleet for a project. Uses the same pane-runner scripts and wt
 # invocation pattern as Selector.ps1's Build-FleetTabStages, simplified to a
 # 4-pane grid (one pane per CLI). The supervisor's job is to get the fleet
@@ -377,6 +397,14 @@ function Invoke-FleetRelaunch {
     }
 
     Write-Host "  Relaunching fleet for $leaf ($n panes: $($available -join ', '))" -ForegroundColor Cyan
+
+    # Before launching anything, tear down any existing supervisor processes for
+    # the CLIs we are about to relaunch. A stale heartbeat means the old pane is
+    # dead or stuck; leaving it running creates duplicates.
+    foreach ($cli in $available) {
+        Stop-ExistingSupervisor -Cli $cli -ProjectDir $ProjectDir
+    }
+
     $ok = $false
 
     # Primary path: Windows Terminal grid in the existing rwn4ai window.
