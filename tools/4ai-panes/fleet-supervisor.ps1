@@ -183,6 +183,31 @@ function Get-ProjectHealth {
         }
     }
 
+    # Empty heartbeat dir (first install or after a wipe): synthesize a down
+    # project from the install provenance so the supervisor can still relaunch.
+    if ($projects.Count -eq 0 -and $canonicalClis.Count -gt 0) {
+        $provPath = Join-Path $PSScriptRoot '.sync-provenance.json'
+        if (Test-Path $provPath) {
+            try {
+                $prov = Get-Content $provPath -Raw | ConvertFrom-Json
+                $sourceRepo = [string]$prov.source_repo
+                if ($sourceRepo -and (Test-Path $sourceRepo)) {
+                    $projName = Split-Path -Leaf $sourceRepo
+                    $projects[$projName] = @{
+                        ProjectDir       = $sourceRepo
+                        DeadClis         = @($canonicalClis)
+                        IncapableClis    = @()
+                        HealthyClis      = @()
+                        IncapableReasons = @{}
+                        SeenClis         = @{}
+                    }
+                }
+            } catch {
+                Write-Host "  WARNING: could not read .sync-provenance.json: $_" -ForegroundColor Yellow
+            }
+        }
+    }
+
     if ($projects.Count -eq 0) { return @() }
 
     $results = @()
