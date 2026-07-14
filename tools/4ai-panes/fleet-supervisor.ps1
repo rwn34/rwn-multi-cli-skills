@@ -432,11 +432,15 @@ function Invoke-FleetRelaunch {
         return $false
     }
 
-    $available = Get-AvailableClis |
-        Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) }
+    # Force arrays: a single-item pipeline result unrolls to a scalar in
+    # PowerShell, and `$available[0]` on the string 'claude' returns 'c'.
+    # That truncation spawned malformed supervisors (empty-`Cli`, `-Cli o`,
+    # `-Cli k`, `-Cli c`). See handoff 202607140930.
+    $available = @(Get-AvailableClis |
+        Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) })
 
-    $running = Get-AvailableClis |
-        Where-Object { Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir }
+    $running = @(Get-AvailableClis |
+        Where-Object { Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir })
 
     if ($running.Count -gt 0) {
         Write-Host "  SKIP (heartbeat fresh): $($running -join ', ')" -ForegroundColor DarkGray
@@ -497,7 +501,7 @@ function Invoke-FleetRelaunch {
         # window is gone), so we must check the L1 signal, not the exit code.
         if ($wtOk -and -not $DryRun) {
             Start-Sleep -Seconds 3
-            $missing = $available | Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) }
+            $missing = @($available | Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) })
             if ($missing) {
                 Write-Host "  WT launch did not produce heartbeats for: $($missing -join ', ') - will fallback" -ForegroundColor Yellow
                 $wtOk = $false

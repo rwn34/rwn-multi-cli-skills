@@ -213,6 +213,24 @@ Assert-Equal 1 $script:alertLog.Count 'E: exactly one alert fired'
 Assert-Equal 1 $script:relaunchLog.Count 'E: exactly one relaunch attempted'
 
 # ============================================================================
+# (E2) single dead CLI (others fresh) -> relaunch exactly ONCE
+# Regression for the scalar-string truncation bug: if $available unrolls to a
+# string, `foreach ($cli in $available)` iterates characters and attempts 6
+# relaunches for 'claude'. The @(...) array guard must prevent that.
+# ============================================================================
+Reset-TestState
+Write-TestHeartbeat -Cli 'claude' -AgeSeconds 120   # stale
+Write-TestHeartbeat -Cli 'kimi' -AgeSeconds 5 -Outcome 'success'
+Write-TestHeartbeat -Cli 'kiro' -AgeSeconds 5 -Outcome 'success'
+Write-TestHeartbeat -Cli 'opencode' -AgeSeconds 5 -Outcome 'success'
+Write-TestHandoff -Recipient 'claude'
+$e2 = Invoke-SupervisorCheck
+$e2Proj = $e2 | Where-Object { $_.Project -eq 'test-project' }
+Assert-Equal 'alert+relaunch' $e2Proj.Action 'E2: partial down + open handoffs -> alert+relaunch'
+Assert-Equal 1 $script:relaunchLog.Count 'E2: exactly ONE relaunch attempted for the single dead CLI'
+Assert-Equal 1 $script:alertLog.Count 'E2: exactly one alert fired'
+
+# ============================================================================
 # (F) down + empty queue -> alert only, no relaunch
 # ============================================================================
 Reset-TestState
