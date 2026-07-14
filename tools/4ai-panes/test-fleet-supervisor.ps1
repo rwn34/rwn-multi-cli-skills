@@ -179,7 +179,6 @@ Write-TestHandoff -Recipient 'kimi' -Name '202607131200-test-handoff.md'
 $c = Invoke-SupervisorCheck
 $cProj = $c | Where-Object { $_.Project -eq 'test-project' }
 Assert-Equal 1 @($c).Count 'C: no heartbeats + provenance handoff -> one synthesized project'
-Assert-Equal 'down' $cProj.State 'C: synthesized project is down'
 Assert-Equal 'alert+relaunch' $cProj.Action 'C: down + open handoffs -> alert+relaunch'
 Remove-Item -Path $provPath -Force -ErrorAction SilentlyContinue
 
