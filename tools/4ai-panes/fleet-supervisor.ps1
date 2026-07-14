@@ -306,9 +306,9 @@ function Get-AvailableClis {
     return $available
 }
 
-# Returns $true if a run-pane-supervised process for this CLI+project is already
-# running. Used to avoid spawning duplicate supervisors when only some panes are
-# dead (the live ones are left alone).
+# Returns $true if an ACTIVE run-pane-supervised process for this CLI+project is
+# running. An idle PowerShell prompt left by a supervisor whose child has exited
+# is NOT counted (the child pane-runner is the real liveness signal).
 function Test-PaneAlreadyRunning {
     param([string]$Cli, [string]$ProjectDir)
     $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -318,7 +318,36 @@ function Test-PaneAlreadyRunning {
             $_.CommandLine -like "*-Cli $Cli*" -and
             $_.CommandLine -like "*-ProjectDir *$ProjectDir*"
         }
-    return ($null -ne $procs -and $procs.Count -gt 0)
+    if (-not $procs) { return $false }
+    foreach ($p in $procs) {
+        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.ProcessId)" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*pane-runner.ps1*" }
+        if ($children -and $children.Count -gt 0) { return $true }
+    }
+    return $false
+}
+
+# Kill supervisors that have lost their pane-runner child (idle prompts left
+# behind because the launching shell used -NoExit). Called before relaunching.
+function Stop-IdleSupervisors {
+    param([string]$Cli, [string]$ProjectDir)
+    $sups = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -like "*run-pane-supervised.ps1*" -and
+            $_.CommandLine -like "*-Cli $Cli*" -and
+            $_.CommandLine -like "*-ProjectDir *$ProjectDir*"
+        }
+    foreach ($s in $sups) {
+        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($s.ProcessId)" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like "*pane-runner.ps1*" }
+        if (-not $children -or $children.Count -eq 0) {
+            try {
+                Stop-Process -Id $s.ProcessId -Force -ErrorAction Stop
+                Write-Host "  cleaned idle $Cli supervisor (pid $($s.ProcessId))" -ForegroundColor DarkGray
+            } catch { }
+        }
+    }
 }
 
 # Relaunch the fleet for a project. Uses the same pane-runner scripts and wt
@@ -338,6 +367,11 @@ function Invoke-FleetRelaunch {
     if (-not (Test-Path $supervisor)) {
         Write-Host "  ERROR: run-pane-supervised.ps1 not found at $supervisor" -ForegroundColor Red
         return $false
+    }
+
+    # Clean up supervisors that have become idle prompts before deciding who to relaunch.
+    foreach ($cli in (Get-AvailableClis)) {
+        Stop-IdleSupervisors -Cli $cli -ProjectDir $ProjectDir
     }
 
     $available = Get-AvailableClis |
