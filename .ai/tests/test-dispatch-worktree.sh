@@ -163,6 +163,7 @@ echo "keep-me" > "$sentinel" 2>/dev/null
 mk_handoff kiro 202607110002-t2
 run_dispatcher --only kiro >/dev/null 2>&1
 check "test2: worktree reused, not recreated (sentinel file survives)" "$([ -f "$sentinel" ] && echo 0 || echo 1)"
+rm -f "$sentinel"   # clean up so later kiro dispatches actually cut branches
 
 # ======================================================================
 # 3. Worktree-creation failure => dispatch fails, handoff stays OPEN,
@@ -246,14 +247,8 @@ fi
 # ==============================================================================
 mk_handoff kiro 202607110004-t4b "Base: origin/does-not-exist"
 before_reports4b="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
-echo "=== DEBUG test4b kiro worktree status before dispatch ===" >&2
-git -C "$WORK/.wt/project/kiro" status --porcelain >&2
 out4b="$(run_dispatcher --only kiro 2>&1)"
 rc4b=$?
-echo "=== DEBUG test4b dispatcher output ===" >&2
-echo "$out4b" >&2
-echo "=== DEBUG test4b kiro worktree status after dispatch ===" >&2
-git -C "$WORK/.wt/project/kiro" status --porcelain >&2
 after_reports4b="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
 
 check "test4b: dispatcher exits non-zero for unresolvable base" "$([ "$rc4b" -ne 0 ] && echo 0 || echo 1)"
@@ -261,6 +256,9 @@ check "test4b: dispatcher reports FAIL for unresolvable base" "$(echo "$out4b" |
 check "test4b: a dispatch-failure report was written" "$([ "$after_reports4b" -gt "$before_reports4b" ] && echo 0 || echo 1)"
 check "test4b: handoff file still present in open/" "$([ -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" ] && echo 0 || echo 1)"
 check "test4b: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" && echo 0 || echo 1)"
+# Remove the deliberately-broken handoff so later --only kiro runs do not
+# repeatedly fail and make their exit codes non-zero.
+rm -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md"
 
 # ==============================================================================
 # 5. A stale/pruned worktree does not wedge the dispatch.
