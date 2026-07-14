@@ -147,6 +147,7 @@ function Reset-TestState {
 # ============================================================================
 Reset-TestState
 # Fresh heartbeats for all canonical fleet CLIs.
+Write-TestHeartbeat -Cli 'claude' -AgeSeconds 5
 Write-TestHeartbeat -Cli 'kimi' -AgeSeconds 5
 Write-TestHeartbeat -Cli 'kiro' -AgeSeconds 10
 Write-TestHeartbeat -Cli 'opencode' -AgeSeconds 8
@@ -229,6 +230,7 @@ Assert-Equal 0 $script:relaunchLog.Count 'F: NO relaunch (empty queue)'
 Reset-TestState
 # One CLI is alive-but-incapable; the others are healthy. With zero dead CLIs
 # the state must be 'incapable' and relaunch is never attempted.
+Write-TestHeartbeat -Cli 'claude' -AgeSeconds 5 -Outcome 'success'
 Write-TestHeartbeat -Cli 'kimi' -AgeSeconds 5 -Outcome 'auth_failure' -ConsecFailures 5
 Write-TestHeartbeat -Cli 'kiro' -AgeSeconds 5 -Outcome 'success'
 Write-TestHeartbeat -Cli 'opencode' -AgeSeconds 5 -Outcome 'success'
