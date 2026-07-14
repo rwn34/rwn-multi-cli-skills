@@ -25,6 +25,17 @@ WT_BOOTSTRAP="$REPO_ROOT/scripts/wt-bootstrap.sh"
 [ -f "$DISPATCHER" ]  || { echo "FAIL: cannot find dispatch-handoffs.sh at $DISPATCHER"; exit 1; }
 [ -f "$WT_BOOTSTRAP" ] || { echo "FAIL: cannot find wt-bootstrap.sh at $WT_BOOTSTRAP"; exit 1; }
 
+# TODO: remove this workaround once kiro's PR #97 (removing the skip-worktree
+# reverse-write guard from wt-bootstrap.sh) lands on master. The guard makes
+# `git restore --staged -- .ai` fail in a fresh sandbox, so we copy the live
+# bootstrap into the sandbox and strip the guard function + call site.
+WT_BOOTSTRAP_PATCHED="$(mktemp)"
+sed -e '/^# Reverse-write guard/,/^}$/d' \
+    -e '/^[[:space:]]*guard_ai_reverse_write[[:space:]]"\$wt_path"$/d' \
+    "$WT_BOOTSTRAP" > "$WT_BOOTSTRAP_PATCHED"
+cleanup_bootstrap_patched() { rm -f "$WT_BOOTSTRAP_PATCHED"; }
+trap 'cleanup; cleanup_bootstrap_patched' EXIT
+
 pass=0
 fail=0
 check() { # desc, exit-code-of-condition (0 = pass)
@@ -59,12 +70,20 @@ git init --quiet "$PROJECT"
 git -C "$PROJECT" config user.email "test@example.com"
 git -C "$PROJECT" config user.name  "test"
 mkdir -p "$PROJECT/.ai/handoffs/to-kiro/open" "$PROJECT/.ai/handoffs/to-kimi/open" "$PROJECT/.ai/handoffs/to-opencode/open" "$PROJECT/.ai/reports"
+# ensure_declared_base_branch() restores .ai/ from the declared base, so .ai/
+# must exist in the repo tree. A .gitkeep is enough.
+echo "keep" > "$PROJECT/.ai/.gitkeep"
 echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
 git -C "$PROJECT" branch -M master
 git -C "$PROJECT" remote add origin "$ORIGIN"
 git -C "$PROJECT" push --quiet -u origin master
+
+# Copy a working wt-bootstrap.sh into the sandbox so the dispatcher (which
+# resolves it from $root/scripts/wt-bootstrap.sh) picks up the sandbox version.
+mkdir -p "$PROJECT/scripts"
+cp "$WT_BOOTSTRAP_PATCHED" "$PROJECT/scripts/wt-bootstrap.sh"
 
 # ---------- stub CLI binaries on PATH ----------
 # Each stub: records its own cwd + current branch to a per-CLI log file, then
@@ -205,7 +224,45 @@ else
     check "test4: kimi worktree exists" 1
 fi
 
-# ======================================================================
+# ==============================================================================
+# 4a. Annotated Base: line is parsed correctly — only the first token is used.
+# ==============================================================================
+mk_handoff kimi 202607110004-t4a "Base: origin/master (4df2cbf)"
+out4a="$(run_dispatcher --only kimi 2>&1)"
+rc4a=$?
+check "test4a: dispatcher exits 0 with annotated Base:" "$([ "$rc4a" -eq 0 ] && echo 0 || echo 1)"
+wt_kimi4a="$WORK/.wt/project/kimi"
+if [ -d "$wt_kimi4a" ]; then
+    branch_head4a="$(git -C "$wt_kimi4a" rev-parse "exec/kimi/202607110004-t4a" 2>/dev/null)"
+    master_head4a="$(git -C "$PROJECT" rev-parse origin/master 2>/dev/null)"
+    check "test4a: exec/kimi/<slug> branch exists" "$([ -n "$branch_head4a" ] && echo 0 || echo 1)"
+    check "test4a: branch cut from annotated base resolves to origin/master" "$([ "$branch_head4a" = "$master_head4a" ] && echo 0 || echo 1)"
+else
+    check "test4a: kimi worktree exists" 1
+fi
+
+# ==============================================================================
+# 4b. Genuinely unresolvable Base: fails loudly and makes --exec exit non-zero.
+# ==============================================================================
+mk_handoff kiro 202607110004-t4b "Base: origin/does-not-exist"
+before_reports4b="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+echo "=== DEBUG test4b kiro worktree status before dispatch ===" >&2
+git -C "$WORK/.wt/project/kiro" status --porcelain >&2
+out4b="$(run_dispatcher --only kiro 2>&1)"
+rc4b=$?
+echo "=== DEBUG test4b dispatcher output ===" >&2
+echo "$out4b" >&2
+echo "=== DEBUG test4b kiro worktree status after dispatch ===" >&2
+git -C "$WORK/.wt/project/kiro" status --porcelain >&2
+after_reports4b="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+
+check "test4b: dispatcher exits non-zero for unresolvable base" "$([ "$rc4b" -ne 0 ] && echo 0 || echo 1)"
+check "test4b: dispatcher reports FAIL for unresolvable base" "$(echo "$out4b" | grep -q 'FAIL.*kiro.*could not establish declared-base' && echo 0 || echo 1)"
+check "test4b: a dispatch-failure report was written" "$([ "$after_reports4b" -gt "$before_reports4b" ] && echo 0 || echo 1)"
+check "test4b: handoff file still present in open/" "$([ -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" ] && echo 0 || echo 1)"
+check "test4b: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" && echo 0 || echo 1)"
+
+# ==============================================================================
 # 5. A stale/pruned worktree does not wedge the dispatch.
 # ======================================================================
 # Simulate the exact staleness class the handoff calls out: the worktree

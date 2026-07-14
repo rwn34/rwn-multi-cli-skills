@@ -54,6 +54,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# Track hard dispatch failures that should make --exec exit non-zero so CI,
+# fleet-health.sh, and the supervisor can see them. Currently scoped to
+# declared-base branch-cut failures per ADR-0004 amendment.
+EXEC_FAILED=0
+
 root="$(pwd)"
 [ -d "$root/.ai/handoffs" ] || { echo "Run from repo root (no .ai/handoffs found)."; exit 1; }
 
@@ -164,11 +169,12 @@ bin_for() {
 # --- Worktree-per-CLI (ADR-0004 amendment, 2026-07-11) ---
 #
 # Every dispatched CLI runs inside <parent>/.wt/<project>/<cli>/, never the
-# primary checkout. WT_BOOTSTRAP resolves relative to this script so the
-# dispatcher works regardless of the caller's cwd (it also `cd`s to $root
-# itself, but resolving via SCRIPT_DIR is more robust to future refactors).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WT_BOOTSTRAP="$SCRIPT_DIR/../../scripts/wt-bootstrap.sh"
+# primary checkout. WT_BOOTSTRAP resolves relative to $root (the project root)
+# rather than this script's location: .ai/ is a Windows directory junction /
+# POSIX symlink into the canonical coordination plane, so resolving from
+# BASH_SOURCE would follow the junction and land in the wrong checkout's
+# scripts/ directory when the dispatcher runs from an executor worktree.
+WT_BOOTSTRAP="$root/scripts/wt-bootstrap.sh"
 
 # worktree_path_for <cli> -> echoes the absolute worktree path for that CLI.
 # Pure path arithmetic — matches wt-bootstrap.sh's own WT_CONTAINER derivation
@@ -324,9 +330,13 @@ ensure_declared_base_branch() {
 # optional `Base:` line from the status block (first 20 lines, mirrors the
 # Auto:/Risk: scan below); defaults to origin/master per the ADR amendment
 # ("origin/master unless the handoff names a different one").
+# The value may carry trailing annotations (e.g. "origin/master (4df2cbf)" or
+# "origin/master # after PR #70"); only the first whitespace-delimited token
+# is passed to git, so annotations are ignored but the token itself must still
+# resolve.
 base_for() {
     local file="$1" base
-    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i')"
+    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i' | awk '{print $1}')"
     [ -n "$base" ] && echo "$base" || echo "origin/master"
 }
 
@@ -467,6 +477,7 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             base="$(base_for "$f")"
             if ! ensure_declared_base_branch "$wt_path" "$cli" "$slug" "$base"; then
                 echo "FAIL  [$cli] $rel — could not establish declared-base branch (base=$base)"
+                EXEC_FAILED=$((EXEC_FAILED+1))
                 ts=$(date -u +%Y%m%d%H%M%S)
                 report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
                 {
@@ -553,4 +564,8 @@ if [ "$found" -eq 0 ]; then
     echo "No open handoffs marked 'Auto: yes'."
 fi
 [ "$MODE" = "dry-run" ] && [ "$found" -gt 0 ] && echo "(dry-run — pass --exec to launch)"
+if [ "$MODE" = "exec" ] && [ "$EXEC_FAILED" -gt 0 ]; then
+    echo "ERROR: $EXEC_FAILED declared-base branch-cut failure(s) — see reports above" >&2
+    exit 1
+fi
 exit 0
