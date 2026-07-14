@@ -372,7 +372,7 @@ function Get-DeclaredBase {
     $head = Get-Content -Path $HandoffPath -TotalCount 20 -ErrorAction SilentlyContinue
     if ($head) {
         foreach ($line in $head) {
-            if ($line -match '^\s*Base:\s*(\S.*)$') { return $matches[1].Trim() }
+            if ($line -match '^\s*Base:\s*(\S+)') { return $matches[1].Trim() }
         }
     }
     return 'origin/master'

@@ -326,7 +326,9 @@ ensure_declared_base_branch() {
 # ("origin/master unless the handoff names a different one").
 base_for() {
     local file="$1" base
-    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i')"
+    # Take the first whitespace-delimited token after `Base:` and ignore any
+    # trailing annotation (e.g. `origin/master (4df2cbf)` or `origin/master # comment).
+    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i' | awk '{print $1}')"
     [ -n "$base" ] && echo "$base" || echo "origin/master"
 }
 
@@ -394,6 +396,7 @@ acquire_claim() {
 }
 
 found=0
+dispatch_failures=0
 for dir in "$root"/.ai/handoffs/to-*/open; do
     [ -d "$dir" ] || continue
     cli=$(basename "$(dirname "$dir")")   # to-<cli>
@@ -460,6 +463,7 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                 echo "ALERT: dispatch failed — report written to ${report#$root/}"
                 fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
                 rm -f "$claim"
+                dispatch_failures=$((dispatch_failures+1))
                 continue
             fi
             # Declared-base branch cut (second, independent defect from the
@@ -484,6 +488,7 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                 echo "ALERT: dispatch failed — report written to ${report#$root/}"
                 fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
                 rm -f "$claim"
+                dispatch_failures=$((dispatch_failures+1))
                 continue
             fi
             echo "DISPATCH [$cli] $rel — worktree: ${wt_path#$root/} branch: exec/$cli/$slug (base: $base)"
@@ -531,6 +536,7 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
                 echo "ALERT: dispatch failed — report written to ${report#$root/}"
                 # ALERT notify (Tier B — act, then notify). Fail-open.
                 fleet_notify alert "$project_name" "$slug" "$cli" "$owner" || true
+                dispatch_failures=$((dispatch_failures+1))
             else
                 # DONE notify — handoff dispatched to completion (exit 0). The
                 # recipient self-retires (moves to done/); we just announce it.
@@ -553,4 +559,8 @@ if [ "$found" -eq 0 ]; then
     echo "No open handoffs marked 'Auto: yes'."
 fi
 [ "$MODE" = "dry-run" ] && [ "$found" -gt 0 ] && echo "(dry-run — pass --exec to launch)"
+if [ "$dispatch_failures" -gt 0 ]; then
+    echo "DISPATCH FAILURES: $dispatch_failures handoff(s) failed — see reports above" >&2
+    exit 1
+fi
 exit 0

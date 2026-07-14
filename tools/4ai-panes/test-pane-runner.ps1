@@ -462,7 +462,21 @@ $hab2Path = Join-Path $openDir 'ab-with-base.md'
     "Base: origin/develop", "", "## Goal", "test"
 ) -join "`n" | Set-Content -Path $hab2Path -Encoding utf8
 Assert-Equal 'origin/develop' (Get-DeclaredBase -HandoffPath $hab2Path) 'ab: Base: origin/develop is read verbatim'
-Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
+$hab3Path = Join-Path $openDir 'ab-with-annotated-base.md'
+@(
+    "# Test handoff ab-with-annotated-base", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "Base: origin/master (4df2cbf)", "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $hab3Path -Encoding utf8
+Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab3Path) 'ab: Base: origin/master (4df2cbf) -> first token only'
+$hab4Path = Join-Path $openDir 'ab-with-commented-base.md'
+@(
+    "# Test handoff ab-with-commented-base", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "Base: origin/master   # after PR #70", "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $hab4Path -Encoding utf8
+Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab4Path) 'ab: Base: origin/master # comment -> first token only'
+Remove-Item -Path $hab1, $hab2Path, $hab3Path, $hab4Path -Force -ErrorAction SilentlyContinue
 
 # -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
 # -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --

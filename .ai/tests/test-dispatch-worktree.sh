@@ -58,7 +58,14 @@ git init --quiet --bare "$ORIGIN"
 git init --quiet "$PROJECT"
 git -C "$PROJECT" config user.email "test@example.com"
 git -C "$PROJECT" config user.name  "test"
-mkdir -p "$PROJECT/.ai/handoffs/to-kiro/open" "$PROJECT/.ai/handoffs/to-kimi/open" "$PROJECT/.ai/handoffs/to-opencode/open" "$PROJECT/.ai/reports"
+mkdir -p "$PROJECT/.ai/handoffs/to-kiro/open" "$PROJECT/.ai/handoffs/to-kimi/open" "$PROJECT/.ai/handoffs/to-opencode/open" "$PROJECT/.ai/reports" "$PROJECT/.ai/activity"
+# Seed tracked .ai/ files so the worktree's git index knows `.ai` as a pathspec.
+# guard_ai_reverse_write() marks STABLE .ai/ files as skip-worktree, but churn
+# directories (activity, handoffs, reports) stay index-known. In the sandbox we
+# need at least one non-skip-worktree .ai/ entry, otherwise `git restore --staged
+# -- .ai` fails with "pathspec '.ai' did not match any file(s) known to git".
+echo ".ai seed" > "$PROJECT/.ai/README.md"
+echo "activity log seed" > "$PROJECT/.ai/activity/log.md"
 echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
@@ -277,6 +284,35 @@ wait "$pid_kimi6b"
 kimi_branch_after6b="$(git -C "$wt_kimi" branch --show-current 2>/dev/null)"
 check "test6b: kimi worktree branch unchanged (dirty -> reuse-as-is, never destroyed, even under concurrency)" "$([ "$kimi_branch_after6b" = "$kimi_branch_before" ] && echo 0 || echo 1)"
 check "test6b: kimi's private marker survived a concurrent kiro dispatch" "$([ -f "$wt_kimi/.kimi-private-marker" ] && echo 0 || echo 1)"
+
+# ======================================================================
+# 7. An annotated `Base:` line dispatches successfully: the parser takes
+#    the first whitespace-delimited token and ignores the parenthetical.
+# ======================================================================
+mk_handoff kiro 202607110007-t7 "Base: origin/master (4df2cbf)"
+out7="$(run_dispatcher --only kiro 2>&1)"
+rc7=$?
+check "test7: dispatcher exits 0 with annotated Base:" "$([ "$rc7" -eq 0 ] && echo 0 || echo 1)"
+wt_kiro_t7_branch="exec/kiro/202607110007-t7"
+branch_head_t7="$(git -C "$wt_kiro" rev-parse "$wt_kiro_t7_branch" 2>/dev/null)"
+master_head_t7="$(git -C "$PROJECT" rev-parse origin/master 2>/dev/null)"
+check "test7: annotated Base: resolved to origin/master" "$([ "$branch_head_t7" = "$master_head_t7" ] && echo 0 || echo 1)"
+
+# ======================================================================
+# 8. A genuinely unresolvable base fails loudly AND makes --exec exit non-zero.
+#    Use opencode: its worktree was never successfully created (test3 induced a
+#    failure and then cleared the obstruction), so the branch-cut runs against a
+#    clean tree and hits the unresolvable base rather than the dirty-reuse path.
+# ======================================================================
+mk_handoff opencode 202607110008-t8 "Base: origin/this-branch-does-not-exist"
+before_reports_t8="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+out8="$(run_dispatcher --only opencode 2>&1)"
+rc8=$?
+after_reports_t8="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+check "test8: dispatcher exits non-zero with unresolvable Base:" "$([ "$rc8" -ne 0 ] && echo 0 || echo 1)"
+check "test8: dispatcher reports a FAIL for the unresolvable base" "$(echo "$out8" | grep -q 'FAIL.*opencode' && echo 0 || echo 1)"
+check "test8: a dispatch-failure report was written" "$([ "$after_reports_t8" -gt "$before_reports_t8" ] && echo 0 || echo 1)"
+check "test8: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-opencode/open/202607110008-t8.md" && echo 0 || echo 1)"
 
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
