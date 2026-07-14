@@ -27,10 +27,21 @@ if (-not (Test-Path $supervisorScript)) {
     exit 1
 }
 
-# Build the task action: run fleet-supervisor.ps1 in a visible PowerShell window.
+# Build a VBScript wrapper that launches PowerShell with a truly hidden window.
+# Using powershell.exe -WindowStyle Hidden directly still causes a brief console
+# flash when invoked from Task Scheduler; WshShell.Run with window style 0 avoids it.
+$vbsPath = Join-Path $ToolsDir 'run-fleet-supervisor-hidden.vbs'
+$vbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""$supervisorScript""", 0, False
+Set WshShell = Nothing
+"@
+[System.IO.File]::WriteAllText($vbsPath, $vbsContent)
+
+# Build the task action: run the hidden wrapper.
 $action = New-ScheduledTaskAction `
-    -Execute 'powershell.exe' `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$supervisorScript`""
+    -Execute 'wscript.exe' `
+    -Argument "`"$vbsPath`"`"
 
 # Trigger: repeat every N minutes, indefinitely.
 # Trigger: repeat every N minutes. RepetitionDuration = 10 years (effectively

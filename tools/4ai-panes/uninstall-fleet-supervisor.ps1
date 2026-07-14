@@ -24,6 +24,8 @@ if ($WhatIf) {
 
 try {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    $vbsPath = Join-Path $PSScriptRoot 'run-fleet-supervisor-hidden.vbs'
+    if (Test-Path $vbsPath) { Remove-Item $vbsPath -Force }
     Write-Host "Removed scheduled task '$TaskName'." -ForegroundColor Green
 } catch {
     Write-Host "ERROR removing task: $($_.Exception.Message)" -ForegroundColor Red
