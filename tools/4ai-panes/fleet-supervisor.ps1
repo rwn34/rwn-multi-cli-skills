@@ -397,6 +397,17 @@ function Invoke-FleetRelaunch {
                 }
             }
         }
+        # Verify that the launched CLIs actually produced fresh heartbeats.
+        # wt.exe may return success without opening a window (e.g. the target
+        # window is gone), so we must check the L1 signal, not the exit code.
+        if ($wtOk -and -not $DryRun) {
+            Start-Sleep -Seconds 3
+            $missing = $available | Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) }
+            if ($missing) {
+                Write-Host "  WT launch did not produce heartbeats for: $($missing -join ', ') - will fallback" -ForegroundColor Yellow
+                $wtOk = $false
+            }
+        }
         $ok = $wtOk
     }
 
@@ -415,9 +426,9 @@ function Invoke-FleetRelaunch {
                 continue
             }
         }
-        # Verify at least one process appeared.
-        Start-Sleep -Seconds 2
-        $ok = ($available | Where-Object { Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir }).Count -gt 0
+        # Verify at least one fresh heartbeat appeared.
+        Start-Sleep -Seconds 3
+        $ok = ($available | Where-Object { Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir }).Count -gt 0
     }
 
     return $ok

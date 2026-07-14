@@ -1,12 +1,13 @@
 # Make the sync-test allowlist count self-maintaining (it has now gone stale twice)
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi-cli
 Created: 2026-07-14 01:26
 Revised: 2026-07-14 02:05
+Completed: 2026-07-14 07:20
 Auto: yes
 Risk: A
-Base: origin/master
+Base: origin/exec/kiro/sync-provenance-check (rebased on PR #93 per coordination note)
 
 > **Revised twice — read this before you start; the original was wrong on the facts.**
 >
@@ -86,3 +87,11 @@ why.
 Self-retire: set Status to `DONE` and move this file to `.ai/handoffs/to-kimi/done/`.
 If blocked, leave it in `open/`, set Status `BLOCKED`, and append a `## Blocker` section
 with the verbatim error.
+
+## Completion
+- Rebased on PR #93 (`origin/exec/kiro/sync-provenance-check`) and committed to new branch `exec/kimi/sync-test-allowlist-count` (`5e89217`).
+- Changed `scripts/test-sync-4ai-panes-install.ps1` to derive `$Allowlist` from `scripts/sync-4ai-panes-install.ps1` via PowerShell AST, assert exact set-equality of copied files, and remove hardcoded `17` / `seventeen` references.
+- Green run: `==== sync-install tests: 52 passed, 0 failed ====` (exit 0).
+- RED proof (fake 18th allowlist entry `fake-entry-that-does-not-exist.ps1`): `FAIL d1`, `FAIL d4: copied files exactly match $Allowlist (18 entries) (missing=fake-entry-that-does-not-exist.ps1)`.
+- `.ai` status unchanged by test runs.
+- Activity log entry prepended at `2026-07-14 07:20 — kimi-cli`.
