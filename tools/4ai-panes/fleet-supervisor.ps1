@@ -306,48 +306,24 @@ function Get-AvailableClis {
     return $available
 }
 
-# Returns $true if an ACTIVE run-pane-supervised process for this CLI+project is
-# running. An idle PowerShell prompt left by a supervisor whose child has exited
-# is NOT counted (the child pane-runner is the real liveness signal).
-function Test-PaneAlreadyRunning {
+# Returns $true if this CLI has a heartbeat file for the project and the
+# heartbeat is fresh (within the supervisor stale threshold). This is the same
+# L1 signal the main health check uses; relying on it avoids CIM/Win32_Process
+# queries that may fail or return empty in the scheduled-task context.
+function Test-HeartbeatFresh {
     param([string]$Cli, [string]$ProjectDir)
-    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -like "*run-pane-supervised.ps1*" -and
-            $_.CommandLine -like "*-Cli $Cli*" -and
-            $_.CommandLine -like "*-ProjectDir *$ProjectDir*"
-        }
-    if (-not $procs) { return $false }
-    foreach ($p in $procs) {
-        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.ProcessId)" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -like "*pane-runner.ps1*" }
-        if ($children -and $children.Count -gt 0) { return $true }
-    }
-    return $false
-}
-
-# Kill supervisors that have lost their pane-runner child (idle prompts left
-# behind because the launching shell used -NoExit). Called before relaunching.
-function Stop-IdleSupervisors {
-    param([string]$Cli, [string]$ProjectDir)
-    $sups = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -like "*run-pane-supervised.ps1*" -and
-            $_.CommandLine -like "*-Cli $Cli*" -and
-            $_.CommandLine -like "*-ProjectDir *$ProjectDir*"
-        }
-    foreach ($s in $sups) {
-        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($s.ProcessId)" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -like "*pane-runner.ps1*" }
-        if (-not $children -or $children.Count -eq 0) {
-            try {
-                Stop-Process -Id $s.ProcessId -Force -ErrorAction Stop
-                Write-Host "  cleaned idle $Cli supervisor (pid $($s.ProcessId))" -ForegroundColor DarkGray
-            } catch { }
-        }
-    }
+    $hbDir = Get-SupervisorHeartbeatDir
+    $projName = Split-Path -Leaf $ProjectDir
+    $hbPath = Join-Path $hbDir "$projName`__$Cli.json"
+    if (-not (Test-Path -LiteralPath $hbPath)) { return $false }
+    try {
+        $hb = Get-Content -LiteralPath $hbPath -Raw | ConvertFrom-Json
+        if (-not $hb.ts) { return $false }
+        $ts = [datetime]::MinValue
+        if (-not [datetime]::TryParse([string]$hb.ts, [ref]$ts)) { return $false }
+        $age = ((Get-Date).ToUniversalTime() - $ts.ToUniversalTime()).TotalSeconds
+        return ($age -le (Get-SupervisorStaleSeconds))
+    } catch { return $false }
 }
 
 # Relaunch the fleet for a project. Uses the same pane-runner scripts and wt
@@ -369,19 +345,14 @@ function Invoke-FleetRelaunch {
         return $false
     }
 
-    # Clean up supervisors that have become idle prompts before deciding who to relaunch.
-    foreach ($cli in (Get-AvailableClis)) {
-        Stop-IdleSupervisors -Cli $cli -ProjectDir $ProjectDir
-    }
-
     $available = Get-AvailableClis |
-        Where-Object { -not (Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir) }
+        Where-Object { -not (Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir) }
 
     $running = Get-AvailableClis |
-        Where-Object { Test-PaneAlreadyRunning -Cli $_ -ProjectDir $ProjectDir }
+        Where-Object { Test-HeartbeatFresh -Cli $_ -ProjectDir $ProjectDir }
 
     if ($running.Count -gt 0) {
-        Write-Host "  SKIP (already running): $($running -join ', ')" -ForegroundColor DarkGray
+        Write-Host "  SKIP (heartbeat fresh): $($running -join ', ')" -ForegroundColor DarkGray
     }
 
     if ($available.Count -eq 0) {
