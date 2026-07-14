@@ -39,9 +39,12 @@ Set WshShell = Nothing
 [System.IO.File]::WriteAllText($vbsPath, $vbsContent)
 
 # Build the task action: run the hidden wrapper.
+# Use a separate variable to avoid the parser misreading nested backtick quotes
+# inside a here-string-shaped file as an unterminated string.
+$vbsArg = '"{0}"' -f $vbsPath
 $action = New-ScheduledTaskAction `
     -Execute 'wscript.exe' `
-    -Argument "`"$vbsPath`"`"
+    -Argument $vbsArg
 
 # Trigger: repeat every N minutes, indefinitely.
 # Trigger: repeat every N minutes. RepetitionDuration = 10 years (effectively
