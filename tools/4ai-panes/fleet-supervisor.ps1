@@ -183,15 +183,18 @@ function Get-ProjectHealth {
         }
     }
 
-    # Empty heartbeat dir (first install or after a wipe): synthesize a down
-    # project from the install provenance so the supervisor can still relaunch.
+    # Empty heartbeat dir (first install or after a wipe): if the install
+    # provenance points at a repo with open handoffs, synthesize a down project
+    # so the supervisor can still relaunch. Without open handoffs there is no
+    # work to do, so we stay silent and avoid non-deterministic alerts tied to
+    # the live repo state.
     if ($projects.Count -eq 0 -and $canonicalClis.Count -gt 0) {
-        $provPath = Join-Path $PSScriptRoot '.sync-provenance.json'
+        $provPath = if ($env:RWN_FLEET_SUPERVISOR_PROVENANCE) { $env:RWN_FLEET_SUPERVISOR_PROVENANCE } else { Join-Path $PSScriptRoot '.sync-provenance.json' }
         if (Test-Path $provPath) {
             try {
                 $prov = Get-Content $provPath -Raw | ConvertFrom-Json
                 $sourceRepo = [string]$prov.source_repo
-                if ($sourceRepo -and (Test-Path $sourceRepo)) {
+                if ($sourceRepo -and (Test-Path $sourceRepo) -and (Test-ProjectHasOpenHandoffs -ProjectDir $sourceRepo)) {
                     $projName = Split-Path -Leaf $sourceRepo
                     $projects[$projName] = @{
                         ProjectDir       = $sourceRepo

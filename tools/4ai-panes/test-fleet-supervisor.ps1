@@ -139,17 +139,20 @@ function Reset-TestState {
     Clear-TestHandoffs
     $script:alertLog = @()
     $script:relaunchLog = @()
+    Remove-Item Env:\RWN_FLEET_SUPERVISOR_PROVENANCE -ErrorAction SilentlyContinue
 }
 
 # ============================================================================
 # (A) fresh heartbeat -> ALIVE (healthy, no action)
 # ============================================================================
 Reset-TestState
+# Fresh heartbeats for all canonical fleet CLIs.
 Write-TestHeartbeat -Cli 'kimi' -AgeSeconds 5
-Write-TestHeartbeat -Cli 'claude' -AgeSeconds 10
+Write-TestHeartbeat -Cli 'kiro' -AgeSeconds 10
+Write-TestHeartbeat -Cli 'opencode' -AgeSeconds 8
 $a = Invoke-SupervisorCheck
-# Both heartbeats are for the same project -> one project entry, healthy.
-Assert-Equal 1 @($a).Count 'A: two heartbeats, same project -> one entry'
+# All heartbeats are for the same project -> one project entry, healthy.
+Assert-Equal 1 @($a).Count 'A: fresh heartbeats, same project -> one entry'
 Assert-Equal 'none' ($a | Where-Object { $_.Project -eq 'test-project' }).Action `
     'A: fresh heartbeats -> no action (healthy)'
 
@@ -164,17 +167,21 @@ Assert-Equal 'alert' $bProj.Action 'B: stale heartbeat -> alert (fleet down)'
 Assert-True ($bProj.Detail -match 'DOWN') 'B: alert mentions DOWN'
 
 # ============================================================================
-# (C) missing heartbeat -> DOWN (no heartbeat files at all)
+# (C) missing heartbeat + open handoffs -> DOWN + relaunch
 # ============================================================================
 Reset-TestState
-# Write a heartbeat for a DIFFERENT project so the supervisor runs but finds
-# no heartbeat for test-project. Actually: no heartbeats at all = no projects.
-# The supervisor only checks projects that HAVE heartbeat files. A truly
-# missing heartbeat means the pane never started or the file was deleted.
-# This is indistinguishable from "fleet never ran" - the supervisor correctly
-# takes no action (it can only supervise what has heartbeats).
+# No heartbeats at all. The supervisor reads the install provenance; point it
+# at the test project and create an open handoff so a relaunch is warranted.
+$provPath = Join-Path $work 'provenance.json'
+@{ source_repo = $projDir } | ConvertTo-Json -Compress | Set-Content -Path $provPath -NoNewline
+$env:RWN_FLEET_SUPERVISOR_PROVENANCE = $provPath
+Write-TestHandoff -Recipient 'kimi' -Name '202607131200-test-handoff.md'
 $c = Invoke-SupervisorCheck
-Assert-Equal 0 $c.Count 'C: no heartbeats -> no projects to check (correct: nothing to supervise)'
+$cProj = $c | Where-Object { $_.Project -eq 'test-project' }
+Assert-Equal 1 $c.Count 'C: no heartbeats + provenance handoff -> one synthesized project'
+Assert-Equal 'down' $cProj.State 'C: synthesized project is down'
+Assert-Equal 'alert+relaunch' $cProj.Action 'C: down + open handoffs -> alert+relaunch'
+Remove-Item -Path $provPath -Force -ErrorAction SilentlyContinue
 
 # ============================================================================
 # (D) live fleet is NEVER relaunched (the false-positive case)
@@ -221,9 +228,11 @@ Assert-Equal 0 $script:relaunchLog.Count 'F: NO relaunch (empty queue)'
 # (G) alive + NOT CAPABLE -> alert only, NEVER relaunched
 # ============================================================================
 Reset-TestState
-# Fresh heartbeat (alive) but auth_failure with enough consecutive failures
-# to trip the capability threshold (default 3).
+# One CLI is alive-but-incapable; the others are healthy. With zero dead CLIs
+# the state must be 'incapable' and relaunch is never attempted.
 Write-TestHeartbeat -Cli 'kimi' -AgeSeconds 5 -Outcome 'auth_failure' -ConsecFailures 5
+Write-TestHeartbeat -Cli 'kiro' -AgeSeconds 5 -Outcome 'success'
+Write-TestHeartbeat -Cli 'opencode' -AgeSeconds 5 -Outcome 'success'
 Write-TestHandoff -Recipient 'kimi'
 $g = Invoke-SupervisorCheck
 $gProj = $g | Where-Object { $_.Project -eq 'test-project' }
