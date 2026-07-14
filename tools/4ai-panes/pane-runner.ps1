@@ -1029,7 +1029,15 @@ function Invoke-HandoffRun {
         # classification). The CLI's stdout/stderr is already streamed live to the
         # pane inside $script:InvokeCli (Out-Host / Tee-Object). $wtPath (NOT
         # $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
-        $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
+        # Keep the fleet heartbeat fresh while the CLI blocks; long handoffs can
+        # exceed the supervisor's stale threshold and a stale heartbeat triggers a
+        # duplicate-pane relaunch.
+        $hbJob = Start-FleetHeartbeatJob -ProjectDir $ProjectDir -CliName $CliName -State 'running'
+        try {
+            $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
+        } finally {
+            Stop-FleetHeartbeatJob
+        }
         $script:LastCliExitCode = [int](@($cliExit)[-1])
         $invocations++
 
@@ -1180,6 +1188,53 @@ function Read-FleetHeartbeat {
     param([string]$HeartbeatPath)
     if (-not (Test-Path $HeartbeatPath)) { return $null }
     try { return (Get-Content -Path $HeartbeatPath -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+# Background heartbeat job: keeps the fleet heartbeat fresh while a long-running
+# CLI invocation is in progress. The pane-runner main thread blocks on the CLI,
+# so without this the heartbeat timestamp would age past the supervisor's stale
+# threshold and trigger a false-positive relaunch.
+$script:FleetHeartbeatJob = $null
+
+function Start-FleetHeartbeatJob {
+    param(
+        [string]$ProjectDir,
+        [string]$CliName,
+        [string]$State = 'running',
+        [string]$LastInvokeOutcome = '',
+        [string]$LastInvokeTs = '',
+        [int]$ConsecutiveFailures = 0
+    )
+    try {
+        Stop-FleetHeartbeatJob
+        $scriptPath = $PSCommandPath
+        if (-not $scriptPath) { return $null }
+        $jobScript = {
+            param($ScriptPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures)
+            try {
+                . $ScriptPath -NoRun
+                while ($true) {
+                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $CliName -State $State `
+                        -LastInvokeOutcome $LastInvokeOutcome -LastInvokeTs $LastInvokeTs `
+                        -ConsecutiveFailures $ConsecutiveFailures
+                    Start-Sleep -Seconds 30
+                }
+            } catch { }
+        }
+        $script:FleetHeartbeatJob = Start-Job -ScriptBlock $jobScript -ArgumentList `
+            $scriptPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures
+        return $script:FleetHeartbeatJob
+    } catch { return $null }
+}
+
+function Stop-FleetHeartbeatJob {
+    if ($script:FleetHeartbeatJob) {
+        try {
+            Stop-Job $script:FleetHeartbeatJob -ErrorAction SilentlyContinue
+            Remove-Job $script:FleetHeartbeatJob -ErrorAction SilentlyContinue
+        } catch { }
+        $script:FleetHeartbeatJob = $null
+    }
 }
 
 # Classify CLI output tail + exit code into an L2 outcome. Auth/quota failures
