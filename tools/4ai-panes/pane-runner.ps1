@@ -1207,22 +1207,41 @@ function Start-FleetHeartbeatJob {
     )
     try {
         Stop-FleetHeartbeatJob
-        $scriptPath = $PSCommandPath
-        if (-not $scriptPath) { return $null }
+        $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }
+        $hbDir = Join-Path $localAppData 'rwn-auto\fleet-heartbeat'
+        $projName = Split-Path -Leaf $ProjectDir
+        $hbPath = Join-Path $hbDir "${projName}__${CliName}.json"
         $jobScript = {
-            param($ScriptPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures)
+            param($HbPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures)
             try {
-                . $ScriptPath -NoRun
                 while ($true) {
-                    Write-FleetHeartbeat -ProjectDir $ProjectDir -CliName $CliName -State $State `
-                        -LastInvokeOutcome $LastInvokeOutcome -LastInvokeTs $LastInvokeTs `
-                        -ConsecutiveFailures $ConsecutiveFailures
+                    try {
+                        $dir = Split-Path -Parent $HbPath
+                        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+                        $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                        $obj = [ordered]@{
+                            project              = (Split-Path -Leaf $ProjectDir)
+                            cli                  = $CliName
+                            pid                  = $PID
+                            host                 = [System.Net.Dns]::GetHostName()
+                            ts                   = $now
+                            state                = $State
+                            project_dir          = $ProjectDir
+                            last_invoke_ts       = $LastInvokeTs
+                            last_invoke_outcome  = $LastInvokeOutcome
+                            consecutive_failures = $ConsecutiveFailures
+                        }
+                        $tmp = "$HbPath.tmp.$PID"
+                        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress))
+                        [System.IO.File]::WriteAllBytes($tmp, $bytes)
+                        Move-Item -Path $tmp -Destination $HbPath -Force
+                    } catch { }
                     Start-Sleep -Seconds 30
                 }
             } catch { }
         }
         $script:FleetHeartbeatJob = Start-Job -ScriptBlock $jobScript -ArgumentList `
-            $scriptPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures
+            $hbPath, $ProjectDir, $CliName, $State, $LastInvokeOutcome, $LastInvokeTs, $ConsecutiveFailures
         return $script:FleetHeartbeatJob
     } catch { return $null }
 }
