@@ -76,6 +76,12 @@
 #     (bc) busy state records the current handoff leaf
 #     (bd) rewrite over an existing sidecar is a clean replace, still valid JSON
 #     (be) anti-rot: Start-PaneRunner calls Write-Heartbeat, fail-open wrapped
+#   (bf) ANTI-ROT: Assert-WorktreeFresh guards Start-PaneRunner before polling
+#   (bg-bj) REGRESSION (handoff 202607140930 - malformed -Cli spawns malformed
+#        supervisors): [ValidateSet] on $Cli rejects an empty string and a
+#        truncated value ('k') at PARAMETER BIND TIME, in a real child process,
+#        for BOTH pane-runner.ps1 (bg/bh) and run-pane-supervised.ps1 (bi/bj) -
+#        before any loop/banner/heartbeat logic runs.
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -1172,6 +1178,70 @@ Assert-Equal $true ($loopSrc -match 'try\s*\{[\s\S]*?Write-Heartbeat[\s\S]*?\}\s
 $freshSrc = (Get-Command Assert-WorktreeFresh).Definition
 Assert-Equal $true ($freshSrc -match 'git rev-list --count HEAD\.\.origin/master') 'bf: Assert-WorktreeFresh measures HEAD..origin/master'
 Assert-Equal $true ($loopSrc -match 'Assert-WorktreeFresh') 'bf2: Start-PaneRunner invokes the freshness guard before polling'
+
+# (bg-bi) REGRESSION for handoff 202607140930 (malformed -Cli spawns malformed
+#         supervisors): [ValidateSet('claude','kimi','kiro','opencode')] on
+#         pane-runner.ps1's $Cli parameter must reject an empty string and a
+#         truncated value ('k') at PARAMETER BIND TIME, in a REAL child process
+#         -- before Start-PaneRunner's loop, before any handoff logic runs, and
+#         before a heartbeat/claim file is ever written. This is the "second
+#         layer" defensive guard the handoff asked for; the array-unroll fix
+#         (fleet-supervisor.ps1, commit f9c6536) closed the construction-site
+#         root cause, but nothing previously proved the bind-time guard itself
+#         actually rejects a malformed value instead of silently accepting it.
+$bgWork = Join-Path ([System.IO.Path]::GetTempPath()) "pr-cli-bind-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+New-Item -ItemType Directory -Path $bgWork -Force | Out-Null
+
+# Helper: run a script as a REAL child process with the given -Cli value and
+# return (exit code, combined stdout+stderr text). Uses -File + an argument
+# array (not -Command) so no nested-quoting fragility on Windows paths. Always
+# quotes the -Cli value explicitly so an EMPTY string survives ProcessStartInfo
+# argument-string construction instead of vanishing (which would silently turn
+# "-Cli ''" into "-Cli -ProjectDir ...", the exact malformed-argv shape this
+# regression exists to probe).
+function Invoke-CliBindProbe {
+    param([string]$ScriptPath, [string]$CliValue, [string[]]$ExtraArgs = @())
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell'
+    $quotedCli = "`"$CliValue`""
+    $argList = @('-NoProfile', '-NonInteractive', '-File', "`"$ScriptPath`"", '-Cli', $quotedCli, '-ProjectDir', "`"$bgWork`"") + $ExtraArgs
+    $psi.Arguments = $argList -join ' '
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+    return @{ ExitCode = $proc.ExitCode; Output = "$stdout`n$stderr" }
+}
+
+# (bg) empty string -> bind-time rejection, non-zero exit, no pane-runner output.
+$bg = Invoke-CliBindProbe -ScriptPath $runner -CliValue '' -ExtraArgs @('-NoRun')
+Assert-Equal $true ($bg.ExitCode -ne 0) 'bg: pane-runner rejects empty -Cli at bind time (non-zero exit)'
+Assert-Equal $true ($bg.Output -match 'ValidateSet|Cannot validate argument') 'bg2: rejection is a ValidateSet parameter-binding error, not a runtime crash'
+Assert-Equal $false ($bg.Output -match 'pane-runner\s+project=') 'bg3: the pane-runner banner never printed - rejected before any loop logic ran'
+
+# (bh) truncated single-char value ('k', the exact byte the scalar-unroll bug
+#      produced for 'kimi'/'kiro') -> same bind-time rejection.
+$bh = Invoke-CliBindProbe -ScriptPath $runner -CliValue 'k' -ExtraArgs @('-NoRun')
+Assert-Equal $true ($bh.ExitCode -ne 0) 'bh: pane-runner rejects truncated -Cli ''k'' at bind time (non-zero exit)'
+Assert-Equal $true ($bh.Output -match 'ValidateSet|Cannot validate argument') 'bh2: rejection is a ValidateSet parameter-binding error'
+
+# (bi) same two cases against run-pane-supervised.ps1 -- the process the
+#      handoff's evidence (PID 75960 CLI='k', PID 46512 empty -Cli) actually
+#      named.
+$supervisorPath = Join-Path $here 'run-pane-supervised.ps1'
+$bi = Invoke-CliBindProbe -ScriptPath $supervisorPath -CliValue ''
+Assert-Equal $true ($bi.ExitCode -ne 0) 'bi: run-pane-supervised rejects empty -Cli at bind time (non-zero exit)'
+Assert-Equal $true ($bi.Output -match 'ValidateSet|Cannot validate argument') 'bi2: rejection is a ValidateSet parameter-binding error'
+Assert-Equal $false ($bi.Output -match 'supervisor up:') 'bi3: the supervisor banner never printed - rejected before any respawn logic ran'
+
+$bj = Invoke-CliBindProbe -ScriptPath $supervisorPath -CliValue 'k'
+Assert-Equal $true ($bj.ExitCode -ne 0) 'bj: run-pane-supervised rejects truncated -Cli ''k'' at bind time (non-zero exit)'
+Assert-Equal $true ($bj.Output -match 'ValidateSet|Cannot validate argument') 'bj2: rejection is a ValidateSet parameter-binding error'
+
+Remove-Item -Path $bgWork -Recurse -Force -ErrorAction SilentlyContinue
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
