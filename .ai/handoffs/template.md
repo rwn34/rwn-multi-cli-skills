@@ -1,25 +1,31 @@
 # <Task title — one short clear line>
 Status: OPEN
-Sender: <claude-code | kimi-cli | kiro-cli | opencode>
-Recipient: <claude-code | kimi-cli | kiro-cli | opencode>
+Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
+Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
+Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
 Created: YYYY-MM-DD HH:MM
 Auto: yes
 Risk: <A | B | C>
 # ReviewBy: <cli>       # optional: executor emits review handoff to to-<cli>/review/ on done
 # FinalReview: <cli>    # optional: reviewer emits final-review handoff to to-<cli>/review/
 # Deploy: yes           # optional: final reviewer emits deploy handoff to to-opencode/open/
+# Next: <actor>         # optional: general next-actor routing when ReviewBy/FinalReview/Deploy do not fit
 
 <!-- Protocol v3 (2026-07-09; supersedes v2 2026-07-08):
      Recipient self-retires the handoff to done/ on completion; sender validates
      post-hoc. See README.md "Protocol v3" for the full lifecycle.
      Auto: yes  = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh.
                   DEFAULT is yes — the human is a gate, not a relay.
+                  Auto: yes + Risk A/B is owned by the auto pane.
+                  Auto: no  (or Risk C) is owned by a cockpit.
      Risk:      = autonomy tier per operating-prompt §8.
                   A = reversible routine (edits on a branch, tests, reports, replicas)
                   B = act-then-notify class (refactors, deps, config, PRs)
                   C = irreversible/gated (deploy, publish, merge to main, destructive,
                       ADR changes, secrets) — NEVER auto-dispatched, human relays.
      The dispatcher only launches Auto: yes + Risk A/B. Missing Risk = treated as C.
+     Sender/Recipient/Owner use the six-actor identity (claude-cockpit,
+     kimai-cockpit, claude-auto, kimai-auto, kiro-auto, opencode-auto).
 -->
 
 <!--
@@ -60,7 +66,7 @@ conventions. Delete this section if not applicable.>
 if the surrounding system changes. 1-2 sentences.>
 
 ## Activity log template
-    ## YYYY-MM-DD HH:MM — <recipient-cli>
+    ## YYYY-MM-DD HH:MM — <six-actor identity, e.g. kimai-auto>
     - Action: <summary — include the handoff filename, e.g. "per handoff 202607081200-slug">
     - Files: <paths touched, or "—">
     - Decisions: <non-obvious choices, or "—">

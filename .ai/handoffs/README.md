@@ -135,6 +135,39 @@ line is treated as C — conservative by default.
 > self-heals a forgotten step-4 self-retire), and can also be run standalone.
 > It is idempotent and fail-open (always exits 0).
 
+## Cockpit / auto distinction (six-actor model)
+
+A project using this framework has six logical actors, not four CLI binaries:
+
+| Actor | Role | Headless? |
+|---|---|---|
+| `claude-cockpit` | Interactive Claude Code chat — architecture, orchestration, final review, human relay | no |
+| `kimai-cockpit` | Interactive Kimi CLI chat — executor/tester, dispatcher to auto, human relay | no |
+| `claude-auto` | Headless Claude pane-runner — spec/plan design, final review | yes |
+| `kimai-auto` | Headless Kimi pane-runner — backend + shell package implementation | yes |
+| `kiro-auto` | Headless Kiro pane-runner — frontend implementation | yes |
+| `opencode-auto` | Headless OpenCode pane-runner — deploy, GitHub ops | yes |
+
+The dispatcher and the pane-runner only ever talk to the **auto** actors. A
+cockpit reads handoffs when the owner asks it to, when `stop-reminder.sh`
+surfaces counts, or when `fleet-health.sh` reports a STALL/WEDGED pane.
+
+In handoff status blocks:
+
+- `Sender:` / `Recipient:` / `Owner:` should use the six-actor identity (e.g.
+  `kimai-auto`, `claude-cockpit`). Bare `kimi-cli` or `claude-code` are
+  ambiguous — they do not say whether the actor is the cockpit or the auto pane.
+- `Auto:` remains the single mechanical ownership boundary:
+  - `Auto: yes` + Risk A/B → owned by the auto pane.
+  - `Auto: no` or Risk C → owned by a cockpit.
+- `Owner:` is optional but recommended for human readability; the dispatcher
+  ignores it.
+- `Next:` is an optional general routing field for chains that do not fit the
+  review/final-review/deploy pattern.
+
+Full routing table, visibility model, and multi-stage chain examples:
+`docs/specs/saja-akun-cli-workflow.md`.
+
 ## Review pipeline (peer review before release)
 
 The `review/` queue is a separate lane for verification work. It lets executors

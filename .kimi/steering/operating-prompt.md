@@ -139,8 +139,9 @@ on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to
 between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
-contract file; local wall-clock finish time; prepend order is authoritative).
-If another CLI must continue, write a handoff to
+actor: `claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`,
+`kiro-auto`, or `opencode-auto`; local wall-clock finish time; prepend order is
+authoritative). If another CLI must continue, write a handoff to
 `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp
 filename).
 
@@ -157,7 +158,9 @@ to the auto pane — a cockpit must not hand-take it; `Auto: no` / Risk C is
 cockpit-owned. A cockpit taking an `Auto: yes` handoff (pane down,
 quarantined, owner waiting live) must FIRST run `bash .ai/tools/claim-handoff.sh
 <path>` (flips `Auto: no` + claim sidecar, atomically); `release-handoff.sh`
-reverts. Symmetric across all four CLIs.
+reverts. Symmetric across all four CLI binaries; the six logical actors are
+`claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`, `kiro-auto`, and
+`opencode-auto` (see `docs/specs/saja-akun-cli-workflow.md`).
 
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.

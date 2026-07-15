@@ -75,13 +75,15 @@ esac
 claims_dir="$handoffs_dir/.claims"
 sidecar="$claims_dir/${recipient}__${base}.claim.json"
 
-# Default owner mirrors pane-runner.ps1 Get-DefaultOwner.
+# Default owner: these scripts are cockpit-only, so the claim is made by the
+# interactive cockpit identity. Use --owner to override (e.g. when an auto pane
+# needs to reclaim its own stale claim programmatically).
 if [ -z "$OWNER" ]; then
     case "$recipient" in
-        claude)   OWNER="claude-auto" ;;
-        kimi)     OWNER="kimi-cli" ;;
-        kiro)     OWNER="kiro-cli" ;;
-        opencode) OWNER="opencode" ;;
+        claude)   OWNER="claude-cockpit" ;;
+        kimi)     OWNER="kimai-cockpit" ;;
+        kiro)     OWNER="kiro-cockpit" ;;
+        opencode) OWNER="opencode-cockpit" ;;
     esac
 fi
 

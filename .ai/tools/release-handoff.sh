@@ -48,12 +48,14 @@ case "$recipient" in
 esac
 sidecar="$handoffs_dir/.claims/${recipient}__${base}.claim.json"
 
+# Default owner: these scripts are cockpit-only, so the release is made by the
+# interactive cockpit identity.
 if [ -z "$OWNER" ]; then
     case "$recipient" in
-        claude)   OWNER="claude-auto" ;;
-        kimi)     OWNER="kimi-cli" ;;
-        kiro)     OWNER="kiro-cli" ;;
-        opencode) OWNER="opencode" ;;
+        claude)   OWNER="claude-cockpit" ;;
+        kimi)     OWNER="kimai-cockpit" ;;
+        kiro)     OWNER="kiro-cockpit" ;;
+        opencode) OWNER="opencode-cockpit" ;;
     esac
 fi
 
