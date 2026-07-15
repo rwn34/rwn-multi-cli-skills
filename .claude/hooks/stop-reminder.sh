@@ -29,6 +29,22 @@ if [ -n "$queue_summary" ]; then
     fi
 fi
 
+# --- Reminder 1c: fleet pane liveness (fleet-health.sh dead-man's switch) ---
+# One line per pane whose queue is unwatched. STALL/WEDGED are loud — a human
+# must relaunch/unwedge the pane. DOWN (idle) is deliberately NOT surfaced
+# here: an idle pane down for days would nag at every turn end and train the
+# reader to ignore the hook; it stays visible on demand via fleet-health.sh.
+if [ -f .ai/tools/fleet-health.sh ]; then
+    health_out=$(bash .ai/tools/fleet-health.sh 2>/dev/null)
+    pane_alerts=$(printf '%s\n' "$health_out" | grep -E '\|\s*(STALL|WEDGED)' || true)
+    if [ -n "$pane_alerts" ]; then
+        echo ""
+        echo "ALERT: fleet pane liveness — a handoff queue is unwatched:"
+        printf '%s\n' "$pane_alerts"
+        echo "Run: bash .ai/tools/fleet-health.sh  (detection only — pane restarts stay with the owner)."
+    fi
+fi
+
 # --- Reminder 2: uncommitted changes beyond the activity log ---
 # Filter out the activity log line from git status; if anything else is uncommitted, remind.
 unpushed=$(git status --short 2>/dev/null | grep -vE '\.ai/activity/log\.md$')
