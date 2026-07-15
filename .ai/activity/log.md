@@ -1,3 +1,8 @@
+## 2026-07-16 06:04 — kimi-cli
+- Action: Implemented the flagged follow-up: base_for() / Get-DeclaredBase now fetch origin before resolving the declared base, so stale or missing local refs (origin/HEAD, origin/main) do not silently fall back to local main/HEAD while the remote has moved ahead. Wrapped pane-runner git fetch in EAP='Continue' to avoid NativeCommandError under supervisor EAP='Stop'. Added stale-ref regression tests for both bash dispatcher and PowerShell pane-runner.
+- Files: .ai/tools/dispatch-handoffs.sh; tools/4ai-panes/pane-runner.ps1; .ai/tests/test-dispatch-worktree.sh; tools/4ai-panes/test-pane-runner.ps1
+- Decisions: Kept the fetch best-effort and fail-open (warn only), preserving offline dispatch capability. Committed and pushed to master; sync-4ai-panes-install auto-synced to ~/.rwn-auto/rwn-4AI-panes.
+
 ## 2026-07-15 22:02 — kimi-cli
 - Action: Fixed dispatcher/pane-runner hardcoded origin/master default-base bug: default branch is now discovered offline-first (origin/HEAD -> origin/main -> main -> HEAD), with handoff Base: still winning. Fixed wt-bootstrap.sh cmd_islink false-positive on paths containing "ai". Added regression tests for main-default repos.
 - Files: .ai/tools/dispatch-handoffs.sh; tools/4ai-panes/pane-runner.ps1; scripts/wt-bootstrap.sh; .ai/tests/test-dispatch-worktree.sh; tools/4ai-panes/test-pane-runner.ps1; docs/architecture/0004-worktree-multi-project-topology.md
