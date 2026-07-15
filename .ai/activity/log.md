@@ -1,3 +1,8 @@
+## 2026-07-15 19:15 — kimi-cli
+- Action: Changed the default 4AI-panes layout: top interactive cockpit strip raised from 50% to 65% tab height, bottom self-driving fleet strip lowered from 50% to 35%. Updated tools/4ai-panes/Selector.ps1 ($topStripFraction 0.50 -> 0.65) and README.md troubleshooting note. Committed and pushed as 5487fce; synced Selector.ps1 and README.md to ~/.rwn-auto.
+- Files: tools/4ai-panes/Selector.ps1; tools/4ai-panes/README.md
+- Decisions: Width splits inside each strip remain unchanged. Verification: test-selector-e2e.ps1 90 passed, 0 failed; emitted stage shows 'split-pane -H -s 0.35' for the auto fleet.
+
 ## 2026-07-15 19:01 — kimi-cli
 - Action: Designed and landed the cockpit/auto six-actor handoff workflow (framework-wide, first adopter saja-akun): wrote docs/specs/saja-akun-cli-workflow.md and docs/guides/example-handoff-chain.md; updated .ai/handoffs/template.md, .ai/handoffs/README.md, .ai/tools/claim-handoff.sh, .ai/tools/release-handoff.sh, and .ai/instructions/operating-prompt/principles.md §7; regenerated SSOT replicas (Drift: 0). Committed and pushed as fde4363. Used --no-verify because the commit includes cross-CLI replicas generated from SSOT via sync-replicas.sh.
 - Files: docs/specs/saja-akun-cli-workflow.md; docs/guides/example-handoff-chain.md; .ai/handoffs/README.md; .ai/handoffs/template.md; .ai/tools/claim-handoff.sh; .ai/tools/release-handoff.sh; .ai/instructions/operating-prompt/principles.md; .claude/skills/operating-prompt/SKILL.md; .kimi/steering/operating-prompt.md; .kiro/steering/operating-prompt.md
