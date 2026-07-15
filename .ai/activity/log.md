@@ -1,3 +1,8 @@
+## 2026-07-15 08:25 — kimi-cli
+- Action: Fixed Install-Framework-In-NewTab (i key) WT command — Windows Terminal splits on `;`, so the PowerShell command is now written to a temp .ps1 script and the tab runs that via -File.
+- Files: tools/4ai-panes/Selector.ps1
+- Decisions: Avoid embedding PowerShell statement separators in a WT subcommand string; temp script keeps quoting simple and prevents 0x80070002.
+
 ## 2026-07-15 07:07 — kimi-cli
 - Action: Implemented selector install shortcut (i), raised multi-project tab delay to 4s, added post-rewrite sync hook, and synced tools/4ai-panes to ~/.rwn-auto.
 - Files: tools/4ai-panes/Selector.ps1, tools/4ai-panes/test-selector-e2e.ps1, scripts/git-hooks/post-rewrite, docs/specs/4ai-panes-install-sync.md, ~/.rwn-auto/rwn-4AI-panes/Selector.ps1

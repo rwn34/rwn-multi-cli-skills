@@ -671,10 +671,25 @@ function Install-Framework-In-NewTab($targetDir) {
     $leaf = Split-Path $targetDir -Leaf
     $tabTitle = "Install $leaf"
 
-    # Build a command that keeps the tab open after the installer finishes so the
-    # owner can read the output and run the printed follow-up merge commands.
-    $psCmd = "& `"$bashExe`" `"$installer`" `"$bashTarget`"; Write-Host ''; Write-Host 'Install finished. Run the merge command above to adopt the framework.' -ForegroundColor Green; Write-Host 'Press Enter to close this tab.' -ForegroundColor DarkGray; [void][Console]::ReadLine()"
-    $wtCmd = "-w rwn4ai new-tab --title `"$tabTitle`" -d `"$targetDir`" powershell -NoExit -NoProfile -Command `"$psCmd`""
+    # Windows Terminal uses ';' as a subcommand separator, so we cannot embed the
+    # PowerShell command directly (its statement separators would split the WT
+    # invocation). Write a temp .ps1 script and have the new tab run that instead.
+    $tmpScript = Join-Path $env:TEMP ("rwn-framework-install-{0}-{1}.ps1" -f $leaf, [Guid]::NewGuid().ToString('N').Substring(0,8))
+    $scriptBody = @(
+        "& `"$bashExe`" `"$installer`" `"$bashTarget`"",
+        "Write-Host ''",
+        "Write-Host 'Install finished. Run the merge command above to adopt the framework.' -ForegroundColor Green",
+        "Write-Host 'Press Enter to close this tab.' -ForegroundColor DarkGray",
+        "[void][Console]::ReadLine()"
+    ) -join "`r`n"
+    try {
+        [IO.File]::WriteAllText($tmpScript, $scriptBody)
+    } catch {
+        Write-Host "Failed to write install script: $_" -ForegroundColor Red
+        return
+    }
+
+    $wtCmd = "-w rwn4ai new-tab --title `"$tabTitle`" -d `"$targetDir`" powershell -NoExit -NoProfile -File `"$tmpScript`""
 
     Write-Host "Opening install tab for $leaf..." -ForegroundColor Cyan
     try {
