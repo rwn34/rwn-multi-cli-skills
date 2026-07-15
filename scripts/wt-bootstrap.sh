@@ -186,8 +186,14 @@ winpath() {
 
 # Echo non-empty if the Windows dir at $1 is a junction/reparse point.
 cmd_islink() {
+  local name
+  name="$(basename "$1")"
+  # Escape regex metacharacters in the directory name (e.g. ".ai") so a path
+  # like "project-main" does NOT match the unescaped regex ".ai" (the "ai" in
+  # "main") and cause a false-positive junction detection.
+  name="${name//./\\.}"
   cmd //c dir //a:l "$(dirname "$(winpath "$1")")" 2>/dev/null \
-    | grep -i "$(basename "$1")" || true
+    | grep -i "$name" || true
 }
 
 # Reverse-write guard (2026-07-13): mark the stable subset of .ai/ as

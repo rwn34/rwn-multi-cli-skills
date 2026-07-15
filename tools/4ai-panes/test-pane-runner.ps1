@@ -166,6 +166,10 @@ $script:EnsureDeclaredBaseBranch = {
     return $true
 }
 
+# Mock base resolution for tests (a)-(z): avoids requiring every temp workspace to be
+# a full git repo. The dedicated (ab) test exercises the real discovery logic.
+$script:GetDeclaredBase = { param([string]$HandoffPath) return 'origin/master' }
+
 # -- (a) done on first run --
 $script:mockCalls = 0; $script:mockDeleteOnCall = 1
 $h = New-TestHandoff -Slug 'a-first'
@@ -457,18 +461,67 @@ Assert-Equal 0 $raa.Invocations 'aa: declared-base-branch failure -> CLI NEVER i
 Assert-Equal 0 $script:mockCalls 'aa: declared-base-branch failure -> mock InvokeCli call count is 0'
 $script:mockBranchFails = $false
 
-# -- (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to          --
-# -- origin/master when absent (mirrors dispatch-handoffs.sh base_for()).     --
-$hab1 = New-TestHandoff -Slug 'ab-no-base'
-Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab1) 'ab: no Base: field -> defaults to origin/master'
-$hab2Path = Join-Path $openDir 'ab-with-base.md'
+# -- (ab) Get-DeclaredBase reads a handoff's Base: field; discovers the repo's  --
+# -- default branch offline-first when absent (origin/HEAD, origin/main, main, --
+# -- HEAD); never hardcodes origin/master.                                     --
+
+# Helper: create a minimal project with a handoff file and a bare remote whose
+# default branch is $DefaultBranch. Returns @{ Project = <path>; Origin = <path> }.
+function New-BaseDiscoveryProject {
+    param([string]$DefaultBranch)
+    $proj = Join-Path $env:TEMP ("pane-runner-base-" + [guid]::NewGuid().ToString('N'))
+    $origin = Join-Path $env:TEMP ("pane-runner-origin-" + [guid]::NewGuid().ToString('N') + '.git')
+    New-Item -ItemType Directory -Path $proj -Force | Out-Null
+    New-Item -ItemType Directory -Path $origin -Force | Out-Null
+    git init --quiet --bare $origin
+    git init --quiet $proj
+    git -C $proj config user.email 'test@example.com'
+    git -C $proj config user.name 'test'
+    New-Item -ItemType Directory -Path (Join-Path $proj '.ai/handoffs/to-claude/open') -Force | Out-Null
+    'seed' | Set-Content -Path (Join-Path $proj 'seed.txt')
+    git -C $proj add -A
+    git -C $proj commit --quiet -m 'seed'
+    git -C $proj branch -M $DefaultBranch
+    git -C $proj remote add origin $origin
+    git -C $proj push --quiet -u origin $DefaultBranch
+    # Set origin/HEAD locally without querying the remote, so the offline-first
+    # resolution path is exercised and the test stays deterministic.
+    git -C $proj remote set-head origin $DefaultBranch *>$null
+    return @{ Project = $proj; Origin = $origin }
+}
+
+# Explicit Base: is always read verbatim.
+$habExplicit = Join-Path $openDir 'ab-with-base.md'
 @(
     "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude-code",
     "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "Base: origin/develop", "", "## Goal", "test"
-) -join "`n" | Set-Content -Path $hab2Path -Encoding utf8
-Assert-Equal 'origin/develop' (Get-DeclaredBase -HandoffPath $hab2Path) 'ab: Base: origin/develop is read verbatim'
-Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
+) -join "`n" | Set-Content -Path $habExplicit -Encoding utf8
+Assert-Equal 'origin/develop' (Get-DeclaredBase-Real -HandoffPath $habExplicit) 'ab: Base: origin/develop is read verbatim'
+
+# Repo whose default branch is master -> resolves to origin/master.
+$infoMaster = New-BaseDiscoveryProject -DefaultBranch 'master'
+$habMaster = Join-Path $infoMaster.Project '.ai/handoffs/to-claude/open/ab-master.md'
+@(
+    "# Test handoff ab-master", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habMaster -Encoding utf8
+Assert-Equal 'origin/master' (Get-DeclaredBase-Real -HandoffPath $habMaster) 'ab: repo default=master -> origin/master'
+
+# Repo whose default branch is main -> resolves to origin/main (the bug we fixed).
+$infoMain = New-BaseDiscoveryProject -DefaultBranch 'main'
+$habMain = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-main.md'
+@(
+    "# Test handoff ab-main", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habMain -Encoding utf8
+Assert-Equal 'origin/main' (Get-DeclaredBase-Real -HandoffPath $habMain) 'ab: repo default=main -> origin/main'
+
+Remove-Item -Path $habExplicit -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $infoMaster.Project, $infoMaster.Origin -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $infoMain.Project, $infoMain.Origin -Recurse -Force -ErrorAction SilentlyContinue
 
 # -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
 # -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --

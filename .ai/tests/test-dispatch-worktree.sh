@@ -261,6 +261,63 @@ check "test4b: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJEC
 rm -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md"
 
 # ==============================================================================
+# 4c. Repo whose default branch is `main` (no `origin/master`) resolves the
+#     declared base to `origin/main` and dispatches without error. Regression
+#     test for the hardcoded origin/master default-base bug.
+# ==============================================================================
+ORIGIN_MAIN="$WORK/origin-main.git"
+PROJECT_MAIN="$WORK/project-main"
+git init --quiet --bare "$ORIGIN_MAIN"
+git init --quiet "$PROJECT_MAIN"
+git -C "$PROJECT_MAIN" config user.email "test@example.com"
+git -C "$PROJECT_MAIN" config user.name  "test"
+mkdir -p "$PROJECT_MAIN/.ai/handoffs/to-kimi/open" "$PROJECT_MAIN/.ai/reports"
+echo "keep" > "$PROJECT_MAIN/.ai/.gitkeep"
+echo "seed" > "$PROJECT_MAIN/seed.txt"
+git -C "$PROJECT_MAIN" add -A
+git -C "$PROJECT_MAIN" commit --quiet -m "seed"
+git -C "$PROJECT_MAIN" branch -M main
+git -C "$PROJECT_MAIN" remote add origin "$ORIGIN_MAIN"
+git -C "$PROJECT_MAIN" push --quiet -u origin main
+
+mkdir -p "$PROJECT_MAIN/scripts"
+cp "$WT_BOOTSTRAP_PATCHED" "$PROJECT_MAIN/scripts/wt-bootstrap.sh"
+
+mk_handoff_for() {
+    local project="$1" cli="$2" slug="$3" extra="${4:-}"
+    cat > "$project/.ai/handoffs/to-$cli/open/$slug.md" <<EOF
+# Test handoff
+Status: OPEN
+Sender: claude-code
+Recipient: $cli
+Created: 2026-07-11 00:00
+Auto: yes
+Risk: A
+$extra
+
+## Goal
+Test handoff for main-default dispatch suite.
+EOF
+}
+
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110004-t4c
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+) >"$LOGS/t4c-dispatcher.out" 2>&1
+rc4c=$?
+check "test4c: dispatcher exits 0 on a main-only repo" "$([ "$rc4c" -eq 0 ] && echo 0 || echo 1)"
+
+wt_kimi_main="$WORK/.wt/project-main/kimi"
+if [ -d "$wt_kimi_main" ]; then
+    branch_head_main="$(git -C "$wt_kimi_main" rev-parse --verify --quiet "exec/kimi/202607110004-t4c" 2>/dev/null)"
+    origin_main_head="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet origin/main 2>/dev/null)"
+    check "test4c: exec/kimi/<slug> branch exists" "$([ -n "$branch_head_main" ] && echo 0 || echo 1)"
+    check "test4c: branch was cut from origin/main, not origin/master" "$([ "$branch_head_main" = "$origin_main_head" ] && echo 0 || echo 1)"
+else
+    check "test4c: kimi worktree exists" 1
+fi
+
+# ==============================================================================
 # 5. A stale/pruned worktree does not wedge the dispatch.
 # ======================================================================
 # Simulate the exact staleness class the handoff calls out: the worktree

@@ -160,12 +160,14 @@ CLIs may concurrently share a working tree / HEAD.**
    shared-executor worktrees (4× graph indexing, accidental commits, hook-path
    confusion).
 3. **Branches must be cut from a declared base.** Every dispatched CLI cuts its
-   branch from an explicit base ref — `origin/master` unless the handoff names a
-   different one — and never from "whatever HEAD happens to be". The incident's
-   Kimi-off-Kiro's-branch cut is a **second, independent defect**: it is possible
-   even *with* worktrees, and it silently entangles two unrelated handoffs'
-   histories. A worktree fixes the shared-HEAD problem; only a declared base
-   fixes this one.
+   branch from an explicit base ref — the repo's default branch, discovered
+   offline-first (`git symbolic-ref refs/remotes/origin/HEAD`), falling back to
+   `origin/main`, local `main`, then `HEAD` — unless the handoff names a
+   different one with `Base:`. The default branch is never hardcoded to
+   `origin/master`. The incident's Kimi-off-Kiro's-branch cut is a **second,
+   independent defect**: it is possible even *with* worktrees, and it silently
+   entangles two unrelated handoffs' histories. A worktree fixes the shared-HEAD
+   problem; only a declared base fixes this one.
 4. **Scope.** This binds *dispatched* (headless, Auto+Risk-A/B) execution — the
    path that runs CLIs in parallel without a human watching. Interactive
    single-CLI work in the primary checkout is unchanged.
@@ -184,8 +186,9 @@ CLIs may concurrently share a working tree / HEAD.**
   on disk. Push-to-feature-branch remains Tier A; merge to main remains Tier C
   with Claude.
 - **Branch topology.** `exec/<cli>/*` (or the handoff's named branch) cut from
-  `origin/master`. Sibling-cut branches are a defect to be caught in review, not
-  a style preference.
+  the resolved declared base (the repo's default branch, or the handoff's
+  explicit `Base:`). Sibling-cut branches are a defect to be caught in review,
+  not a style preference.
 - **`.ai/activity/log.md` — the honest limit of this decision.** Worktrees are
   **not** a total fix, and this ADR does not claim they are.
   - For **code-plane** files (tracked, materialized per worktree), a worktree
@@ -233,7 +236,7 @@ CLIs may concurrently share a working tree / HEAD.**
   now runs every dispatched CLI inside its own worktree
   (`ensure_cli_worktree()`, reusing `scripts/wt-bootstrap.sh`) and cuts a
   per-handoff branch from a declared base (`ensure_declared_base_branch()`,
-  `origin/master` unless a handoff sets `Base:`). The old `cd "$root"`
+  the resolved declared base unless a handoff sets `Base:`). The old `cd "$root"`
   shared-checkout invocation is gone from the dispatch path. Worktree/branch
   setup failure fails the dispatch outright (handoff stays `OPEN`, a
   `dispatch-failure-*.md` report is written) — there is no fallback to the

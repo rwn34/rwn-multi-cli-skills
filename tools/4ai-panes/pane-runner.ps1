@@ -365,9 +365,9 @@ $script:GetCliWorktreePath = {
 }
 
 # Read an optional `Base:` line from a handoff's status block (first 20 lines,
-# mirrors dispatch-handoffs.sh base_for()); defaults to origin/master per the
-# ADR amendment ("origin/master unless the handoff names a different one").
-function Get-DeclaredBase {
+# mirrors dispatch-handoffs.sh base_for()); if absent, discovers the repo's
+# default branch offline-first so the pane-runner never hardcodes `origin/master`.
+function Get-DeclaredBase-Real {
     param([string]$HandoffPath)
     $head = Get-Content -Path $HandoffPath -TotalCount 20 -ErrorAction SilentlyContinue
     if ($head) {
@@ -375,8 +375,48 @@ function Get-DeclaredBase {
             if ($line -match '^\s*Base:\s*(\S.*)$') { return $matches[1].Trim() }
         }
     }
-    return 'origin/master'
+
+    # No explicit Base: — discover the repo's default branch. Order of preference,
+    # first resolvable wins: origin/HEAD, origin/main, local main, HEAD.
+    $projectDir = Split-Path -Path $HandoffPath -Parent
+    $projectDir = Split-Path -Path $projectDir -Parent      # .ai/handoffs
+    $projectDir = Split-Path -Path $projectDir -Parent      # .ai
+    $projectDir = Split-Path -Path $projectDir -Parent      # project root
+
+    Push-Location $projectDir
+    try {
+        $sym = git symbolic-ref refs/remotes/origin/HEAD 2>$null
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0 -and $sym) {
+            $sym = $sym -replace '^refs/remotes/', ''
+            git rev-parse --verify --quiet "$sym^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $sym }
+        }
+
+        # No cached origin/HEAD. Best-effort auto-detect over the network, but never
+        # fail if the network is unreachable — fall back to the chain.
+        git remote set-head origin -a *>$null
+        $sym = git symbolic-ref refs/remotes/origin/HEAD 2>$null
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0 -and $sym) {
+            $sym = $sym -replace '^refs/remotes/', ''
+            git rev-parse --verify --quiet "$sym^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $sym }
+        }
+
+        foreach ($candidate in @('origin/main', 'main', 'HEAD')) {
+            git rev-parse --verify --quiet "$candidate^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        }
+    } finally {
+        Pop-Location
+    }
+
+    throw "Could not resolve a declared base for $HandoffPath (tried: origin/HEAD auto-detect, origin/main, main, HEAD)"
 }
+
+# Overridable hook so tests can stub base resolution without needing a real git repo.
+$script:GetDeclaredBase = { param([string]$HandoffPath) return (Get-DeclaredBase-Real -HandoffPath $HandoffPath) }
 
 # Cut/reuse exec/<cli>/<slug> in $WtPath FROM the declared base — never from
 # ambient HEAD. Native-PowerShell twin of dispatch-handoffs.sh
@@ -1140,7 +1180,11 @@ function Invoke-HandoffRun {
 
     # Declared-base branch cut: never leave the worktree on ambient HEAD.
     $slug = Get-HandoffBasename -HandoffPath $HandoffPath
-    $base = Get-DeclaredBase -HandoffPath $HandoffPath
+    $base = & $script:GetDeclaredBase -HandoffPath $HandoffPath
+    if (-not $base) {
+        Write-Host "== FAIL [$CliName] $rel - could not resolve a declared base ==" -ForegroundColor Red
+        return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
+    }
     if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base)) {
         Write-Host "== FAIL [$CliName] $rel - could not establish declared-base branch (base=$base) ==" -ForegroundColor Red
         return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }

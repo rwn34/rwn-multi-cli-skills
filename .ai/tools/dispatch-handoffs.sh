@@ -36,9 +36,11 @@
 #     item, handoff stays OPEN, failure report written). Falling back to the
 #     primary checkout is FORBIDDEN — see ensure_cli_worktree()'s contract.
 #   - Each dispatch cuts (or reuses) a per-handoff branch `exec/<cli>/<slug>`
-#     from a DECLARED base — `origin/master`, or the handoff's `Base:` field —
-#     never from ambient HEAD. This is a second, independent defect from the
-#     shared-HEAD one (see ensure_declared_base_branch()).
+#     from a DECLARED base — the repo's default branch (auto-discovered
+#     offline-first from origin/HEAD, falling back to origin/main, local main,
+#     then HEAD), or the handoff's explicit `Base:` field — never from ambient
+#     HEAD. This is a second, independent defect from the shared-HEAD one
+#     (see ensure_declared_base_branch()).
 
 set -u
 
@@ -328,16 +330,53 @@ ensure_declared_base_branch() {
 
 # base_for <file> -> echoes the declared base ref for a handoff. Reads an
 # optional `Base:` line from the status block (first 20 lines, mirrors the
-# Auto:/Risk: scan below); defaults to origin/master per the ADR amendment
-# ("origin/master unless the handoff names a different one").
-# The value may carry trailing annotations (e.g. "origin/master (4df2cbf)" or
-# "origin/master # after PR #70"); only the first whitespace-delimited token
+# Auto:/Risk: scan below); if absent, discovers the repo's default branch
+# offline-first so the dispatcher never hardcodes `origin/master`.
+# The value may carry trailing annotations (e.g. "origin/main (4df2cbf)" or
+# "origin/main # after PR #70"); only the first whitespace-delimited token
 # is passed to git, so annotations are ignored but the token itself must still
 # resolve.
 base_for() {
-    local file="$1" base
+    local file="$1" base sym candidate
     base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i' | awk '{print $1}')"
-    [ -n "$base" ] && echo "$base" || echo "origin/master"
+    if [ -n "$base" ]; then
+        echo "$base"
+        return 0
+    fi
+
+    # No explicit Base: — discover the repo's default branch. Order of
+    # preference, first resolvable wins:
+    #   1. Remote default branch head (origin/HEAD), offline first.
+    #   2. If origin/HEAD is not cached, best-effort auto-detect over network.
+    #   3. origin/main.
+    #   4. Local main.
+    #   5. HEAD.
+    # Each candidate is validated with `git rev-parse --verify --quiet` so a
+    # non-existent ref is skipped, never passed to the branch cut.
+    sym="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
+    if [ -n "$sym" ] && git -C "$root" rev-parse --verify --quiet "$sym^{commit}" >/dev/null 2>&1; then
+        echo "$sym"
+        return 0
+    fi
+
+    # No cached origin/HEAD. Try to set it from the remote (network allowed),
+    # but never fail if the network is unreachable — fall back to the chain.
+    git -C "$root" remote set-head origin -a >/dev/null 2>&1 || true
+    sym="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
+    if [ -n "$sym" ] && git -C "$root" rev-parse --verify --quiet "$sym^{commit}" >/dev/null 2>&1; then
+        echo "$sym"
+        return 0
+    fi
+
+    for candidate in origin/main main HEAD; do
+        if git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null 2>&1; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    echo "ERROR: could not resolve a declared base for $file (tried: origin/HEAD auto-detect, origin/main, main, HEAD)" >&2
+    return 1
 }
 
 # --- Per-handoff claim-lock (ADR-0009 §3, contract in .ai/handoffs/.claims/README.md) ---
@@ -477,7 +516,28 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             fi
             # Declared-base branch cut (second, independent defect from the
             # shared-HEAD one): never leave the worktree on ambient HEAD.
-            base="$(base_for "$f")"
+            if ! base="$(base_for "$f")"; then
+                echo "FAIL  [$cli] $rel — $base"
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (declared-base branch)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Declared base: <unresolvable>"
+                    echo "- Stage: declared-base resolution (no origin/HEAD, origin/main, local main, or HEAD resolves)"
+                    echo ""
+                    echo "Triage: inspect $wt_path by hand (git status/log) before retrying."
+                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
             if ! ensure_declared_base_branch "$wt_path" "$cli" "$slug" "$base"; then
                 echo "FAIL  [$cli] $rel — could not establish declared-base branch (base=$base)"
                 EXEC_FAILED=$((EXEC_FAILED+1))
