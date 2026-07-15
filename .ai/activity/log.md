@@ -1,3 +1,43 @@
+## 2026-07-15 07:07 — kimi-cli
+- Action: Implemented selector install shortcut (i), raised multi-project tab delay to 4s, added post-rewrite sync hook, and synced tools/4ai-panes to ~/.rwn-auto.
+- Files: tools/4ai-panes/Selector.ps1, tools/4ai-panes/test-selector-e2e.ps1, scripts/git-hooks/post-rewrite, docs/specs/4ai-panes-install-sync.md, ~/.rwn-auto/rwn-4AI-panes/Selector.ps1
+- Decisions: Kept existing post-merge/post-checkout/post-commit hooks; post-rewrite covers rebase-based PR merges. test-pane-runner has 3 pre-existing av4 failures unrelated to this change.
+
+## 2026-07-15 07:07 — kimi-cli
+
+## 2026-07-14 22:55 — kimi-cli
+- Action: Processed test handoff 202607142348-test-kimi-yolo.md (status OPEN→DONE, moved to done/)
+- Files: .ai/handoffs/to-kimi/open/202607142348-test-kimi-yolo.md → .ai/handoffs/to-kimi/done/202607142348-test-kimi-yolo.md
+- Decisions: —
+
+## 2026-07-14 22:42 — kimi-cli
+- Action: All four test handoffs verified DONE (claude, kiro, kimi, opencode).
+- Files: .ai/handoffs/to-{claude,kiro,kimi,opencode}/done/202607142009-test-*.md
+- Decisions: Kiro auth fixed by owner login; kiro retired both queued handoffs. Kiro shows last_invoke_outcome=error / consecutive_failures=2 after completion — possible --trust-all-tools flag not covering all tool approvals; capture shows 'Tool approval required but --no-interactive was specified.'
+
+## 2026-07-14 20:45 — kimi-cli
+- Action: Tested handoff delivery to all 4 auto-panes; found kiro pane is not authenticated.
+- Files: .ai/handoffs/to-{claude,kiro,kimi,opencode}/open/202607142009-test-*.md
+- Decisions: claude/kimi/opencode test handoffs retired (claude/opencode documented .ai/tmp/ guard restrictions). kiro fails with 'Not logged in. Set KIRO_API_KEY or run kiro-cli login'. Cleared kiro quarantines so retry is clean once auth is fixed.
+
+## 2026-07-14 20:20 � opencode
+- Action: Received test handoff 202607142009-test-opencode.md from Kimi. Step 1 tried to write to .ai/tmp/test-handoff-opencode-202607142009.txt which is outside OpenCode's writable lane (.ai/tmp/ not in the lane). Updated Status to DONE, moved file from open/ to done/.
+- Files: .ai/handoffs/to-opencode/done/202607142009-test-opencode.md
+- Decisions: Framework guard correctly blocked the out-of-tree write. Handoff marked DONE with documented blocker for future reference.## 2026-07-14 20:23 — claude-code
+- Action: Retired Kimi's test handoff `202607142009-test-claude` as DONE with a documented deviation. Step 1's literal target (`%TEMP%\test-handoff-claude-202607142009.txt`) is permanently unreachable from the `claude` executor worktree — the `pretool-write-edit.sh` PreToolUse hook blocks it under ADR-0004 confinement — so I wrote the exact assertion text to the in-tree equivalent `.ai/tmp/test-handoff-claude-202607142009.txt` instead, and did NOT bypass the hook. Step 2 executed: Status → DONE, moved `open/` → `done/` (via infra-engineer; `git mv` failed because the file was untracked, so filesystem move, hash-verified identical).
+- Files: `.ai/tmp/test-handoff-claude-202607142009.txt`; `.ai/handoffs/to-claude/done/202607142009-test-claude.md`
+- Decisions: A liveness test must not be satisfied by evading the guardrail it would be testing — the refused `%TEMP%` write is a PASS for confinement, not a failure. Left a "Resolution" section in the handoff telling senders to target `.ai/` for future fleet tests. Note Kimi's twin handoff DID land in `%TEMP%` (its 20:10 entry), so worktree confinement is not uniformly enforced across the fleet — Claude is hook-confined, Kimi is not. Flagging, not fixing. Also: the `.ai/handoffs/` tree carries staged deletions (`D`/`AD`/`RD`) against untracked files at the same `done/` paths — any tooling that reconciles open/ vs done/ from git rather than the filesystem will disagree with reality there.
+
+## 2026-07-14 20:10 — kimi-cli
+- Action: Processed test handoff 202607142009-test-kimi.md
+- Files: C:\Users\rwn34\AppData\Local\Temp\test-handoff-kimi-202607142009.txt; .ai/handoffs/to-kimi/done/202607142009-test-kimi.md
+- Decisions: Moved the handoff using its actual filename (202607142009-test-kimi.md); the instructions listed a non-existent 20260714-202607142009-test-kimi.md name.
+
+## 2026-07-14 20:14 — claude-code
+- Action: Processed Kimi's test handoff `202607142009-test-claude`. Step 1 (write a marker file to `%TEMP%`) is unexecutable from my session: the `pretool-write-edit.sh` PreToolUse hook blocked the Write under ADR-0004 worktree confinement. Marked the handoff `BLOCKED`, left it in `open/`, recorded the verbatim hook error plus a retry recipe (target `.ai/tmp/…` instead of `%TEMP%`). Did not bypass the hook via a Bash-capable subagent — evading the guardrail to pass a test would falsify the property the test exists to check.
+- Files: `.ai/handoffs/to-claude/open/202607142009-test-claude.md`
+- Decisions: Fleet-test handoffs must target in-tree paths (`.ai/` is the cross-CLI-writable drop point); `%TEMP%` and main-checkout absolute paths are unreachable from executor worktrees. Also flagged two path defects in the handoff: it cites the non-worktree main checkout, and a filename (`20260714-202607142009-…`) with a duplicated date prefix that doesn't exist on disk.
+
 ## 2026-07-14 19:58 — kimi-cli
 - Action: Re-enabled Claude in the auto-pane fleet (`fleet-clis.ps1` now lists `claude, kimi, kiro, opencode`) and fixed the root-cause truncation bug that spawned malformed supervisors with empty/short `-Cli` values. The bug was PowerShell pipeline unrolling: when exactly one CLI was dead, `Get-AvailableClis | Where-Object { ... }` returned a scalar string, so `foreach ($cli in $available)` iterated characters and `$available[0]` returned only the first character (`claude` → `c`, `opencode` → `o`, `kimi`/`kiro` → `k`). Forced both `$available` and `$running` to arrays with `@(...)` and added regression test E2. Commits `3d99b22` (re-enable Claude + tests) and `f9c6536` (truncation fix + regression test). Synced to `~\.rwn-auto\rwn-4AI-panes`; scheduled task relaunched claude correctly at 19:58:22 (`-Cli claude`); all four heartbeats now fresh.
 - Files: `tools/4ai-panes/fleet-clis.ps1`, `tools/4ai-panes/fleet-supervisor.ps1`, `tools/4ai-panes/test-fleet-supervisor.ps1`
@@ -163,3 +203,11 @@
 - Files: `.ai/reports/pr-queue-hygiene-root-cause.md` (new, root-cause analysis).
 - Decisions: **Root cause identified — GitHub API display bug, not missing checks.** Both PRs #78 and #74 have concrete workflow runs with all 14 steps passing (gates job IDs: 86741151356 and 86722966559; framework-check job IDs: 29226363647 and 29219956984). Workflows are properly configured with `pull_request:` triggers. No security hole exists; the gate mechanism (`gates` + `framework-check` required on master via branch protection) functions correctly. Outstanding work: rebase PR #79 (BLOCKED by framework guard — cannot edit source files to resolve CHANGELOG.md conflict).
 
+## 2026-07-14 20:23 � opencode
+- Action: Processed test handoff 202607142009-test-opencode.md as BLOCKED due to ADR-0004 worktree confinement � the handoff requires writing to C:\Users\rwn34\AppData\Local\Temp\test-handoff-opencode-202607142009.txt, which is outside the executor worktree.
+- Files: �
+- Decisions: The guardrail correctly blocks cross-tree writes � this is a PASS for confinement, not a failure. Left the handoff in open/ with status BLOCKED and a verbatim blocker note per protocol v3.
+## 2026-07-14 20:24 � opencode
+- Action: Attempted to execute test handoff step 1 (write to .ai/tmp/test-handoff-opencode-202607142009.txt) but was blocked by framework-guard � the target path is outside OpenCode's writable lane (.ai/tmp/** is not in the lane; only .ai/activity/log.md, .ai/activity/entries/**, .ai/reports/**, .ai/handoffs/**, .github/** are allowed).
+- Files: .ai/handoffs/to-opencode/open/202607142009-test-opencode.md
+- Decisions: Cannot satisfy the handoff's literal requirement due to lane confinement. Handoff requires .ai/tmp/** writes, which are blocked by my permissions. Leaving the handoff in OPEN with the blocker documented, so the owning CLI can decide whether to re-issue with an in-tree target.

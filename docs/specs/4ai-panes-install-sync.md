@@ -9,6 +9,9 @@
 > - `scripts/git-hooks/post-checkout` — invokes the sync after a branch switch.
 > - `scripts/git-hooks/post-commit` — invokes the sync after a same-branch
 >   commit (gap D2, 2026-07-11). Diffs `HEAD~1..HEAD`; skips the initial commit.
+> - `scripts/git-hooks/post-rewrite` — invokes the sync after a `git rebase`
+>   (including rebase-merge of a PR), closing the last common merge path that
+>   leaves `~/.rwn-auto` stale.
 >   Merge, checkout, AND same-branch commit now all auto-sync in lockstep.
 >
 > **Amendment (2026-07-13, hole 1):** the sync now carries a **provenance
@@ -27,8 +30,8 @@ executable copy that actually runs — `~/.rwn-auto/rwn-4AI-panes/` — is popul
 by a **manual `Copy-Item`** (README §3.2). There is no automation, so every edit
 to a tool script silently re-stales the install until a human remembers to
 re-copy. This spec is realized by a single **idempotent, allowlist-driven sync
-script** plus **git `post-merge` and `post-checkout` hooks** that invoke it when
-`tools/4ai-panes/**` changes — copying only the nine tool files, never the
+script** plus **git `post-merge`, `post-checkout`, `post-commit`, and
+`post-rewrite` hooks** that invoke it when `tools/4ai-panes/**` changes — copying only the nine tool files, never the
 embedded framework or runtime state, and verifying by hash after each copy.
 
 ## Motivation
@@ -136,9 +139,10 @@ framework or state.
 
 ### Hook trigger logic
 
-Three repo-level hooks — **`scripts/git-hooks/post-merge`**,
-**`scripts/git-hooks/post-checkout`**, and **`scripts/git-hooks/post-commit`**
-(the last added 2026-07-11 for gap D2). These live alongside the existing
+Four repo-level hooks — **`scripts/git-hooks/post-merge`**,
+**`scripts/git-hooks/post-checkout`**, **`scripts/git-hooks/post-commit`**
+(gap D2, 2026-07-11), and **`scripts/git-hooks/post-rewrite`** (rebase/PR
+rebase-merge path, 2026-07-15). These live alongside the existing
 `scripts/git-hooks/pre-commit`, and the repo already sets
 `git config core.hooksPath scripts/git-hooks` (ADR-0005), so a new hook file in
 that dir is picked up with no extra wiring in existing clones. Fresh clones wire
@@ -169,6 +173,12 @@ post-commit  (no args)
     GUARD: exit 0 on the initial commit, where HEAD~1 does not resolve.
     Covers same-branch edit-then-commit — which touches neither merge nor
     checkout, and was the remaining silent-restale path (gap D2).
+
+post-rewrite  (args: <command>)
+  - Only act on `rebase` (skip `amend`; post-commit already handled it).
+    Change range = `ORIG_HEAD..HEAD`. Covers `git pull --rebase` and
+    `gh pr merge --rebase`, which rewrite history without a merge commit and
+    therefore do NOT fire post-merge.
 ```
 
 Key properties:
@@ -333,7 +343,12 @@ All four questions below were **resolved by owner decision before implementation
   2026-07-11): `scripts/git-hooks/post-commit` added** — merge and checkout still
   left one path uncovered, a same-branch edit-then-commit (touches neither a
   merge nor a checkout). post-commit diffs `HEAD~1..HEAD` and closes it, so
-  merge, checkout, AND same-branch commit now all auto-sync in lockstep.
+  merge, checkout, same-branch commit, and rebase now all auto-sync in lockstep.
+  **Follow-up (gap D3, 2026-07-15): `scripts/git-hooks/post-rewrite` added** —
+  rebase-based PR merges (`git pull --rebase`, `gh pr merge --rebase`) rewrite
+  HEAD without a merge commit, so post-merge never fires. post-rewrite acts on
+  `command == rebase`, diffs `ORIG_HEAD..HEAD`, and closes the last common
+  merge path that could leave `~/.rwn-auto` stale.
 - **Bash hook + PowerShell sync, or a full bash sync too?** One PowerShell sync
   called from a bash hook avoids duplicating the allowlist; a pure-bash sync would
   run natively in the hook but forks the "which files are tool files" truth into

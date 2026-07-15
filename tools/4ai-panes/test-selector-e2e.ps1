@@ -710,8 +710,8 @@ function Test-DelayKnobs {
     Write-Log "  $tabAssign"
     Assert-That ($paneAssign -match 'RWN_4AI_PANE_DELAY_MS' -and $paneAssign -match '250') `
         '$paneDelayMs reads RWN_4AI_PANE_DELAY_MS, default 250' "got: $paneAssign"
-    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '1200') `
-        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 1200' "got: $tabAssign"
+    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '4000') `
+        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 4000' "got: $tabAssign"
 
     $prevPane = $env:RWN_4AI_PANE_DELAY_MS
     $prevTab  = $env:RWN_4AI_TAB_DELAY_MS
@@ -719,7 +719,7 @@ function Test-DelayKnobs {
         Remove-Item Env:RWN_4AI_PANE_DELAY_MS -ErrorAction SilentlyContinue
         Remove-Item Env:RWN_4AI_TAB_DELAY_MS -ErrorAction SilentlyContinue
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: default 250 when unset'
-        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 1200) -eq 1200) 'tab delay: default 1200 when unset'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 4000) -eq 4000) 'tab delay: default 4000 when unset'
 
         $env:RWN_4AI_PANE_DELAY_MS = '500'
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 500) 'pane delay: honored when set to 500'

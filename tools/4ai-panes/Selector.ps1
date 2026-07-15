@@ -52,7 +52,11 @@ $topStripFraction = 0.50
 # focused when WT gets to them, so the layout comes out shuffled. We therefore
 # PACE the launch — one wt invocation per stage, with a settle delay between:
 #   RWN_4AI_PANE_DELAY_MS : ms between pane stages inside one project's tab (250)
-#   RWN_4AI_TAB_DELAY_MS  : ms between project tabs in a batch launch (1200)
+#   RWN_4AI_TAB_DELAY_MS  : ms between project tabs in a batch launch (4000)
+#   Raised to 4000ms (owner request 2026-07-14) so Windows Terminal has time to
+#   settle each tab layout before the next project tab arrives during multi-mark
+#   batch launches; single-project launches are unaffected because they never pay
+#   the tab delay.
 # Either knob set to 0 restores the legacy ATOMIC single-invocation behavior for
 # that dimension (escape hatch if staging ever misbehaves on a machine):
 #   pane delay 0 -> a project's whole tab ships as one chained wt call
@@ -69,7 +73,7 @@ function Get-DelayMs {
     return $parsed
 }
 $paneDelayMs = Get-DelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250
-$tabDelayMs  = Get-DelayMs -Name 'RWN_4AI_TAB_DELAY_MS'  -Default 1200
+$tabDelayMs  = Get-DelayMs -Name 'RWN_4AI_TAB_DELAY_MS'  -Default 4000
 
 # Windows caps a command line at ~8191 chars. Only the ATOMIC escape-hatch paths
 # can approach that now (staged emission ships one short subcommand per call), but
@@ -624,6 +628,62 @@ function Install-Framework($targetDir) {
     Write-InstallLog "=== Install-Framework end ==="
 }
 
+# ── Framework install/update shortcut (owner request 2026-07-14) ──
+# Opens a NEW WT tab that runs the bash installer against the target directory.
+# No CLI is launched — this is pure framework onboarding/adoption. Works for both
+# fresh installs and updates (install-template.sh detects the .ai/.framework-version
+# marker and enters UPDATE_MODE).
+function Install-Framework-In-NewTab($targetDir) {
+    if ([string]::IsNullOrWhiteSpace($targetDir)) {
+        Write-Host "No directory selected; cannot install framework." -ForegroundColor Yellow
+        return
+    }
+    if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+        Write-Host "Directory does not exist: $targetDir" -ForegroundColor Red
+        return
+    }
+
+    # Resolve template source the same way Install-Framework does.
+    $fwSource = $null
+    if ((Test-Path $frameworkRepo) -and (Test-Path (Join-Path $frameworkRepo '.ai'))) {
+        $fwSource = $frameworkRepo
+    } elseif (Test-Path (Join-Path $scriptDir '.ai')) {
+        $fwSource = $scriptDir
+    }
+    if (-not $fwSource) {
+        Write-Host "Framework template source not found; cannot install." -ForegroundColor Red
+        return
+    }
+
+    $bashExe = Find-Bash
+    if (-not $bashExe) {
+        Write-Host "Git Bash not found; cannot run framework installer." -ForegroundColor Red
+        return
+    }
+
+    $installer = "$fwSource/scripts/install-template.sh"
+    if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+        Write-Host "Installer not found: $installer" -ForegroundColor Red
+        return
+    }
+
+    $bashTarget = $targetDir -replace '\\', '/'
+    $leaf = Split-Path $targetDir -Leaf
+    $tabTitle = "Install $leaf"
+
+    # Build a command that keeps the tab open after the installer finishes so the
+    # owner can read the output and run the printed follow-up merge commands.
+    $psCmd = "& `"$bashExe`" `"$installer`" `"$bashTarget`"; Write-Host ''; Write-Host 'Install finished. Run the merge command above to adopt the framework.' -ForegroundColor Green; Write-Host 'Press Enter to close this tab.' -ForegroundColor DarkGray; [void][Console]::ReadLine()"
+    $wtCmd = "-w rwn4ai new-tab --title `"$tabTitle`" -d `"$targetDir`" powershell -NoExit -NoProfile -Command `"$psCmd`""
+
+    Write-Host "Opening install tab for $leaf..." -ForegroundColor Cyan
+    try {
+        & cmd.exe /c "`"$wtExe`" $wtCmd"
+    } catch {
+        Write-Host "Failed to open install tab: $_" -ForegroundColor Red
+    }
+}
+
 # -- Fleet-tab STAGE builder (shared by single-select and multi-select batch) --
 # Returns ONE project's fleet tab as an ORDERED [string[]] of Windows-Terminal
 # subcommand STAGES: stage 0 is always `new-tab ...`, the rest are `split-pane ...`
@@ -893,7 +953,7 @@ function Draw-Menu {
     $footer = if ($script:marked.Count -gt 0) {
         " Space:mark($($script:marked.Count))  Enter:launch marked  b:browse  o:order  q:quit"
     } else {
-        " Up/Dn  Space:mark  Enter  b:browse  n:new  w:nodir  o:order  q:quit"
+        " Up/Dn  Space:mark  Enter  b:browse  i:install  n:new  w:nodir  o:order  q:quit"
     }
     if ($footer.Length -gt $innerW) { $footer = $footer.Substring(0, $innerW) }
     Write-Host ("|" + $footer.PadRight($innerW) + "|") -ForegroundColor DarkGray
@@ -1094,7 +1154,7 @@ function Show-FolderBrowser {
         $help = if ($script:browseMarked.Count -gt 0) {
             " Space:mark($($script:browseMarked.Count))  Enter:launch marked  Left:up  Esc:cancel"
         } else {
-            " Up/Dn  Space:mark  Enter/Right:open  Left:up  c:select  Esc:cancel"
+            " Up/Dn  Space:mark  Enter/Right:open  Left:up  i:install  c:select  Esc:cancel"
         }
         if ($help.Length -gt $innerW) { $help = $help.Substring(0, $innerW) }
         Write-Host ("|" + $help.PadRight($innerW) + "|") -ForegroundColor DarkGray
@@ -1170,6 +1230,12 @@ function Show-FolderBrowser {
                     }
                     return $current
                 }
+                elseif ($ch -eq 'i') {
+                    if ($items.Count -gt 0) {
+                        $installDir = if ($items[$sel].type -eq 'parent') { $current } else { $items[$sel].path }
+                        Install-Framework-In-NewTab -targetDir $installDir
+                    }
+                }
                 elseif ($ch -eq 'q') {
                     $script:browseMarked.Clear(); $done = $true; $cancel = $true
                 }
@@ -1239,6 +1305,19 @@ while (-not $done) {
             $ch = $key.KeyChar
             if ($ch -eq 'b') {
                 if (Invoke-Browse) { $done = $true }
+            }
+            elseif ($ch -eq 'i') {
+                $cur = $menuItems[$script:selected]
+                if ($cur.type -eq 'project') {
+                    Install-Framework-In-NewTab -targetDir (Join-Path $projectsDir $cur.name)
+                }
+                elseif ($cur.type -eq 'browse') {
+                    if (Invoke-Browse) {
+                        if ($script:targetDirFromBrowse) {
+                            Install-Framework-In-NewTab -targetDir $script:targetDirFromBrowse
+                        }
+                    }
+                }
             }
             elseif ($ch -eq 'n') {
                 for ($i = 0; $i -lt $menuItems.Count; $i++) {
