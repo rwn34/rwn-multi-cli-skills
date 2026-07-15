@@ -30,6 +30,7 @@ ORIGINAL_BRANCH=""   # target's branch at install time (main/master/etc.)
 INTERACTIVE=0 # 1 = prompt for agent commands and merge confirmation
 AUTO_MERGE=1  # 1 = auto-merge ai-template-install into ORIGINAL_BRANCH after commit
 AUTO_MERGE_EXPLICIT=0 # set by --merge/--no-merge so --interactive doesn't override an explicit choice
+AUTO_COMMIT_DIRTY=1 # 1 = auto-commit uncommitted changes before installing
 # A4: 1 when re-running on an already-onboarded project (.ai/.framework-version
 # present). In update mode we preserve accumulated cross-CLI state (activity log,
 # in-flight handoffs, reports) instead of wiping it back to the empty template.
@@ -67,11 +68,10 @@ usage() {
 install-template.sh — install the multi-CLI AI framework into an existing project.
 
 Usage:
-  bash scripts/install-template.sh <target-dir> [--dry-run] [--interactive] [--no-merge]
+  bash scripts/install-template.sh <target-dir> [--dry-run] [--interactive] [--no-merge] [--no-auto-commit]
 
 Arguments:
-  <target-dir>   Absolute or relative path to the target project. Must be a
-                 clean git working tree.
+  <target-dir>   Absolute or relative path to the target project.
 
 Options:
   --dry-run      Print planned actions without touching the target.
@@ -79,11 +79,13 @@ Options:
                      merging the install branch. Default is fully automatic.
   --no-merge     Leave the install branch unmerged; print manual merge
                  instructions instead.
+  --no-auto-commit   Abort on a dirty working tree instead of auto-committing
+                     existing changes as a WIP.
   --help, -h     Show this help and exit.
 
 What it does (6 phases):
-  0. Pre-flight: verify target is a clean git repo, record rollback SHA,
-     create branch 'ai-template-install'.
+  0. Pre-flight: verify target repo, auto-commit any dirty changes as WIP,
+     record rollback SHA, create branch 'ai-template-install'.
   1. Copy framework files (.ai/, .claude/, .kimi/, .kiro/, .archive/,
      CLAUDE.md, AGENTS.md, ADR, CI workflow, .codegraph/config.json).
   2. Sanitize template state (reset activity log, clear handoffs/reports).
@@ -95,9 +97,9 @@ What it does (6 phases):
   5. Verify (hook tests + SSOT drift) and commit on the install branch.
   6. Merge the install branch back to the original branch and clean up.
 
-By default the script is non-interactive: it merges automatically and accepts
-suggested test/build/lint commands. If a merge fails (e.g. conflicts), the
-install branch is left intact for manual resolution.
+By default the script is fully automatic: it commits dirty changes as WIP,
+merges automatically, and accepts suggested test/build/lint commands. If a
+merge fails (e.g. conflicts), the install branch is left intact.
 EOF
 }
 
@@ -122,6 +124,7 @@ while [ "$#" -gt 0 ]; do
     --interactive|-i) INTERACTIVE=1 ;;
     --merge|-m) AUTO_MERGE=1; AUTO_MERGE_EXPLICIT=1 ;;
     --no-merge|--no-auto-merge) AUTO_MERGE=0; AUTO_MERGE_EXPLICIT=1 ;;
+    --no-auto-commit) AUTO_COMMIT_DIRTY=0 ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown arg: $1 (see --help)" ;;
   esac
@@ -239,9 +242,19 @@ phase0() {
   local status
   status="$(git status --porcelain --untracked-files=all | grep -vE '^.. \.ai/\.heartbeat-.*\.json$|^.. \.ai/\.claim-.*\.json$|^.. \.ai/handoffs/\.claims/|^.. \.ai/handoffs/\.quarantine/' || true)"
   if [ -n "$status" ]; then
-    err "Target working tree is dirty. Commit or stash first."
-    echo "$status" >&2
-    die "Aborting to protect in-flight changes."
+    if [ "$AUTO_COMMIT_DIRTY" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
+      log "Working tree has uncommitted changes; auto-committing as WIP before install."
+      if ! git add -A || ! git commit --no-verify -m "chore: auto-commit pre-framework-install state [template $TEMPLATE_SHA]"; then
+        err "Could not auto-commit existing changes. Commit or stash them manually and retry."
+        echo "$status" >&2
+        die "Aborting."
+      fi
+      log "Auto-committed existing changes."
+    else
+      err "Target working tree is dirty. Commit or stash first."
+      echo "$status" >&2
+      die "Aborting to protect in-flight changes."
+    fi
   fi
 
   local head_sha

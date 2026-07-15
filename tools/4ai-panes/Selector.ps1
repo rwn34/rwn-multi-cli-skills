@@ -699,6 +699,94 @@ function Install-Framework-In-NewTab($targetDir) {
     }
 }
 
+# ── Open one or more projects in NEW WT tabs, keep the selector alive ──
+# Reuses the same fleet-tab builder the batch-launch path uses, so a single
+# project and a multi-mark batch produce identical tabs. The selector tab is
+# never consumed; after launching, control returns to the caller so the menu
+# can redraw.
+function Open-ProjectTabs {
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$TargetDirs)
+
+    $dirs = @($TargetDirs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $isNoDir = ($dirs.Count -eq 0)
+
+    $layout = Get-Layout
+    $activeCLIs = @($layout | Where-Object { $cliAvailable[$_] })
+    if ($activeCLIs.Count -eq 0) {
+        Write-Host "No CLIs available." -ForegroundColor Red
+        Read-Host "Press Enter to continue"
+        return
+    }
+
+    # Per-project prep: record history + install/adopt framework.
+    foreach ($d in $dirs) {
+        Save-History -project (Get-HistoryName $d)
+        Install-Framework -targetDir $d
+    }
+
+    # Kiro global-agent injection (profile-level, project-independent -> do once).
+    if ($cliAvailable["Kiro"]) {
+        $globalKiroAgents = Join-Path $env:USERPROFILE ".kiro\agents"
+        $backupAgents = Join-Path $scriptDir ".kiro\agents"
+        if (Test-Path $backupAgents) {
+            try {
+                Get-ChildItem -Path $backupAgents -Filter "*.json" | ForEach-Object {
+                    $dest = Join-Path $globalKiroAgents $_.Name
+                    if (-not (Test-Path $dest)) { Copy-Item -Path $_.FullName -Destination $dest -Force }
+                }
+            } catch {
+                Write-Host "Warning: failed to inject Kiro agents: $_" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    if ($dirs.Count -gt 4) {
+        Write-Host "Note: $($dirs.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
+    }
+
+    # Build one new-tab fleet group per project; for nodir build a single bare-CLI tab.
+    $tabStages = @()
+    if ($isNoDir) {
+        $n = $activeCLIs.Count
+        $stages = New-Object System.Collections.Generic.List[string]
+        $dq = '"'
+        $stages.Add("new-tab --title no-dir -d `"$projectsDir`" powershell -NoExit -NoProfile -Command $dq$($cliDefs[$activeCLIs[0]].cmd)$dq")
+        for ($i = 1; $i -lt $n; $i++) {
+            $frac = [math]::Round(($n - $i) / ($n - $i + 1), 4)
+            $stages.Add("split-pane -V -s $frac -d `"$projectsDir`" powershell -NoExit -NoProfile -Command $dq$($cliDefs[$activeCLIs[$i]].cmd)$dq")
+        }
+        $tabStages += , $stages.ToArray()
+    } else {
+        foreach ($d in $dirs) { $tabStages += , (Build-FleetTabStages -TargetDir $d) }
+    }
+    $plan = @(Get-FleetLaunchPlan -TabStages $tabStages -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
+
+    Clear-Host
+    $batchNames = @($dirs | ForEach-Object { Get-HistoryName $_ })
+    if ($isNoDir) {
+        Write-Host "Launching bare CLI tab ($($activeCLIs -join ', '))..." -ForegroundColor Cyan
+    } elseif ($dirs.Count -eq 1) {
+        Write-Host "Launching $($batchNames[0]) in a new tab..." -ForegroundColor Cyan
+    } else {
+        Write-Host "Batch launch ($($dirs.Count) projects): $($batchNames -join ', ')" -ForegroundColor Cyan
+    }
+    Write-Host "Pacing: pane ${paneDelayMs}ms, tab ${tabDelayMs}ms ($($plan.Count) wt invocations)." -ForegroundColor DarkGray
+    $launchOk = Invoke-FleetLaunchPlan -Plan $plan
+    if ($launchOk) {
+        if ($isNoDir) {
+            Write-Host "Launched bare CLI tab in window rwn4ai." -ForegroundColor Green
+        } elseif ($dirs.Count -eq 1) {
+            Write-Host "Launched $($batchNames[0]) in a new tab." -ForegroundColor Green
+        } else {
+            Write-Host "Launched $($dirs.Count) project tabs in window rwn4ai." -ForegroundColor Green
+        }
+    } else {
+        Write-Host "Failed to launch project tab(s)." -ForegroundColor Red
+    }
+    Write-Host "`nPress any key to return to the selector..." -ForegroundColor DarkGray
+    [void][System.Console]::ReadKey($true)
+}
+
 # -- Fleet-tab STAGE builder (shared by single-select and multi-select batch) --
 # Returns ONE project's fleet tab as an ORDERED [string[]] of Windows-Terminal
 # subcommand STAGES: stage 0 is always `new-tab ...`, the rest are `split-pane ...`
@@ -843,38 +931,8 @@ function Invoke-FleetLaunchPlan {
     return $ok
 }
 
-# ── Build Menu Items ──
-$allProjects = Get-Projects
-$history = Get-History
-
-$ordered = [System.Collections.ArrayList]::new()
-$seen = @{}
-foreach ($h in $history) {
-    if (($allProjects -contains $h.project) -and -not $seen.ContainsKey($h.project)) {
-        [void]$ordered.Add($h.project)
-        $seen[$h.project] = $true
-    }
-}
-foreach ($p in $allProjects) {
-    if (-not $seen.ContainsKey($p)) {
-        [void]$ordered.Add($p)
-        $seen[$p] = $true
-    }
-}
-
-$menuItems = [System.Collections.ArrayList]::new()
-foreach ($p in $ordered) {
-    $info = Get-ProjectInfo -project $p
-    $histEntry = $history | Where-Object { $_.project -eq $p } | Select-Object -First 1
-    $ago = if ($histEntry) { Format-TimeAgo -timestamp $histEntry.timestamp } else { "" }
-    $badges = Get-ProjectBadges -project $p
-    [void]$menuItems.Add(@{ name = $p; info = $info; lastUsed = $ago; badges = $badges; type = 'project' })
-}
-[void]$menuItems.Add(@{ name = '[>] Browse folder...'; info = ''; lastUsed = ''; type = 'browse' })
-[void]$menuItems.Add(@{ name = '[+] New project...'; info = ''; lastUsed = ''; type = 'new' })
-[void]$menuItems.Add(@{ name = '[*] Open without directory'; info = ''; lastUsed = ''; type = 'nodir' })
-
-# ── Interactive Menu ──
+# ── Menu State ──
+$script:menuItems = [System.Collections.ArrayList]::new()
 $script:selected = 0
 $script:pageOffset = 0
 $script:pageSize = [Math]::Max(3, [Console]::WindowHeight - 13)
@@ -887,6 +945,44 @@ $script:marked = @{}
 # by path because browse entries are nested dirs, not flat $projectsDir names.
 $script:browseMarked = [System.Collections.ArrayList]::new()
 
+# Rebuild the menu from disk so the persistent selector reflects new projects,
+# fresh history, and updated handoff badges every time it redraws.
+function Rebuild-Menu {
+    $allProjects = Get-Projects
+    $history = Get-History
+
+    $ordered = [System.Collections.ArrayList]::new()
+    $seen = @{}
+    foreach ($h in $history) {
+        if (($allProjects -contains $h.project) -and -not $seen.ContainsKey($h.project)) {
+            [void]$ordered.Add($h.project)
+            $seen[$h.project] = $true
+        }
+    }
+    foreach ($p in $allProjects) {
+        if (-not $seen.ContainsKey($p)) {
+            [void]$ordered.Add($p)
+            $seen[$p] = $true
+        }
+    }
+
+    $script:menuItems = [System.Collections.ArrayList]::new()
+    foreach ($p in $ordered) {
+        $info = Get-ProjectInfo -project $p
+        $histEntry = $history | Where-Object { $_.project -eq $p } | Select-Object -First 1
+        $ago = if ($histEntry) { Format-TimeAgo -timestamp $histEntry.timestamp } else { "" }
+        $badges = Get-ProjectBadges -project $p
+        [void]$script:menuItems.Add(@{ name = $p; info = $info; lastUsed = $ago; badges = $badges; type = 'project' })
+    }
+    [void]$script:menuItems.Add(@{ name = '[>] Browse folder...'; info = ''; lastUsed = ''; type = 'browse' })
+    [void]$script:menuItems.Add(@{ name = '[+] New project...'; info = ''; lastUsed = ''; type = 'new' })
+    [void]$script:menuItems.Add(@{ name = '[*] Open without directory'; info = ''; lastUsed = ''; type = 'nodir' })
+
+    if ($script:selected -ge $script:menuItems.Count) {
+        $script:selected = [Math]::Max(0, $script:menuItems.Count - 1)
+    }
+}
+
 function Draw-Menu {
     $conW = [Console]::WindowWidth
     $boxW = [Math]::Max(40, [Math]::Min(72, $conW - 2))
@@ -897,7 +993,7 @@ function Draw-Menu {
         $script:pageOffset = $script:selected - $script:pageSize + 1
     }
 
-    $visibleCount = [Math]::Min($script:pageSize, $menuItems.Count - $script:pageOffset)
+    $visibleCount = [Math]::Min($script:pageSize, $script:menuItems.Count - $script:pageOffset)
 
     Clear-Host
 
@@ -927,7 +1023,7 @@ function Draw-Menu {
     # Items
     for ($i = 0; $i -lt $visibleCount; $i++) {
         $idx = $script:pageOffset + $i
-        $item = $menuItems[$idx]
+        $item = $script:menuItems[$idx]
         $isSel = ($idx -eq $script:selected)
 
         if ($item.type -eq 'project') {
@@ -977,10 +1073,10 @@ function Draw-Menu {
     Write-Host ("|" + $legend.PadRight($innerW) + "|") -ForegroundColor DarkGray
     Write-Host ("+" + "-" * $innerW + "+") -ForegroundColor Cyan
 
-    if ($menuItems.Count -gt $script:pageSize) {
-        $totalPages = [Math]::Ceiling($menuItems.Count / $script:pageSize)
+    if ($script:menuItems.Count -gt $script:pageSize) {
+        $totalPages = [Math]::Ceiling($script:menuItems.Count / $script:pageSize)
         $currentPage = [Math]::Floor($script:pageOffset / $script:pageSize) + 1
-        Write-Host " Page $currentPage/$totalPages ($($menuItems.Count) items)" -ForegroundColor DarkGray
+        Write-Host " Page $currentPage/$totalPages ($($script:menuItems.Count) items)" -ForegroundColor DarkGray
     }
 }
 
@@ -1240,10 +1336,11 @@ function Show-FolderBrowser {
             default {
                 $ch = $key.KeyChar
                 if ($ch -eq 'c') {
-                    if ($items.Count -gt 0) {
-                        return $items[$sel].path
-                    }
-                    return $current
+                    # Confirm selection: open the highlighted/current directory in a
+                    # new WT tab and keep the browser alive for further picks.
+                    $dirToOpen = if ($items.Count -gt 0) { $items[$sel].path } else { $current }
+                    Open-ProjectTabs -TargetDirs @($dirToOpen)
+                    continue
                 }
                 elseif ($ch -eq 'i') {
                     if ($items.Count -gt 0) {
@@ -1262,399 +1359,147 @@ function Show-FolderBrowser {
     return $current
 }
 
-$script:targetDirFromBrowse = $null
-
 function Invoke-Browse {
     $path = Show-FolderBrowser -Root $projectsDir
-    # Marked entries win: the batch-launch block below consumes $script:browseMarked
-    # and never reads $script:selected, so the highlighted row is irrelevant here.
-    if ($script:browseMarked.Count -ge 1) { return $true }
+    # Browse now opens directly in a new tab and keeps the selector alive.
+    # Marks picked inside the browser are launched as a batch; a single confirmed
+    # directory is launched alone. Either way, the main menu stays open.
+    if ($script:browseMarked.Count -ge 1) {
+        Open-ProjectTabs -TargetDirs @($script:browseMarked)
+        $script:browseMarked.Clear()
+        return $false
+    }
     if ($path) {
-        $script:targetDirFromBrowse = $path
-        for ($i = 0; $i -lt $menuItems.Count; $i++) {
-            if ($menuItems[$i].type -eq 'browse') {
-                $script:selected = $i
-                break
-            }
-        }
-        return $true
+        Open-ProjectTabs -TargetDirs @($path)
+        return $false
     }
     return $false
 }
 
-# ── Key Loop ──
-$done = $false
-while (-not $done) {
-    Draw-Menu
-    $key = [System.Console]::ReadKey($true)
+# ── Main explorer loop ──
+# The selector stays alive as a project launcher. Each iteration rebuilds the
+# menu from disk, lets the owner pick, opens the choice in a new WT tab, and
+# returns here. Explicit q/Escape kills the selector.
+while ($true) {
+    Rebuild-Menu
 
-    switch ($key.Key) {
-        'UpArrow'   { $script:selected = [Math]::Max(0, $script:selected - 1) }
-        'DownArrow' { $script:selected = [Math]::Min($menuItems.Count - 1, $script:selected + 1) }
-        'Spacebar'  {
-            # Toggle the highlighted PROJECT's mark. Non-project rows (browse/new/
-            # nodir) are not markable. Remove-on-untoggle keeps .Count = marked total.
-            $cur = $menuItems[$script:selected]
-            if ($cur.type -eq 'project') {
-                if ($script:marked.ContainsKey($cur.name)) { $script:marked.Remove($cur.name) }
-                else { $script:marked[$cur.name] = $true }
-            }
-        }
-        'Enter'     {
-            if ($script:marked.Count -ge 1) {
-                # >=1 marked -> batch launch handled after the loop (ignores highlight).
-                $done = $true
-            }
-            elseif ($menuItems[$script:selected].type -eq 'browse') {
-                if (Invoke-Browse) { $done = $true }
-            } else {
-                $done = $true
-            }
-        }
-        'Escape'    { Stop-Process -Id $PID }
-        'PageUp'    { $script:selected = [Math]::Max(0, $script:selected - $script:pageSize) }
-        'PageDown'  { $script:selected = [Math]::Min($menuItems.Count - 1, $script:selected + $script:pageSize) }
-        'Home'      { $script:selected = 0 }
-        'End'       { $script:selected = $menuItems.Count - 1 }
-        default {
-            $ch = $key.KeyChar
-            if ($ch -eq 'b') {
-                if (Invoke-Browse) { $done = $true }
-            }
-            elseif ($ch -eq 'i') {
-                $cur = $menuItems[$script:selected]
+    # ── Key Loop ──
+    $done = $false
+    while (-not $done) {
+        Draw-Menu
+        $key = [System.Console]::ReadKey($true)
+
+        switch ($key.Key) {
+            'UpArrow'   { $script:selected = [Math]::Max(0, $script:selected - 1) }
+            'DownArrow' { $script:selected = [Math]::Min($script:menuItems.Count - 1, $script:selected + 1) }
+            'Spacebar'  {
+                # Toggle the highlighted PROJECT's mark. Non-project rows (browse/new/
+                # nodir) are not markable. Remove-on-untoggle keeps .Count = marked total.
+                $cur = $script:menuItems[$script:selected]
                 if ($cur.type -eq 'project') {
-                    Install-Framework-In-NewTab -targetDir (Join-Path $projectsDir $cur.name)
+                    if ($script:marked.ContainsKey($cur.name)) { $script:marked.Remove($cur.name) }
+                    else { $script:marked[$cur.name] = $true }
                 }
-                elseif ($cur.type -eq 'browse') {
-                    if (Invoke-Browse) {
-                        if ($script:targetDirFromBrowse) {
-                            Install-Framework-In-NewTab -targetDir $script:targetDirFromBrowse
-                        }
+            }
+            'Enter'     { $done = $true }
+            'Escape'    { Stop-Process -Id $PID }
+            'PageUp'    { $script:selected = [Math]::Max(0, $script:selected - $script:pageSize) }
+            'PageDown'  { $script:selected = [Math]::Min($script:menuItems.Count - 1, $script:selected + $script:pageSize) }
+            'Home'      { $script:selected = 0 }
+            'End'       { $script:selected = $script:menuItems.Count - 1 }
+            default {
+                $ch = $key.KeyChar
+                if ($ch -eq 'b') {
+                    Invoke-Browse | Out-Null
+                }
+                elseif ($ch -eq 'i') {
+                    $cur = $script:menuItems[$script:selected]
+                    if ($cur.type -eq 'project') {
+                        Install-Framework-In-NewTab -targetDir (Join-Path $projectsDir $cur.name)
+                    }
+                    elseif ($cur.type -eq 'browse') {
+                        # Install-framework shortcut in browse mode: open the browser,
+                        # then install the directory the user confirms with 'c'.
+                        $picked = Show-FolderBrowser -Root $projectsDir
+                        if ($picked) { Install-Framework-In-NewTab -targetDir $picked }
+                    }
+                }
+                elseif ($ch -eq 'n') {
+                    for ($i = 0; $i -lt $script:menuItems.Count; $i++) {
+                        if ($script:menuItems[$i].type -eq 'new') { $script:selected = $i; break }
+                    }
+                    $done = $true
+                }
+                elseif ($ch -eq 'w') {
+                    for ($i = 0; $i -lt $script:menuItems.Count; $i++) {
+                        if ($script:menuItems[$i].type -eq 'nodir') { $script:selected = $i; break }
+                    }
+                    $done = $true
+                }
+                elseif ($ch -eq 'o') { Show-LayoutPicker }
+                elseif ($ch -eq 'q') { Stop-Process -Id $PID }
+                elseif ($ch -match '[0-9]') {
+                    $num = [int]$ch.ToString()
+                    if ($num -ge 1 -and $num -le $script:menuItems.Count) {
+                        $script:selected = $num - 1
+                        $done = $true
                     }
                 }
             }
-            elseif ($ch -eq 'n') {
-                for ($i = 0; $i -lt $menuItems.Count; $i++) {
-                    if ($menuItems[$i].type -eq 'new') { $script:selected = $i; break }
-                }
-                $done = $true
-            }
-            elseif ($ch -eq 'w') {
-                for ($i = 0; $i -lt $menuItems.Count; $i++) {
-                    if ($menuItems[$i].type -eq 'nodir') { $script:selected = $i; break }
-                }
-                $done = $true
-            }
-            elseif ($ch -eq 'o') { Show-LayoutPicker }
-            elseif ($ch -eq 'q') { Stop-Process -Id $PID }
-            elseif ($ch -match '[0-9]') {
-                $num = [int]$ch.ToString()
-                if ($num -ge 1 -and $num -le $menuItems.Count) {
-                    $script:selected = $num - 1
-                    $done = $true
-                }
-            }
         }
     }
-}
 
-# -- Multi-select batch launch (task #25) --
-# If any projects are SPACE-marked, launch every marked project in its own WT tab
-# inside the one rwn4ai window -- one PACED wt invocation per tab (see
-# Get-FleetLaunchPlan), each tab running that project's full fleet via the shared
-# Build-FleetTabStages. When nothing is marked this whole block is skipped and the
-# single-select path below runs unchanged.
-$script:markedList = @()
-foreach ($mi in $menuItems) {
-    if ($mi.type -eq 'project' -and $script:marked.ContainsKey($mi.name)) {
-        $script:markedList += $mi.name
-    }
-}
 
-# Browse-mode marks join the same batch: main-list marks are names under $projectsDir,
-# browse marks are already absolute paths (possibly nested). Normalize both to dirs.
-$batchDirs = @()
-foreach ($p in $script:markedList) { $batchDirs += (Join-Path $projectsDir $p) }
-foreach ($p in $script:browseMarked) {
-    if ($batchDirs -notcontains $p) { $batchDirs += $p }
-}
-
-if ($batchDirs.Count -ge 1) {
-    $layout = Get-Layout
-    $activeCLIs = @($layout | Where-Object { $cliAvailable[$_] })
-    if ($activeCLIs.Count -eq 0) {
-        Write-Host "No CLIs available." -ForegroundColor Red
-        Read-Host "Press Enter to exit"
-        Stop-Process -Id $PID
-    }
-
-    # Per-project prep: record history + install/adopt framework (same as single).
+    # -- Resolve selection into target directories --
+    $chosen = $script:menuItems[$script:selected]
     $targetDirs = @()
-    foreach ($d in $batchDirs) {
-        Save-History -project (Get-HistoryName $d)
-        Install-Framework -targetDir $d
-        $targetDirs += $d
-    }
 
-    # Kiro global-agent injection (profile-level, project-independent -> do once).
-    if ($cliAvailable["Kiro"]) {
-        $globalKiroAgents = Join-Path $env:USERPROFILE ".kiro\agents"
-        $backupAgents = Join-Path $scriptDir ".kiro\agents"
-        if (Test-Path $backupAgents) {
-            try {
-                Get-ChildItem -Path $backupAgents -Filter "*.json" | ForEach-Object {
-                    $dest = Join-Path $globalKiroAgents $_.Name
-                    if (-not (Test-Path $dest)) { Copy-Item -Path $_.FullName -Destination $dest -Force }
-                }
-            } catch {
-                Write-Host "Warning: failed to inject Kiro agents: $_" -ForegroundColor Yellow
+    if ($script:marked.Count -ge 1) {
+        # Batch: every SPACE-marked project, plus any browse-mode marks.
+        foreach ($mi in $script:menuItems) {
+            if ($mi.type -eq 'project' -and $script:marked.ContainsKey($mi.name)) {
+                $targetDirs += (Join-Path $projectsDir $mi.name)
             }
         }
-    }
-
-    if ($targetDirs.Count -gt 4) {
-        Write-Host "Note: $($targetDirs.Count) projects marked; opening many fleet tabs at once is resource-heavy." -ForegroundColor Yellow
-    }
-
-    # One new-tab fleet group per marked project, as stage arrays.
-    # PACING (owner defect 2026-07-11): the old code packed ALL projects' groups into
-    # as few wt invocations as it could (split only by a char budget), so marking ~7
-    # projects dumped dozens of splits on WT at once and the layout came out scrambled.
-    # Now every project is its OWN wt invocation (one tab), fired sequentially with
-    # $tabDelayMs between them, and each project's panes are staged with $paneDelayMs
-    # between them. Delay = 0 restores the legacy atomic form for that dimension.
-    $tabStages = @()
-    foreach ($d in $targetDirs) { $tabStages += , (Build-FleetTabStages -TargetDir $d) }
-    # @( ) forces an array: PowerShell unrolls a single-element result on return, and
-    # the atomic escape hatch produces exactly one invocation.
-    $plan = @(Get-FleetLaunchPlan -TabStages $tabStages -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
-
-    Clear-Host
-    $batchNames = @($targetDirs | ForEach-Object { Get-HistoryName $_ })
-    Write-Host "Batch launch ($($targetDirs.Count) projects): $($batchNames -join ', ')" -ForegroundColor Cyan
-    Write-Host "Pacing: pane ${paneDelayMs}ms, tab ${tabDelayMs}ms ($($plan.Count) wt invocations)." -ForegroundColor DarkGray
-    $launchOk = Invoke-FleetLaunchPlan -Plan $plan
-    if ($launchOk) {
-        Write-Host "Launched $($targetDirs.Count) project tabs in window rwn4ai." -ForegroundColor Green
-    }
-    return
-}
-
-# ── Process Selection ──
-$chosen = $menuItems[$script:selected]
-$targetDir = $null
-
-switch ($chosen.type) {
-    'project' {
-        $targetDir = Join-Path $projectsDir $chosen.name
-        Save-History -project $chosen.name
-    }
-    'new' {
-        Clear-Host
-        Write-Host "+----------------------+" -ForegroundColor Cyan
-        Write-Host "| Create New Project   |" -ForegroundColor Cyan
-        Write-Host "+----------------------+" -ForegroundColor Cyan
-        $name = Read-Host "Project name"
-        if ([string]::IsNullOrWhiteSpace($name)) {
-            Write-Host "Cancelled." -ForegroundColor Yellow
-            Start-Sleep -Seconds 1
-            Stop-Process -Id $PID
+        foreach ($p in $script:browseMarked) {
+            if ($targetDirs -notcontains $p) { $targetDirs += $p }
         }
-        $targetDir = Join-Path $projectsDir $name
-        if (-not (Test-Path $targetDir)) {
-            New-Item -ItemType Directory -Path $targetDir | Out-Null
-            Write-Host "Created: $targetDir" -ForegroundColor Green
-        }
-        Save-History -project $name
-        Start-Sleep -Milliseconds 500
-    }
-    'browse' {
-        $targetDir = $script:targetDirFromBrowse
-        if ($targetDir) {
-            Save-History -project (Get-HistoryName $targetDir)
-        }
-    }
-    'nodir' {
-        $targetDir = $null
-    }
-}
-
-# ── Install Framework ──
-Install-Framework -targetDir $targetDir
-
-# ── Split Panes ──
-# The selector pane becomes the first CLI in the layout.
-# We split off panes for the remaining CLIs.
-# Layout math: starting from 100%, each split takes the right portion.
-# Split 1: pane2 takes 75% of current -> pane1=25%, pane2=75%
-# Split 2: pane3 takes 66.67% of pane2 -> pane2=25%, pane3=50%
-# Split 3: pane4 takes 50% of pane3 -> pane3=25%, pane4=25%
-# Result: 25% each for 4 panes.
-
-Clear-Host
-$layout = Get-Layout
-$activeCLIs = @($layout | Where-Object { $cliAvailable[$_] })
-$launching = $activeCLIs -join ', '
-Write-Host "Launching $launching..." -ForegroundColor Cyan
-
-if ($activeCLIs.Count -eq 0) {
-    Write-Host "No CLIs available." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    Stop-Process -Id $PID
-}
-
-# Kiro agent injection
-if ($cliAvailable["Kiro"] -and $targetDir) {
-    $globalKiroAgents = Join-Path $env:USERPROFILE ".kiro\agents"
-    $backupAgents = Join-Path $scriptDir ".kiro\agents"
-    if (Test-Path $backupAgents) {
-        try {
-            $didCopy = $false
-            Get-ChildItem -Path $backupAgents -Filter "*.json" | ForEach-Object {
-                $dest = Join-Path $globalKiroAgents $_.Name
-                if (-not (Test-Path $dest)) {
-                    Copy-Item -Path $_.FullName -Destination $dest -Force
-                    $didCopy = $true
-                }
-            }
-            if ($didCopy) {
-                Write-Host "Injected Kiro agents into global profile" -ForegroundColor DarkGray
-            }
-        } catch {
-            Write-Host "Warning: failed to inject Kiro agents: $_" -ForegroundColor Yellow
-        }
-    }
-}
-
-# ── Pane launch: self-driving runner vs bare CLI (ADR-0008) ──
-# Each pane normally launches pane-runner.ps1 (the self-driving supervisor loop
-# that auto-continues + auto-executes handoffs for its CLI). Fall back to the
-# bare interactive CLI when the owner wants a plain REPL: set env RWN_PANE_BARE=1,
-# or when there is no project dir (nodir mode) — the runner needs a project's
-# .ai/ to watch, so no-dir always uses the bare CLI.
-# $cliLower (Proper -> lower) is derived from fleet-clis.ps1 near the top of this script.
-$paneRunner = Join-Path $scriptDir 'pane-runner.ps1'
-# Auto-resurrection supervisor: launched instead of pane-runner.ps1 so a crashed
-# runner is respawned as an isolated child (exit-code contract, exp backoff, cap).
-$paneSupervisor = Join-Path $scriptDir 'run-pane-supervised.ps1'
-$bareMode = ($env:RWN_PANE_BARE -and $env:RWN_PANE_BARE -ne '0' -and $env:RWN_PANE_BARE -ne 'false')
-
-# ── Layout gating ──
-# 6pane/5pane both need a project dir (the runner watches its .ai/), an available
-# Claude, the runner script, the supervisor script, and non-bare mode. Anything else
-# (4grid, bare, nodir, unknown RWN_PANE_LAYOUT value, missing Claude/runner/supervisor)
-# falls through to the legacy 4-grid path below — the instant, always-safe fallback,
-# which itself supervises when the supervisor script is present.
-$layoutSupported = $targetDir -and $cliAvailable['Claude'] `
-                   -and (Test-Path $paneRunner) -and (Test-Path $paneSupervisor) -and (-not $bareMode)
-$use6pane = ($paneLayoutMode -eq '6pane') -and $layoutSupported
-$use5pane = ($paneLayoutMode -eq '5pane') -and $layoutSupported
-
-# ── 6-pane dual-operator-over-fleet layout (ADR-0009 / owner-directed 2026-07-10) ──
-# Build ONE composite WT tab as a 2-over-4 grid:
-#   TOP row  (topStripFraction = 50% tall) = 2 side-by-side NON-polling interactive
-#            cockpits: top-LEFT = app-Claude (identity claude-code), top-RIGHT = bare
-#            Kimi. Neither runs the pane-runner (no auto-continue, no claim, no poll).
-#            ROLE INTENT: top-LEFT Claude is the owner's app-paired / remote-control
-#            session (session-sharing with the Claude app) -- NOT a fleet executor.
-#            top-RIGHT Kimi is the owner's general operator for asides / ad-hoc
-#            questions -- NOT an executor lane.
-#   BOTTOM row (50% tall) = up to N equal columns, each running the self-driving
-#            pane-runner worker (the Claude column self-IDs as claude-auto). Same
-#            fleet behavior as the 5pane bottom.
-#
-# WT split sequence (each split acts on the FOCUSED pane; -s sizes the NEW pane):
-#   1. new-tab               -> P0 : top pane, full width (top-LEFT interactive Claude).
-#   2. split-pane -H -s 0.5  -> B0 : bottom pane, full width, 50% tall (runner CLI[0]);
-#                                    focus moves to B0.
-#   3. split-pane -V (xN-1)  -> cut the bottom into N equal columns (pane-runners); the
-#                                    k-th split gives the new pane (N-k)/(N-k+1) of the
-#                                    focused region, leaving 1/N per column overall.
-#   4. move-focus up         -> return focus to the still-single full-width top pane P0.
-#   5. split-pane -V -s 0.5  -> split P0 into top-LEFT (Claude, kept) + top-RIGHT (Kimi).
-# The top-RIGHT Kimi split is only emitted when Kimi is available; otherwise the top
-# row stays one full-width interactive Claude (graceful degrade, never a broken split).
-if ($use6pane) {
-    # Single-project fleet tab via the shared builder (same output as the batch path),
-    # emitted stage-by-stage so a lone project also lands cleanly (RWN_4AI_PANE_DELAY_MS
-    # = 0 collapses it back to the legacy single atomic wt call).
-    $stages = Build-FleetTabStages -TargetDir $targetDir
-    $plan = @(Get-FleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
-
-    $topDesc = if ($cliAvailable['Kimi']) { 'app-Claude | Kimi' } else { 'app-Claude' }
-    Write-Host "6-pane layout (top=$topDesc, bottom=$($activeCLIs -join ', ')), pane pacing ${paneDelayMs}ms:" -ForegroundColor Cyan
-    if (Invoke-FleetLaunchPlan -Plan $plan) {
-        Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
     } else {
-        Write-Host "Failed to launch 6-pane layout." -ForegroundColor Red
+        switch ($chosen.type) {
+            'project' { $targetDirs = @(Join-Path $projectsDir $chosen.name) }
+            'new' {
+                Clear-Host
+                Write-Host "+----------------------+" -ForegroundColor Cyan
+                Write-Host "| Create New Project   |" -ForegroundColor Cyan
+                Write-Host "+----------------------+" -ForegroundColor Cyan
+                $name = Read-Host "Project name"
+                if ([string]::IsNullOrWhiteSpace($name)) {
+                    Write-Host "Cancelled." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 1
+                } else {
+                    $newDir = Join-Path $projectsDir $name
+                    if (-not (Test-Path $newDir)) {
+                        New-Item -ItemType Directory -Path $newDir | Out-Null
+                        Write-Host "Created: $newDir" -ForegroundColor Green
+                    }
+                    $targetDirs = @($newDir)
+                }
+                Start-Sleep -Milliseconds 500
+            }
+            'browse' {
+                # Already handled by Invoke-Browse when 'b' was pressed; reaching here
+                # means the user hit Enter on the browse row. Open the browser now.
+                $picked = Show-FolderBrowser -Root $projectsDir
+                if ($picked) { $targetDirs = @($picked) }
+            }
+            'nodir' { $targetDirs = @() }
+        }
     }
-    return
-}
 
-# ── 5-pane operator-over-fleet layout (retained fallback: RWN_PANE_LAYOUT=5pane) ──
-# Build ONE composite WT tab: new-tab = TOP pane (bare interactive Claude =
-# app-Claude, identity claude-code, NOT the pane-runner); split-pane -H sizes the
-# new bottom region to (1 - topStripFraction) so the top strip is topStripFraction;
-# then N-1 vertical splits cut the bottom into equal columns, each running the
-# self-driving pane-runner (the Claude column self-IDs as claude-auto).
-if ($use5pane) {
-    # Single-project fleet tab via the shared builder (same output as the batch path),
-    # staged the same way as the 6pane path.
-    $stages = Build-FleetTabStages -TargetDir $targetDir
-    $plan = @(Get-FleetLaunchPlan -TabStages @(, $stages) -PaneDelayMs $paneDelayMs -TabDelayMs $tabDelayMs)
+    # -- Launch in new tab(s), keep selector alive --
+    Open-ProjectTabs -TargetDirs $targetDirs
 
-    Write-Host "5-pane layout (top=app-Claude, bottom=$($activeCLIs -join ', ')), pane pacing ${paneDelayMs}ms:" -ForegroundColor Cyan
-    if (Invoke-FleetLaunchPlan -Plan $plan) {
-        Write-Host "Launched $(Split-Path -Leaf $targetDir) in a new tab." -ForegroundColor Green
-    } else {
-        Write-Host "Failed to launch 5-pane layout." -ForegroundColor Red
-    }
-    return
-}
-
-# ── Legacy 4-grid path (RWN_PANE_LAYOUT=4grid / bare / nodir fallback) ──
-function Get-PaneLaunch {
-    param([string]$CliName, [string]$TargetDir)
-    if ($bareMode -or (-not $TargetDir) -or (-not (Test-Path $paneRunner))) {
-        return "powershell -NoExit -NoProfile -Command `"$($cliDefs[$CliName].cmd)`""
-    }
-    # Prefer the supervisor (auto-respawn) when present; degrade to the bare runner.
-    $launcher = if (Test-Path $paneSupervisor) { $paneSupervisor } else { $paneRunner }
-    return "powershell -NoExit -NoProfile -File `"$launcher`" -Cli $($cliLower[$CliName]) -ProjectDir `"$TargetDir`""
-}
-
-# Split sequence: first CLI stays in this pane, remaining CLIs split off to the right
-$splitFractions = @(0.75, 0.6667, 0.5)
-
-for ($i = 1; $i -lt $activeCLIs.Count; $i++) {
-    $cliName = $activeCLIs[$i]
-    $fraction = $splitFractions[$i - 1]
-
-    $dirArg = if ($targetDir) { "-d `"$targetDir`"" } else { "" }
-    $splitCmd = "$dirArg $(Get-PaneLaunch -CliName $cliName -TargetDir $targetDir)"
-    $wtCmd = "-w rwn4ai split-pane -V -s $fraction $splitCmd"
-    try {
-        & cmd.exe /c "`"$wtExe`" $wtCmd"
-        Start-Sleep -Milliseconds 400
-    } catch {
-        Write-Host "Failed to launch $cliName pane." -ForegroundColor Red
-    }
-}
-
-# This pane -> first CLI in the layout.
-# Self-driving path: run the supervisor (auto-respawn) directly in this pane so it
-# too supervises its CLI, degrading to the bare runner if the supervisor is absent.
-# Bare path (RWN_PANE_BARE / nodir): plain interactive REPL.
-$firstCli = $activeCLIs[0]
-
-Clear-Host
-if ($targetDir) {
-    Set-Location $targetDir
-}
-if ($bareMode -or (-not $targetDir) -or (-not (Test-Path $paneRunner))) {
-    Invoke-Expression $cliDefs[$firstCli].cmd
-} else {
-    $launcher = if (Test-Path $paneSupervisor) { $paneSupervisor } else { $paneRunner }
-    & $launcher -Cli $cliLower[$firstCli] -ProjectDir $targetDir
+    # Clear marks and loop back to the refreshed selector.
+    $script:marked = @{}
+    $script:browseMarked.Clear()
 }
