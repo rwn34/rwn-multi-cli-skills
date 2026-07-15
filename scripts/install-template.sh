@@ -27,6 +27,9 @@ TARGET=""
 DRY_RUN=0
 MANIFEST=""   # path to a temp file tracking changed paths (relative to TARGET)
 ORIGINAL_BRANCH=""   # target's branch at install time (main/master/etc.)
+INTERACTIVE=0 # 1 = prompt for agent commands and merge confirmation
+AUTO_MERGE=1  # 1 = auto-merge ai-template-install into ORIGINAL_BRANCH after commit
+AUTO_MERGE_EXPLICIT=0 # set by --merge/--no-merge so --interactive doesn't override an explicit choice
 # A4: 1 when re-running on an already-onboarded project (.ai/.framework-version
 # present). In update mode we preserve accumulated cross-CLI state (activity log,
 # in-flight handoffs, reports) instead of wiping it back to the empty template.
@@ -64,7 +67,7 @@ usage() {
 install-template.sh — install the multi-CLI AI framework into an existing project.
 
 Usage:
-  bash scripts/install-template.sh <target-dir> [--dry-run]
+  bash scripts/install-template.sh <target-dir> [--dry-run] [--interactive] [--no-merge]
 
 Arguments:
   <target-dir>   Absolute or relative path to the target project. Must be a
@@ -72,6 +75,10 @@ Arguments:
 
 Options:
   --dry-run      Print planned actions without touching the target.
+  --interactive, -i  Prompt for agent-command customization and ask before
+                     merging the install branch. Default is fully automatic.
+  --no-merge     Leave the install branch unmerged; print manual merge
+                 instructions instead.
   --help, -h     Show this help and exit.
 
 What it does (6 phases):
@@ -83,12 +90,14 @@ What it does (6 phases):
   3. Reconcile conflicts (merge .gitignore, create/merge .mcp.json codegraph
      server, detect language, amend ADR + uncomment matching patterns in
      root-guard hooks).
-  4. Interactive agent-config tailoring (skippable).
+  4. Tailor agent configs (uses suggested defaults automatically; --interactive
+     to customize).
   5. Verify (hook tests + SSOT drift) and commit on the install branch.
+  6. Merge the install branch back to the original branch and clean up.
 
-The script leaves you on the 'ai-template-install' branch with one commit.
-Phase 6 (merge to original branch) is printed as follow-up instructions; it is
-not executed.
+By default the script is non-interactive: it merges automatically and accepts
+suggested test/build/lint commands. If a merge fails (e.g. conflicts), the
+install branch is left intact for manual resolution.
 EOF
 }
 
@@ -110,6 +119,9 @@ shift || true
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --interactive|-i) INTERACTIVE=1 ;;
+    --merge|-m) AUTO_MERGE=1; AUTO_MERGE_EXPLICIT=1 ;;
+    --no-merge|--no-auto-merge) AUTO_MERGE=0; AUTO_MERGE_EXPLICIT=1 ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown arg: $1 (see --help)" ;;
   esac
@@ -222,8 +234,10 @@ phase0() {
   # runtime sidecars that the project is missing .gitignore rules for.
   exclude_runtime_sidecars
 
+  # Use --untracked-files=all so heartbeat files inside a brand-new .ai/ dir are
+  # listed individually and can be filtered out.
   local status
-  status="$(git status --porcelain)"
+  status="$(git status --porcelain --untracked-files=all | grep -vE '^.. \.ai/\.heartbeat-.*\.json$|^.. \.ai/\.claim-.*\.json$|^.. \.ai/handoffs/\.claims/|^.. \.ai/handoffs/\.quarantine/' || true)"
   if [ -n "$status" ]; then
     err "Target working tree is dirty. Commit or stash first."
     echo "$status" >&2
@@ -1261,40 +1275,38 @@ suggest_cmd_for() {
 }
 
 phase4() {
-  log "=== Phase 4: tailor agent configs (interactive) ==="
+  log "=== Phase 4: tailor agent configs ==="
   if [ "$DRY_RUN" -eq 1 ]; then
-    log "DRY-RUN: skipping interactive prompts."
+    log "DRY-RUN: skipping agent tailoring."
     return 0
   fi
-  if [ ! -t 0 ] || [ ! -t 1 ]; then
-    warn "Non-interactive shell (no TTY). Skipping agent tailoring."
-    log "To customize later: edit .claude/agents/{tester,coder}.md,"
-    log ".kimi/agents/{tester.yaml,system/coder-executor.md}, .kiro/agents/{tester,coder}.json"
-    return 0
-  fi
-
-  local ans
-  printf "[install] Customize agent commands for your stack? (y/N) "
-  read -r ans || ans=""
-  case "$ans" in
-    y|Y|yes|YES) ;;
-    *) log "Skipping agent tailoring."; return 0 ;;
-  esac
 
   local test_cmd build_cmd lint_cmd
   test_cmd="$(suggest_cmd_for "${DETECTED_LANG:-none}" test)"
   build_cmd="$(suggest_cmd_for "${DETECTED_LANG:-none}" build)"
   lint_cmd="$(suggest_cmd_for "${DETECTED_LANG:-none}" lint)"
 
-  printf "[install] test command [%s]: " "$test_cmd"
-  read -r ans || ans=""
-  [ -n "$ans" ] && test_cmd="$ans"
-  printf "[install] build command [%s]: " "$build_cmd"
-  read -r ans || ans=""
-  [ -n "$ans" ] && build_cmd="$ans"
-  printf "[install] lint command [%s]: " "$lint_cmd"
-  read -r ans || ans=""
-  [ -n "$ans" ] && lint_cmd="$ans"
+  if [ "$INTERACTIVE" -eq 1 ] && [ -t 0 ] && [ -t 1 ]; then
+    local ans
+    printf "[install] Customize agent commands for your stack? (y/N) "
+    read -r ans </dev/tty || ans=""
+    case "$ans" in
+      y|Y|yes|YES)
+        printf "[install] test command [%s]: " "$test_cmd"
+        read -r ans </dev/tty || ans=""
+        [ -n "$ans" ] && test_cmd="$ans"
+        printf "[install] build command [%s]: " "$build_cmd"
+        read -r ans </dev/tty || ans=""
+        [ -n "$ans" ] && build_cmd="$ans"
+        printf "[install] lint command [%s]: " "$lint_cmd"
+        read -r ans </dev/tty || ans=""
+        [ -n "$ans" ] && lint_cmd="$ans"
+        ;;
+      *) log "Using suggested defaults." ;;
+    esac
+  else
+    log "Non-interactive mode: using suggested defaults."
+  fi
 
   # Agent configs currently have NO standardized <PROJECT_*_CMD> placeholders.
   # Rather than brittle sed across 6 files, emit a clear manual-edit note +
@@ -1322,7 +1334,7 @@ phase4() {
     echo "- .kiro/agents/coder.json (prompt field)"
   } > "$note"
   track ".ai/reports/install-template-commands.md"
-  log "Wrote .ai/reports/install-template-commands.md (manual edit instructions)."
+  log "Wrote .ai/reports/install-template-commands.md."
   warn "Agent configs lack standardized placeholders; edits remain manual."
 }
 
@@ -1437,19 +1449,81 @@ phase5() {
 }
 
 # ==========================================================================
+# PHASE 6 — Merge install branch back to original branch and clean up
+# ==========================================================================
+phase6() {
+  log "=== Phase 6: merge install branch ==="
+  if [ "$DRY_RUN" -eq 1 ]; then
+    log "DRY-RUN: would merge $BRANCH into $ORIGINAL_BRANCH if --no-merge was not given."
+    return 0
+  fi
+
+  if [ -z "$ORIGINAL_BRANCH" ]; then
+    warn "Original branch not recorded; skipping auto-merge."
+    return 0
+  fi
+
+  cd "$TARGET"
+
+  # Decide whether to merge.
+  local do_merge=0
+  if [ "$AUTO_MERGE" -eq 1 ]; then
+    do_merge=1
+  elif [ "$INTERACTIVE" -eq 1 ] && [ "$AUTO_MERGE_EXPLICIT" -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
+    local ans
+    printf "[install] Merge $BRANCH into $ORIGINAL_BRANCH now? (Y/n) "
+    read -r ans </dev/tty || ans=""
+    case "$ans" in
+      n|N|no|NO) log "Skipping merge." ;;
+      *) do_merge=1 ;;
+    esac
+  fi
+
+  if [ "$do_merge" -eq 0 ]; then
+    log "Install branch left intact: $BRANCH"
+    return 0
+  fi
+
+  # Safety: abort if there are unexpected uncommitted changes before switching.
+  if [ -n "$(git status --porcelain)" ]; then
+    warn "Working tree is not clean; cannot auto-merge."
+    log "Finish committing or stashing changes, then run:"
+    log "  cd \"$TARGET\" && git checkout $ORIGINAL_BRANCH && git merge --no-ff $BRANCH"
+    return 0
+  fi
+
+  log "Merging $BRANCH into $ORIGINAL_BRANCH..."
+  if ! git checkout "$ORIGINAL_BRANCH"; then
+    warn "Could not switch to $ORIGINAL_BRANCH; leaving install branch intact."
+    return 0
+  fi
+
+  if ! git merge --no-ff --no-edit "$BRANCH"; then
+    warn "Merge failed. Resolve conflicts manually, then complete the merge."
+    log "To abort: cd \"$TARGET\" && git merge --abort && git checkout $BRANCH"
+    return 0
+  fi
+
+  git branch -d "$BRANCH"
+  rm -f "$TARGET/$ROLLBACK_FILE"
+  log "Merged and cleaned up. Working tree is on $ORIGINAL_BRANCH."
+}
+
+# ==========================================================================
 # Final summary
 # ==========================================================================
 print_summary() {
   cat <<EOF
 
 ==============================================================================
-[install] Install complete (on branch: $BRANCH)
+[install] Install complete
 ==============================================================================
 
 Template SHA:      $TEMPLATE_SHA
 Framework version: $FRAMEWORK_VERSION (stamped in .ai/.framework-version)
 Target:            $TARGET
 Language detected: ${DETECTED_LANG:-none}
+Current branch:    $(cd "$TARGET" && git symbolic-ref --short HEAD 2>/dev/null || echo "unknown")
 
 Files tracked (added/modified):
 EOF
@@ -1458,19 +1532,6 @@ EOF
   fi
 
   cat <<EOF
-
-Phase 6 — follow-up (NOT executed by this script):
-
-  cd "$TARGET"
-  # 1. Review the commit
-  git log -1 --stat
-  # 2. Merge to $ORIGINAL_BRANCH
-  git checkout $ORIGINAL_BRANCH
-  git merge --no-ff $BRANCH
-  # 3. Or roll back cleanly
-  git checkout $ORIGINAL_BRANCH
-  git branch -D $BRANCH
-  rm $ROLLBACK_FILE
 
 Kimi hooks wiring:
   The Kimi CLI reads ~/.kimi-code/config.toml (user-global) for hook definitions.
@@ -1498,4 +1559,5 @@ phase2
 phase3
 phase4
 phase5
+phase6
 print_summary

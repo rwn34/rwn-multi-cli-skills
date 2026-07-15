@@ -1,3 +1,8 @@
+## 2026-07-15 09:34 — kimi-cli
+- Action: Made install-template.sh fully non-interactive by default: auto-merge install branch into original branch, clean up rollback file/branch, and accept suggested agent commands without prompts.
+- Files: scripts/install-template.sh
+- Decisions: Added --interactive/-i and --no-merge flags for opt-in prompts; heartbeat/claim sidecars excluded from dirty-check via .git/info/exclude so installs succeed on active projects.
+
 ## 2026-07-15 09:11 — kimi-cli
 - Action: Fixed install-template.sh so framework runtime heartbeat/claim sidecars no longer block install/upgrade on projects with older .gitignore rules.
 - Files: scripts/install-template.sh
