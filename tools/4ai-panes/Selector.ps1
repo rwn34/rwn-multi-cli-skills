@@ -33,18 +33,18 @@ foreach ($c in $FleetClis) { $cliKey[$c] = $FleetCliProper[$c]; $cliLower[$Fleet
 
 # ── Per-tab pane layout (ADR-0009 operator-over-fleet) ── OWNER-TWEAKABLE ──
 # RWN_PANE_LAYOUT selects the WT tab layout built per project:
-#   '6pane' (default/unset) = TOP row (~50% tall) holding 2 side-by-side NON-polling
+#   '6pane' (default/unset) = TOP row (~65% tall) holding 2 side-by-side NON-polling
 #                             interactive cockpits (top-left app-Claude/claude-code,
 #                             top-right bare Kimi) OVER a BOTTOM row of 4 self-driving
 #                             pane-runner workers (incl. auto-Claude). 2-over-4 fleet.
-#   '5pane'                 = fallback: TOP full-width ~50% strip running bare
+#   '5pane'                 = fallback: TOP full-width ~65% strip running bare
 #                             interactive Claude only + BOTTOM 4 self-driving workers.
 #   '4grid'                 = legacy 4-pane grid (instant fallback if the new WT
 #                             split misbehaves on this machine).
 $paneLayoutMode = if ($env:RWN_PANE_LAYOUT) { $env:RWN_PANE_LAYOUT } else { '6pane' }
-# Top ROW height as a fraction of the tab (0.50 = 50%, now holding 2 operators).
+# Top ROW height as a fraction of the tab (0.65 = 65%, now holding 2 operators).
 # Bottom region (the 4-column fleet) = 1 - this.
-$topStripFraction = 0.50
+$topStripFraction = 0.65
 
 # ── Launch pacing (owner defect 2026-07-11: batch launches landed scrambled) ──
 # Firing one `wt` call that chains dozens of new-tab/split-pane subcommands makes

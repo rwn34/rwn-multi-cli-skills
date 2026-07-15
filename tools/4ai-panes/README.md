@@ -416,7 +416,7 @@ Edit the `$cliDefs` ordered dictionary in `Selector.ps1`. Each entry needs a `de
 | Nothing happens when clicking shortcut | The VBS file may be empty. Verify `Launch4Panes.vbs` is not 0 bytes. |
 | `wt.exe` not found | Install **Windows Terminal** from the Microsoft Store. |
 | Window opens but no selector | Check that `Selector.ps1` exists in the same folder as `Launch4Panes.ps1`. |
-| Pane splits are wrong sizes | The `-s` values are sensitive. `0.75`, `0.6667`, `0.5` for 4 equal panes. Adjust carefully. |
+| Pane splits are wrong sizes | Width splits: `0.75`, `0.6667`, `0.5` for 4 equal bottom panes; `0.5` splits the top row. Height split is controlled by `$topStripFraction` in `Selector.ps1` (default 0.65 = cockpits 65% / fleet 35%). Adjust carefully. |
 | Splits go to wrong window | The `-w rwn4ai` window name targets a specific wt window. Close all wt instances and retry. |
 | CLI pane is missing | That CLI isn't on PATH. Install it or check `Get-Command <cli-name>`. |
 | Menu looks garbled | Box-drawing characters need a monospace font in Windows Terminal settings. |
