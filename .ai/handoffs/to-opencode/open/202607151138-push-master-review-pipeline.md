@@ -60,6 +60,13 @@ except for one intentionally unstaged cross-CLI file.
 - (a) The output of `git push origin master`.
 - (b) The output of `git log --oneline origin/master..HEAD` after push.
 
+## Resolved blocker
+
+OpenCode previously blocked this push citing staged files, but the primary
+checkout `git status` now shows only `.claude/hooks/stop-reminder.sh` as
+unstaged (the intended cross-CLI handoff). Any formerly-staged items have since
+been committed. Re-verify in step 1, then proceed.
+
 ## When complete (protocol v3)
 
 Recipient self-retires: set Status to `DONE`, then move this file to
