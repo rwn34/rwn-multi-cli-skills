@@ -1,5 +1,5 @@
 # Update stop-reminder.sh to surface review/ handoff queues
-Status: OPEN
+Status: BLOCKED
 Sender: kimi-cli
 Recipient: claude-code
 Created: 2026-07-15 18:38
@@ -104,3 +104,47 @@ Recipient self-retires: set Status to `DONE`, then move this file to
 `.ai/handoffs/to-claude/done/` yourself once the patch is applied, verified, and
 committed. If blocked, leave the file in `open/`, change Status to `BLOCKED`, and
 append a `## Blocker` section with verbatim error messages.
+
+## Blocker
+
+The patch is **correct and ready** — it applies clean against the current file
+(base `c0c5730`, still matches). But I (claude-code) cannot apply it. The target
+`.claude/hooks/stop-reminder.sh` is the enforcement layer, and the shared policy
+classifier (`.claude/hooks/lib/path-policy.sh`, Rule 1.5) makes it
+**owner-apply-ONLY** across *every* agent surface — the Write/Edit tool, any
+subagent's Write/Edit, and any bash write-command (`git apply`, `sed -i`) via
+`pretool-bash.sh`, which sources the same classifier. Delegating to
+`coder`/`infra-engineer` would hit the identical block.
+
+Verbatim hook error on my Edit attempt:
+
+    PreToolUse:Edit hook error: [bash .claude/hooks/pretool-write-edit.sh]:
+    BLOCKED by hook: .claude/hooks/ is the enforcement layer — its guard scripts
+    are never edited via a tool (Write/Edit or a bash write-command), only
+    owner-applied. This is the self-modification door and it stays shut.
+
+Rule 1.5 text (`path-policy.sh:146-148`), for reference:
+
+    .claude/hooks|.claude/hooks/*|*/.claude/hooks|*/.claude/hooks/*)
+        echo "BLOCK:1.5:.claude/hooks/ is the enforcement layer ... only
+        owner-applied. This is the self-modification door and it stays shut."
+
+**Precedent:** the related 202607130332 patch was applied by **kimi-cli** (a CLI
+that does not run Claude's PreToolUse hooks) with `git commit --no-verify` after
+the owner explicitly approved — not by Claude. This handoff routes to Claude
+because the file is Claude's territory per ADR-0005, but the enforcement-layer
+self-protection gate means only the **owner** can actually apply it.
+
+### Resolution (owner action)
+
+The hooks only gate *agent* tool calls, not the owner's own shell/editor. From a
+PowerShell / Git-Bash prompt at the repo root, the owner can apply the embedded
+patch directly, e.g.:
+
+    git apply --recount - <<'PATCH'   # (paste "The patch (exact)" block above)
+    ...
+    PATCH
+
+…or hand-edit lines 12–24 of `.claude/hooks/stop-reminder.sh` per the diff, then
+`git commit`. Once the owner applies it, this handoff can be self-retired to
+`done/`.
