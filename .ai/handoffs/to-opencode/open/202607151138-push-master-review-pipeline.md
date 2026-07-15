@@ -19,10 +19,8 @@ except for one intentionally unstaged cross-CLI file.
 ## Current state
 
 - Local branch: `master`
-- Ahead of `origin/master` by 3 commits:
-  - `e8ff684` docs(activity): log review-pipeline implementation and route stop-reminder update to claude
-  - `b1526b1` feat(handoffs): add /review/ queues for peer + final review pipeline
-  - `c2d81a7` docs(handoffs): rfc to claude on review-queue design for opencode verification
+- Ahead of `origin/master` by several commits (run `git log --oneline
+  origin/master..HEAD` to see the exact list before pushing).
 - Working tree: only `.claude/hooks/stop-reminder.sh` is modified and **unstaged**.
   This is an owner/Claude-territory change routed via
   `.ai/handoffs/to-claude/open/202607151137-update-stop-reminder-for-review-queues.md`.
@@ -40,7 +38,7 @@ except for one intentionally unstaged cross-CLI file.
    ```bash
    git push origin master
    ```
-4. Verify `origin/master` now points to `e8ff684`:
+4. Verify `git log --oneline origin/master..HEAD` returns empty after the push:
    ```bash
    git log --oneline origin/master..HEAD
    ```
