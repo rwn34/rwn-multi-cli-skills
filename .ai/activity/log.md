@@ -1,3 +1,8 @@
+## 2026-07-15 10:01 — kimi-cli
+- Action: Made Selector.ps1 a persistent project explorer; launches open in new WT tabs and return to the refreshed menu instead of exiting. Browse-mode 'c' confirm keeps the browser alive.
+- Files: tools/4ai-panes/Selector.ps1
+- Decisions: Unified single/batch/nodir launches behind Open-ProjectTabs; removed legacy in-place 4grid split behavior; Rebuild-Menu refreshes projects/badges each loop. Also committed the auto-commit dirty-changes feature in scripts/install-template.sh.
+
 ## 2026-07-15 09:34 — kimi-cli
 - Action: Made install-template.sh fully non-interactive by default: auto-merge install branch into original branch, clean up rollback file/branch, and accept suggested agent commands without prompts.
 - Files: scripts/install-template.sh
