@@ -1,3 +1,8 @@
+## 2026-07-15 22:02 — kimi-cli
+- Action: Fixed dispatcher/pane-runner hardcoded origin/master default-base bug: default branch is now discovered offline-first (origin/HEAD -> origin/main -> main -> HEAD), with handoff Base: still winning. Fixed wt-bootstrap.sh cmd_islink false-positive on paths containing "ai". Added regression tests for main-default repos.
+- Files: .ai/tools/dispatch-handoffs.sh; tools/4ai-panes/pane-runner.ps1; scripts/wt-bootstrap.sh; .ai/tests/test-dispatch-worktree.sh; tools/4ai-panes/test-pane-runner.ps1; docs/architecture/0004-worktree-multi-project-topology.md
+- Decisions: Validated each candidate with git rev-parse --verify --quiet; kept explicit Base: override precedence; mirrored logic in PowerShell pane-runner via overridable $script:GetDeclaredBase; committed and pushed to master; sync-4ai-panes-install auto-synced to ~/.rwn-auto/rwn-4AI-panes.
+
 ## 2026-07-15 19:15 — kimi-cli
 - Action: Changed the default 4AI-panes layout: top interactive cockpit strip raised from 50% to 65% tab height, bottom self-driving fleet strip lowered from 50% to 35%. Updated tools/4ai-panes/Selector.ps1 ($topStripFraction 0.50 -> 0.65) and README.md troubleshooting note. Committed and pushed as 5487fce; synced Selector.ps1 and README.md to ~/.rwn-auto.
 - Files: tools/4ai-panes/Selector.ps1; tools/4ai-panes/README.md
