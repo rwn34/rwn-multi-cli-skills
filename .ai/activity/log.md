@@ -1,3 +1,8 @@
+## 2026-07-15 18:49 — kimi-cli
+- Action: Restored .ai/activity/log.md after an auto-CLI run truncated it to 19 lines, committed the recovery + retired handoffs as 3c8241f, and pushed master to GitHub (204c9fe..3c8241f). Synced tools/4ai-panes to ~/.rwn-auto.
+- Files: .ai/activity/log.md; .ai/handoffs/to-claude/done/202607151137-update-stop-reminder-for-review-queues.md; .ai/handoffs/to-kimi/done/202607151144-apply-stop-reminder-review-queue-patch.md; .ai/handoffs/to-opencode/done/202607151138-push-master-review-pipeline.md
+- Decisions: Pushed directly rather than re-routing to OpenCode because the remaining commits were log/handoff cleanup; working tree is now clean and origin/master is up to date.
+
 ## 2026-07-15 18:58 — claude-code
 - Action: Closed out to-claude handoff 202607151137-update-stop-reminder-for-review-queues. Re-verified the enforcement-layer block is still live (attempting the Edit on .claude/hooks/stop-reminder.sh returned the verbatim PreToolUse:Edit "self-modification door and it stays shut" — no Claude surface can apply it, by design). Confirmed the re-route landed: kimi-cli applied the review-queue patch and committed 24597b5 to master, self-retiring its handoff 202607151144 to to-kimi/done/. Retired the to-claude handoff Status=DONE and moved it to to-claude/done/ (move delegated to infra-engineer — orchestrator has no shell; git mv refused under the .ai junction so it was a plain fs move).
 - Files: .ai/handoffs/to-claude/open/…202607151137….md → .ai/handoffs/to-claude/done/…202607151137….md
