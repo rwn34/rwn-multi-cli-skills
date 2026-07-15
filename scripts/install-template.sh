@@ -164,6 +164,41 @@ track() {
   echo "$1" >> "$MANIFEST"
 }
 
+# Exclude framework-managed ephemeral sidecars from the dirty-tree check. These
+# files are created at runtime by the pane-runner / supervisor (heartbeats,
+# claim locks, quarantine markers) and are already gitignored by the current
+# template, but projects installed from older templates may lack the rules. If
+# we did not exclude them here, the installer's own runtime artifacts would
+# block every update. We use .git/info/exclude so the working tree is not
+# dirtied by this pre-flight step itself; merge_gitignore() later persists the
+# rules in the committed .gitignore.
+exclude_runtime_sidecars() {
+  if [ "$DRY_RUN" -eq 1 ]; then
+    return 0
+  fi
+  local exclude="$TARGET/.git/info/exclude"
+  mkdir -p "$(dirname "$exclude")"
+  [ -f "$exclude" ] || touch "$exclude"
+
+  local added=0
+  local line
+  for line in \
+    ".ai/.heartbeat-*.json" \
+    ".ai/.claim-*.json" \
+    ".ai/handoffs/.claims/*" \
+    ".ai/handoffs/.quarantine/*"; do
+    if ! grep -Fxq "$line" "$exclude" 2>/dev/null; then
+      # trailing newline safety
+      [ -n "$(tail -c 1 "$exclude" 2>/dev/null)" ] && echo "" >> "$exclude"
+      echo "$line" >> "$exclude"
+      added=$((added + 1))
+    fi
+  done
+  if [ "$added" -gt 0 ]; then
+    log "Excluded $added ephemeral framework sidecar pattern(s) from dirty-check via .git/info/exclude."
+  fi
+}
+
 # ==========================================================================
 # PHASE 0 — Pre-flight
 # ==========================================================================
@@ -182,6 +217,10 @@ phase0() {
     UPDATE_MODE=0
     log "=== Fresh install: no .ai/.framework-version marker found ==="
   fi
+
+  # Allow the install to proceed even when the only "dirty" files are framework
+  # runtime sidecars that the project is missing .gitignore rules for.
+  exclude_runtime_sidecars
 
   local status
   status="$(git status --porcelain)"
@@ -631,22 +670,25 @@ merge_gitignore() {
 
   [ -f "$dst" ] || touch "$dst"
 
+  local already_merged=0
   if grep -qF "$MARKER gitignore-merge" "$dst" 2>/dev/null; then
-    log ".gitignore already merged by installer — skipping."
-    return 0
+    already_merged=1
   fi
 
   local added=0
-  # tmp output: original + marker + missing lines
+  # tmp output: original + (marker if absent) + missing lines
   local tmp
   tmp="$(mktemp)"
   cat "$dst" > "$tmp"
   # trailing newline safety
   [ -n "$(tail -c 1 "$tmp" 2>/dev/null)" ] && echo "" >> "$tmp"
-  {
-    echo ""
-    echo "$MARKER gitignore-merge (template @ $TEMPLATE_SHA)"
-  } >> "$tmp"
+
+  if [ "$already_merged" -eq 0 ]; then
+    {
+      echo ""
+      echo "$MARKER gitignore-merge (template @ $TEMPLATE_SHA)"
+    } >> "$tmp"
+  fi
 
   local line
   # Read template .gitignore line by line (no mapfile — Git Bash compat).
@@ -662,10 +704,14 @@ merge_gitignore() {
     added=$((added + 1))
   done < "$src"
 
-  if [ "$added" -gt 0 ]; then
+  if [ "$added" -gt 0 ] || [ "$already_merged" -eq 0 ]; then
     mv "$tmp" "$dst"
     track ".gitignore"
-    log "Merged $added new entries into .gitignore"
+    if [ "$added" -gt 0 ]; then
+      log "Merged $added new entries into .gitignore"
+    else
+      log ".gitignore already contains all template entries — marker added."
+    fi
   else
     rm -f "$tmp"
     log ".gitignore already contains all template entries — no merge needed."

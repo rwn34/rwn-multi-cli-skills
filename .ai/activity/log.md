@@ -1,3 +1,8 @@
+## 2026-07-15 09:11 — kimi-cli
+- Action: Fixed install-template.sh so framework runtime heartbeat/claim sidecars no longer block install/upgrade on projects with older .gitignore rules.
+- Files: scripts/install-template.sh
+- Decisions: merge_gitignore now always backfills missing template entries; Phase 0 temporarily excludes known ephemeral sidecars via .git/info/exclude so the current install can proceed, then the persisted .gitignore rules keep the tree clean going forward.
+
 ## 2026-07-15 08:25 — kimi-cli
 - Action: Fixed Install-Framework-In-NewTab (i key) WT command — Windows Terminal splits on `;`, so the PowerShell command is now written to a temp .ps1 script and the tab runs that via -File.
 - Files: tools/4ai-panes/Selector.ps1
