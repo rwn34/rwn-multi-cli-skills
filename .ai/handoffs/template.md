@@ -5,6 +5,9 @@ Recipient: <claude-code | kimi-cli | kiro-cli | opencode>
 Created: YYYY-MM-DD HH:MM
 Auto: yes
 Risk: <A | B | C>
+# ReviewBy: <cli>       # optional: executor emits review handoff to to-<cli>/review/ on done
+# FinalReview: <cli>    # optional: reviewer emits final-review handoff to to-<cli>/review/
+# Deploy: yes           # optional: final reviewer emits deploy handoff to to-opencode/open/
 
 <!-- Protocol v3 (2026-07-09; supersedes v2 2026-07-08):
      Recipient self-retires the handoff to done/ on completion; sender validates

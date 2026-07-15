@@ -586,14 +586,25 @@ $script:TestPidAlive = {
 
 # -- Handoff inbox (IDLE poll - filesystem only) --
 
-# Return the path of the first qualifying handoff in this CLI's open/ inbox, or
-# $null. Qualifying = Auto: yes AND Status: OPEN AND Risk: A|B (the exact gate
-# dispatch-handoffs.sh uses). Risk C / missing Risk is human-gated -> skipped.
+# Return the path of the first qualifying handoff in this CLI's open/ or review/
+# inbox, or $null. Qualifying = Auto: yes AND Status: OPEN AND Risk: A|B (the
+# exact gate dispatch-handoffs.sh uses). Risk C / missing Risk is human-gated ->
+# skipped.
+#
+# open/ and review/ are merged and sorted by filename (timestamp prefix), so the
+# oldest qualifying handoff wins regardless of queue. This keeps the review
+# pipeline moving without starving new work.
 function Get-QualifyingHandoff {
     param([string]$ProjectDir, [string]$CliName)
-    $openDir = Join-Path $ProjectDir ".ai/handoffs/to-$CliName/open"
-    if (-not (Test-Path $openDir)) { return $null }
-    $files = Get-ChildItem -Path $openDir -Filter "*.md" -File -ErrorAction SilentlyContinue | Sort-Object Name
+    $allFiles = @()
+    foreach ($sub in @('open', 'review')) {
+        $dir = Join-Path $ProjectDir ".ai/handoffs/to-$CliName/$sub"
+        if (Test-Path $dir) {
+            $allFiles += Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue
+        }
+    }
+    if ($allFiles.Count -eq 0) { return $null }
+    $files = $allFiles | Sort-Object Name
     foreach ($f in $files) {
         $head = Get-Content -Path $f.FullName -TotalCount 20 -ErrorAction SilentlyContinue
         if (-not $head) { continue }
@@ -604,6 +615,127 @@ function Get-QualifyingHandoff {
         return $f.FullName
     }
     return $null
+}
+
+# Read a single header field from a handoff file. Returns the value, or $null if
+# not present. Handles "Field: value" and "# Field: value" forms.
+function Read-HandoffField {
+    param([string]$HandoffPath, [string]$FieldName)
+    if (-not (Test-Path $HandoffPath)) { return $null }
+    $pattern = "^\s*#?\s*${FieldName}:\s*(.+?)\s*$"
+    $line = Get-Content -Path $HandoffPath -TotalCount 30 -ErrorAction SilentlyContinue | Where-Object { $_ -match $pattern } | Select-Object -First 1
+    if ($line) {
+        return ($line -replace $pattern, '$1').Trim()
+    }
+    return $null
+}
+
+# After a handoff is completed, optionally emit the next stage of the review/
+# deploy pipeline. This is generic: the pane-runner emits the next handoff based
+# on metadata in the completed file, so individual CLIs do not need custom logic.
+function Emit-NextStageHandoff {
+    param([string]$ProjectDir, [string]$CliName, [string]$HandoffPath)
+    $base = Split-Path -Leaf $HandoffPath
+    $donePath = Join-Path $ProjectDir ".ai/handoffs/to-$CliName/done/$base"
+    if (-not (Test-Path $donePath)) {
+        # The recipient may have renamed or not moved it; nothing to route from.
+        return
+    }
+
+    $head = Get-Content -Path $donePath -TotalCount 30 -ErrorAction SilentlyContinue
+    if (-not ($head -match '^\s*#?\s*Status:\s*DONE')) {
+        # Only route on successful completion.
+        return
+    }
+
+    $ts = (Get-Date -Format 'yyyyMMddHHmm')
+    $slug = [System.IO.Path]::GetFileNameWithoutExtension($base)
+
+    # Helper to write a handoff file.
+    function Write-Handoff($Recipient, $SubDir, $Title, $BodyLines) {
+        $dir = Join-Path $ProjectDir ".ai/handoffs/to-$Recipient/$SubDir"
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $path = Join-Path $dir "$ts-$slug.md"
+        # De-duplicate: if a same-second handoff with this slug already exists,
+        # append a suffix. Collisions are vanishingly rare but possible.
+        $suffix = ''
+        $counter = 1
+        while (Test-Path $path) {
+            $counter++
+            $path = Join-Path $dir "$ts-$slug-$counter.md"
+        }
+        $content = @(
+            "# $Title",
+            "Status: OPEN",
+            "Sender: $CliName-cli",
+            "Recipient: $Recipient-cli",
+            "Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
+            "Auto: yes",
+            "Risk: B",
+            "ReviewOf: $base"
+            ""
+        ) + $BodyLines
+        [System.IO.File]::WriteAllLines($path, $content)
+        Write-Host "-- emitted next-stage handoff: $(Split-Path $path -Leaf) -> to-$Recipient/$SubDir/ --" -ForegroundColor Cyan
+    }
+
+    $reviewBy = Read-HandoffField -HandoffPath $donePath -FieldName 'ReviewBy'
+    if ($reviewBy -and @('claude','kimi','kiro','opencode') -contains $reviewBy.ToLower()) {
+        $reviewBy = $reviewBy.ToLower()
+        Write-Handoff -Recipient $reviewBy -SubDir 'review' -Title "Review: $slug" -BodyLines @(
+            "## Goal",
+            "Review the completed work from $base and verify it meets the spec.",
+            "",
+            "## Original handoff",
+            "- File: .ai/handoffs/to-$CliName/done/$base",
+            "",
+            "## Verification",
+            "- [ ] Read the original handoff and the touched files.",
+            "- [ ] Run any verification steps listed in the original handoff.",
+            "- [ ] If approved, set Status to DONE and move this file to to-$reviewBy/done/.",
+            "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the original executor's open/ queue.",
+            ""
+        )
+    }
+
+    $finalReview = Read-HandoffField -HandoffPath $donePath -FieldName 'FinalReview'
+    if ($finalReview -and @('claude','kimi','kiro','opencode') -contains $finalReview.ToLower()) {
+        $finalReview = $finalReview.ToLower()
+        Write-Handoff -Recipient $finalReview -SubDir 'review' -Title "Final review: $slug" -BodyLines @(
+            "## Goal",
+            "Final review of the work from $base before release/deploy.",
+            "",
+            "## Original handoff",
+            "- File: .ai/handoffs/to-$CliName/done/$base",
+            "",
+            "## Verification",
+            "- [ ] Confirm peer review passed (if applicable).",
+            "- [ ] Confirm the work is safe to release/deploy.",
+            "- [ ] If approved, set Status to DONE and move this file to to-$finalReview/done/.",
+            "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the appropriate executor's open/ queue.",
+            ""
+        )
+    }
+
+    $deploy = Read-HandoffField -HandoffPath $donePath -FieldName 'Deploy'
+    if ($deploy -and $deploy.Trim().ToLower() -eq 'yes') {
+        Write-Handoff -Recipient 'opencode' -SubDir 'open' -Title "Deploy: $slug" -BodyLines @(
+            "## Goal",
+            "Deploy the work from $base to the target environment.",
+            "",
+            "## Original handoff",
+            "- File: .ai/handoffs/to-$CliName/done/$base",
+            "",
+            "## Steps",
+            "1. Verify the deployment target and method from the original handoff.",
+            "2. Execute the deploy.",
+            "3. Verify the deploy succeeded.",
+            "",
+            "## When complete",
+            "Set Status to DONE and move this file to to-opencode/done/.",
+            ""
+        )
+    }
 }
 
 # Durable done-signal: the handoff moved out of open/ (to done/). No output
@@ -1466,6 +1598,9 @@ function Start-PaneRunner {
                         Clear-HandoffAttempts -Recipient $Cli -HandoffPath $handoff
                         # DONE notify (fail-open).
                         try { Send-FleetNotification -Kind done -Project $proj -Handoff $hbase -Cli $Cli -Owner $Owner | Out-Null } catch {}
+                        # Review / deploy pipeline: emit the next-stage handoff if the
+                        # completed handoff requests one (ReviewBy, FinalReview, Deploy).
+                        try { Emit-NextStageHandoff -ProjectDir $ProjectDir -CliName $Cli -HandoffPath $handoff } catch {}
                     } else {
                         # MAXED (still OPEN after the continue cap) or WORKTREE_FAIL
                         # (worktree/branch could not be established — the CLI was

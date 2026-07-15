@@ -31,16 +31,24 @@ Claude to update something in `.claude/` or in Claude's portion of the shared do
     ├── template.md                  copy-paste starting shape for new handoffs
     ├── to-claude/
     │   ├── open/                    handoffs for Claude Code to process
+    │   ├── review/                  verification handoffs routed to Claude Code
     │   └── done/                    handoffs Claude has completed + sender has validated
     ├── to-kimi/
     │   ├── open/
+    │   ├── review/
     │   └── done/
     ├── to-kiro/
     │   ├── open/
+    │   ├── review/
     │   └── done/
     └── to-opencode/            (renamed from to-crush/ 2026-07-09; done/ history preserved)
         ├── open/
+        ├── review/
         └── done/
+
+`open/` and `review/` are both polled by the auto panes. `review/` holds
+verification work produced by an executor after it finishes a task — for example,
+a Kiro task may result in a `to-kimi/review/` handoff so Kimi checks Kiro's work.
 
 ## Filename convention
 
@@ -126,6 +134,36 @@ line is treated as C — conservative by default.
 > `dispatch-handoffs.sh --exec` cycle (so every auto-dispatch across all CLIs
 > self-heals a forgotten step-4 self-retire), and can also be run standalone.
 > It is idempotent and fail-open (always exits 0).
+
+## Review pipeline (peer review before release)
+
+The `review/` queue is a separate lane for verification work. It lets executors
+(Kimi/Kiro) review each other's output and lets Claude give final approval before
+OpenCode deploys.
+
+Typical flow:
+
+1. Task handoff: `to-kimi/open/202607151200-fix-foo.md` (ReviewBy: kiro)
+2. Kimi executes the task and self-retires to `to-kimi/done/`.
+3. Kimi also emits a review handoff: `to-kiro/review/202607151300-review-kimi-fix-foo.md`.
+4. Kiro reviews. If approved, Kiro emits `to-claude/review/202607151400-final-review-fix-foo.md`.
+5. Claude final-reviews. If approved and the task needs release, Claude emits
+   `to-opencode/open/202607151500-deploy-fix-foo.md`.
+6. OpenCode deploys and self-retires to `to-opencode/done/`.
+
+A reviewer may reject by moving the handoff back to the original executor's
+`open/` queue with `Status: BLOCKED` and a `## Blocker` section explaining what
+must be fixed.
+
+Review handoffs use the same status block as regular handoffs (`Auto:`, `Risk:`,
+`Status:`). Optional routing fields in the status block:
+
+- `ReviewBy: <cli>` — the executor that completed the original task should emit
+  a review handoff to `to-<cli>/review/` on completion.
+- `FinalReview: <cli>` — the reviewer should emit a final-review handoff to
+  `to-<cli>/review/` after approving.
+- `Deploy: yes` — the final reviewer should emit a deploy handoff to
+  `to-opencode/open/` after approving.
 
 ## Polling — who watches the queues (P4, 2026-07-09)
 

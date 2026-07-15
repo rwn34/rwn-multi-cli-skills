@@ -199,27 +199,29 @@ main() {
   printf '%-9s | %-30s | %-5s | %s\n' "CLI" "heartbeat" "queue" "verdict"
   printf -- '----------+--------------------------------+-------+--------\n'
 
-  local bad=0 cli open_dir f
+  local bad=0 cli to_dir f
   shopt -s nullglob
-  for open_dir in "$root"/.ai/handoffs/to-*/open; do
-    [ -d "$open_dir" ] || continue
-    cli="$(basename "$(dirname "$open_dir")")"; cli="${cli#to-}"
+  for to_dir in "$root"/.ai/handoffs/to-*; do
+    [ -d "$to_dir" ] || continue
+    cli="$(basename "$to_dir")"; cli="${cli#to-}"
 
     heartbeat_state "$cli" "$root"
 
     local q=0 unclaimed_aged=0 wedge_detail="" age
-    for f in "$open_dir"/*.md; do
-      [ -f "$f" ] || continue
-      is_qualifying "$f" || continue
-      quarantine_active "$cli" "$f" "$root" && continue
-      q=$((q + 1))
-      if ! claim_live "$cli" "$f" "$root"; then
-        age="$(handoff_age_min "$f")"
-        if [ -n "$age" ] && [ "$age" -gt "$STALE_MINUTES" ]; then
-          unclaimed_aged=$((unclaimed_aged + 1))
-          wedge_detail="$(basename "$f") (${age}m unclaimed)"
+    for sub in open review; do
+      for f in "$to_dir/$sub"/*.md; do
+        [ -f "$f" ] || continue
+        is_qualifying "$f" || continue
+        quarantine_active "$cli" "$f" "$root" && continue
+        q=$((q + 1))
+        if ! claim_live "$cli" "$f" "$root"; then
+          age="$(handoff_age_min "$f")"
+          if [ -n "$age" ] && [ "$age" -gt "$STALE_MINUTES" ]; then
+            unclaimed_aged=$((unclaimed_aged + 1))
+            wedge_detail="$(basename "$f") (${age}m unclaimed)"
+          fi
         fi
-      fi
+      done
     done
 
     local verdict

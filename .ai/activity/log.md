@@ -1,3 +1,8 @@
+## 2026-07-15 18:24 — claude-code
+- Action: Reviewed Kimi's RFC on post-execution verification queues; answered all 5 questions and self-retired the handoff (DONE, moved open/→done/ via infra-engineer for the file delete since I have no shell).
+- Files: .ai/handoffs/to-claude/done/202607151108-review-queue-design-proposal.md
+- Decisions: Rejected the proposed `open/review/done` directory triad as over-engineered — recommended the lighter "review-is-a-handoff" model instead (verification is a task, belongs in existing `to-<reviewer>/open/` with an optional `Type: review` tag; zero pane-runner/dispatcher/reconciler/fleet-health changes). Executor auto-emits on Tier-B/C shared-state mutations only (push-to-master, merge, release, deploy), routed to claude for DevOps/release (author≠reviewer). Did NOT spawn implementation handoffs — a shared-protocol change wants fleet concurrence + owner nod first.
+
 ## 2026-07-15 18:09 — kimi-cli
 - Action: Sent RFC handoff to claude-auto asking for opinion on adding .ai/handoffs/to-<cli>/review/ queues for post-execution verification of OpenCode work.
 - Files: .ai/handoffs/to-claude/open/202607151108-review-queue-design-proposal.md

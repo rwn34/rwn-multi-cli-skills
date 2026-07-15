@@ -404,23 +404,26 @@ acquire_claim() {
 }
 
 found=0
-for dir in "$root"/.ai/handoffs/to-*/open; do
-    [ -d "$dir" ] || continue
-    cli=$(basename "$(dirname "$dir")")   # to-<cli>
+for to_dir in "$root"/.ai/handoffs/to-*; do
+    [ -d "$to_dir" ] || continue
+    cli=$(basename "$to_dir")   # to-<cli>
     cli="${cli#to-}"
     # Queue scoping (--only <cli>): skip queues other than the requested one.
     [ -n "$ONLY" ] && [ "$cli" != "$ONLY" ] && continue
-    for f in "$dir"/*.md; do
-        [ -f "$f" ] || continue
-        # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
-        head -20 "$f" | grep -qiE '^Auto:[[:space:]]*yes' || continue
-        head -20 "$f" | grep -qiE '^Status:[[:space:]]*OPEN' || continue
-        # Risk gate (protocol v2): only Risk A/B auto-dispatch. Missing Risk = C.
-        if ! head -20 "$f" | grep -qiE '^Risk:[[:space:]]*[AB][[:space:]]*$'; then
-            echo "HOLD  [$cli] ${f#$root/} — Risk C or no Risk field (human relays)"
-            continue
-        fi
-        found=$((found+1))
+    for sub in open review; do
+        dir="$to_dir/$sub"
+        [ -d "$dir" ] || continue
+        for f in "$dir"/*.md; do
+            [ -f "$f" ] || continue
+            # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
+            head -20 "$f" | grep -qiE '^Auto:[[:space:]]*yes' || continue
+            head -20 "$f" | grep -qiE '^Status:[[:space:]]*OPEN' || continue
+            # Risk gate (protocol v2): only Risk A/B auto-dispatch. Missing Risk = C.
+            if ! head -20 "$f" | grep -qiE '^Risk:[[:space:]]*[AB][[:space:]]*$'; then
+                echo "HOLD  [$cli] ${f#$root/} — Risk C or no Risk field (human relays)"
+                continue
+            fi
+            found=$((found+1))
         rel="${f#$root/}"
         bin=$(bin_for "$cli")
         if ! command -v "$bin" >/dev/null 2>&1; then
@@ -557,11 +560,12 @@ for dir in "$root"/.ai/handoffs/to-*/open; do
             echo "WOULD DISPATCH [$cli] $rel"
             echo "    $cmd"
         fi
+        done
     done
 done
 
 if [ "$found" -eq 0 ]; then
-    echo "No open handoffs marked 'Auto: yes'."
+    echo "No open/review handoffs marked 'Auto: yes'."
 fi
 [ "$MODE" = "dry-run" ] && [ "$found" -gt 0 ] && echo "(dry-run — pass --exec to launch)"
 if [ "$MODE" = "exec" ] && [ "$EXEC_FAILED" -gt 0 ]; then
