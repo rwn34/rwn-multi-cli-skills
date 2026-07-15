@@ -377,14 +377,19 @@ function Get-DeclaredBase-Real {
     }
 
     # No explicit Base: — discover the repo's default branch. Order of preference,
-    # first resolvable wins: origin/HEAD, origin/main, local main, HEAD.
+    # first resolvable wins: fresh origin fetch, origin/HEAD, origin/main, local main, HEAD.
     $projectDir = Split-Path -Path $HandoffPath -Parent
     $projectDir = Split-Path -Path $projectDir -Parent      # .ai/handoffs
     $projectDir = Split-Path -Path $projectDir -Parent      # .ai
     $projectDir = Split-Path -Path $projectDir -Parent      # project root
 
     Push-Location $projectDir
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
+        git fetch origin *>$null
+        # Fetch failure is not fatal — stale cached refs are still declared bases.
+
         $sym = git symbolic-ref refs/remotes/origin/HEAD 2>$null
         $rc = $LASTEXITCODE
         if ($rc -eq 0 -and $sym) {
@@ -409,6 +414,7 @@ function Get-DeclaredBase-Real {
             if ($LASTEXITCODE -eq 0) { return $candidate }
         }
     } finally {
+        $ErrorActionPreference = $prevEAP
         Pop-Location
     }
 

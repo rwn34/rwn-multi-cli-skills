@@ -519,6 +519,29 @@ $habMain = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-main.md'
 ) -join "`n" | Set-Content -Path $habMain -Encoding utf8
 Assert-Equal 'origin/main' (Get-DeclaredBase-Real -HandoffPath $habMain) 'ab: repo default=main -> origin/main'
 
+# Stale local refs are refreshed before resolution: push a new commit, rewind
+# the local origin/main ref and break origin/HEAD, then prove Get-DeclaredBase
+# fetches and returns origin/main pointing at the latest commit.
+'second' | Set-Content -Path (Join-Path $infoMain.Project 'second.txt')
+git -C $infoMain.Project add -A
+git -C $infoMain.Project commit --quiet -m 'second on main'
+$latestMainSha = git -C $infoMain.Project rev-parse HEAD
+git -C $infoMain.Project push --quiet origin main
+# Rewind local refs to simulate a stale/missing cache.
+git -C $infoMain.Project update-ref refs/remotes/origin/main "$($latestMainSha.Substring(0,7))~1"
+git -C $infoMain.Project symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/does-not-exist
+
+$habStale = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-stale.md'
+@(
+    "# Test handoff ab-stale", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habStale -Encoding utf8
+$resolvedStale = Get-DeclaredBase-Real -HandoffPath $habStale
+Assert-Equal 'origin/main' $resolvedStale 'ab-stale: resolves origin/main after fetch'
+$resolvedStaleSha = git -C $infoMain.Project rev-parse "$resolvedStale"
+Assert-Equal $latestMainSha $resolvedStaleSha 'ab-stale: resolved base points at latest commit'
+
 Remove-Item -Path $habExplicit -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $infoMaster.Project, $infoMaster.Origin -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path $infoMain.Project, $infoMain.Origin -Recurse -Force -ErrorAction SilentlyContinue

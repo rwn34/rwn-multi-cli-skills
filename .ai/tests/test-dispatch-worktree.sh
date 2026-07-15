@@ -318,6 +318,37 @@ else
 fi
 
 # ==============================================================================
+# 4d. base_for() refreshes stale/missing local refs before resolving. Push a new
+#     commit to origin/main, rewind the local cache, delete origin/HEAD, then
+#     prove the dispatcher fetches and still cuts from the latest origin/main.
+# ==============================================================================
+echo "second" > "$PROJECT_MAIN/second.txt"
+git -C "$PROJECT_MAIN" add second.txt
+git -C "$PROJECT_MAIN" commit --quiet -m "second on main"
+LATEST_MAIN="$(git -C "$PROJECT_MAIN" rev-parse HEAD)"
+git -C "$PROJECT_MAIN" push --quiet origin main
+
+# Rewind local refs to simulate a stale primary checkout / pruned worktree.
+git -C "$PROJECT_MAIN" update-ref refs/remotes/origin/main "${LATEST_MAIN}~1"
+git -C "$PROJECT_MAIN" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/does-not-exist
+
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110004-t4d
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+) >"$LOGS/t4d-dispatcher.out" 2>&1
+rc4d=$?
+check "test4d: dispatcher exits 0 despite stale local refs" "$([ "$rc4d" -eq 0 ] && echo 0 || echo 1)"
+
+wt_kimi_main4d="$WORK/.wt/project-main/kimi"
+if [ -d "$wt_kimi_main4d" ]; then
+    branch_head_4d="$(git -C "$wt_kimi_main4d" rev-parse --verify --quiet "exec/kimi/202607110004-t4d" 2>/dev/null)"
+    check "test4d: exec/kimi/<slug> branch exists" "$([ -n "$branch_head_4d" ] && echo 0 || echo 1)"
+    check "test4d: branch was cut from latest origin/main after fetch" "$([ "$branch_head_4d" = "$LATEST_MAIN" ] && echo 0 || echo 1)"
+else
+    check "test4d: kimi worktree exists" 1
+fi
+
+# ==============================================================================
 # 5. A stale/pruned worktree does not wedge the dispatch.
 # ======================================================================
 # Simulate the exact staleness class the handoff calls out: the worktree

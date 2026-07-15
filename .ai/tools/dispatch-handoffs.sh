@@ -346,13 +346,19 @@ base_for() {
 
     # No explicit Base: — discover the repo's default branch. Order of
     # preference, first resolvable wins:
-    #   1. Remote default branch head (origin/HEAD), offline first.
-    #   2. If origin/HEAD is not cached, best-effort auto-detect over network.
-    #   3. origin/main.
-    #   4. Local main.
-    #   5. HEAD.
+    #   1. Best-effort fetch so cached origin/HEAD and origin/<branch> refs are
+    #      as fresh as possible before we choose. A failed fetch is not fatal.
+    #   2. Remote default branch head (origin/HEAD), offline first.
+    #   3. If origin/HEAD is not cached, best-effort auto-detect over network.
+    #   4. origin/main.
+    #   5. Local main.
+    #   6. HEAD.
     # Each candidate is validated with `git rev-parse --verify --quiet` so a
     # non-existent ref is skipped, never passed to the branch cut.
+    if ! git -C "$root" fetch origin >/dev/null 2>&1; then
+        echo "WARN: git fetch origin failed in $root — using cached refs for base resolution" >&2
+    fi
+
     sym="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
     if [ -n "$sym" ] && git -C "$root" rev-parse --verify --quiet "$sym^{commit}" >/dev/null 2>&1; then
         echo "$sym"
