@@ -21,7 +21,7 @@ name: release
 # Release for the target tag already exists (queried live via `gh release
 # view`), so a re-pushed version or a retried run is a clean no-op — never a
 # partial/duplicate re-publish. Serialization is enforced by the workflow-level
-# `concurrency` block so two master pushes cannot race the tag-create.
+# `concurrency` block so two main pushes cannot race the tag-create.
 #
 # Pre-release detection is purely tag-shape based — any tag containing "-"
 # (e.g. v0.0.1-pre.1, v0.1.0-rc.1) is marked pre-release.
@@ -32,16 +32,16 @@ name: release
 on:
   push:
     branches:
-      - master
+      - main
     tags:
       - 'v*'
 
 permissions:
   contents: write
 
-# Serialize release runs so two near-simultaneous master pushes cannot both
+# Serialize release runs so two near-simultaneous main pushes cannot both
 # reach the tag-create / publish steps and collide on the same tag or assets.
-# Group by ref: every master push shares one group and queues; a manually
+# Group by ref: every main push shares one group and queues; a manually
 # pushed tag runs under its own group. cancel-in-progress is FALSE on purpose —
 # a queued run must wait for an in-flight publish to finish rather than abort
 # it, so we never leave a half-uploaded release behind. The decide-step

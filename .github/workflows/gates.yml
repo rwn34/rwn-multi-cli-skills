@@ -7,17 +7,17 @@ name: gates
 # on PATH), so the three local "git/npm not on PATH" env-fails PASS here.
 #
 # BRANCH PROTECTION (repo setting, not a file): to make this a REQUIRED status
-# check, enable branch protection on `master` in GitHub repo Settings > Branches
+# check, enable branch protection on `main` in GitHub repo Settings > Branches
 # > Branch protection rules > Require status checks to pass > select "gates".
 # This cannot be committed to the repo; it must be set in the GitHub UI/API.
 
 on:
   pull_request:
     branches:
-      - master
+      - main
   push:
     branches:
-      - master
+      - main
 
 jobs:
   gates:
@@ -94,13 +94,13 @@ jobs:
         run: bash .ai/tools/check-tier-restatements.sh
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
-      # branches, so this is a DETECTIVE check on the resulting master push —
-      # comparing the previous master tip (github.event.before) to the new one.
+      # branches, so this is a DETECTIVE check on the resulting main push —
+      # comparing the previous main tip (github.event.before) to the new one.
       # It runs LAST, after every substantive test above (drift / hooks /
       # backstop / installer), so a missing bump can never mask a real failure
       # (the old PR-time placement did exactly that). It is NOT run on PRs:
       # feature branches deliberately do not bump. Making this a REQUIRED status
       # check is branch-protection (a repo setting), out of this file's scope.
-      - name: Framework version-bump check (detective — master push only)
+      - name: Framework version-bump check (detective — main push only)
         if: github.event_name == 'push'
         run: bash scripts/check-version-bump.sh "${{ github.event.before }}"
