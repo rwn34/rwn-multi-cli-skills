@@ -1,3 +1,8 @@
+## 2026-07-17 06:15 (UTC+7) — opencode-auto
+- Action: Completed master→main default-branch migration and post-migration reconciliation. Merged PR #101, renamed GitHub default branch to main, repointed origin/HEAD, recreated the four executor worktrees from origin/main, and fixed the sync-install test to expect main. Emitted verification handoff to kimi-cockpit.
+- Files: `.ai/handoffs/to-opencode/done/202607161305-execute-master-to-main-migration.md`; `.ai/handoffs/to-opencode/done/202607162033-github-ops-master-main-migration.md`; `.ai/handoffs/to-kimi/open/202607162315-verify-master-to-main-migration.md`; `scripts/test-sync-4ai-panes-install.ps1`
+- Decisions: Removed stale executor worktrees and re-bootstrapped them because in-place rebase was blocked by junction/skip-worktree state; this destroyed untracked `.ai/` files that existed only in those worktrees. Left the 3 `av4` pane-runner test failures for kimi-cockpit to judge rather than masking them.
+
 ## 2026-07-16 20:45 (UTC+7) — kimi-cli
 - Action: Killed confirmed-stale opencode.exe child (PID 23820) under pane-runner PID 78056. Two signals: heartbeat 49m old and the opencode child had made no progress on the master-to-main migration handoff. Pane-runner respawned opencode.exe (PID 25272) with a resume prompt for the same handoff.
 - Files: .ai/.heartbeat-opencode.json; .ai/handoffs/.claims/opencode__202607161305-execute-master-to-main-migration.claim.json

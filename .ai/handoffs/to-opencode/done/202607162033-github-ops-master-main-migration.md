@@ -1,4 +1,5 @@
 # GitHub operations and verification for master→main migration
+Status: DONE
 
 ## Sender: opencode-auto
 ## Recipient: opencode-auto

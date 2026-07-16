@@ -1,7 +1,7 @@
 # test-sync-4ai-panes-install.ps1 - Pester-free harness for the provenance guard
 # in scripts/sync-4ai-panes-install.ps1 (hole 1, 2026-07-13).
 #
-# Builds a throwaway git repo (primary checkout on master) + a linked worktree
+# Builds a throwaway git repo (primary checkout on main) + a linked worktree
 # in a temp dir, then drives the REAL sync script as a child process against
 # throwaway install dirs. Asserts:
 #   (a) linked worktree        -> REFUSED, exit 0, nothing copied, log written
@@ -115,8 +115,8 @@ function Get-CopiedCount {
 try {
     # Build the primary repo: the sync script under scripts/, the real tool
     # files under tools/4ai-panes/ (the allowlist requires ALL twelve present),
-    # one commit on master.
-    & git init -b master $repo 2>$null | Out-Null
+    # one commit on main.
+    & git init -b main $repo 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'git init failed' }
     Invoke-Git $repo @('config', 'user.email', 'sync-test@example.com') | Out-Null
     Invoke-Git $repo @('config', 'user.name', 'sync-test') | Out-Null
@@ -159,21 +159,21 @@ try {
     Assert-Contains $rC.Text 'REFUSED' 'c2: detached HEAD refused'
     Assert-Contains $rC.Text 'branch=DETACHED' 'c3: refusal marks the detached HEAD'
 
-    # (d) primary checkout on master -> PROCEEDS
-    Invoke-Git $repo @('checkout', 'master') | Out-Null
+    # (d) primary checkout on main -> PROCEEDS
+    Invoke-Git $repo @('checkout', 'main') | Out-Null
     $tD = New-Target 'install-d'
     $rD = Invoke-Sync $repoSync $tD
-    Assert-Equal 0 $rD.Code 'd1: primary+master exits 0'
-    Assert-True (-not $rD.Text.Contains('REFUSED')) 'd2: no refusal on primary+master'
+    Assert-Equal 0 $rD.Code 'd1: primary+main exits 0'
+    Assert-True (-not $rD.Text.Contains('REFUSED')) 'd2: no refusal on primary+main'
     Assert-True (Test-Path (Join-Path $tD 'Selector.ps1') -PathType Leaf) 'd3: tool files copied'
     Assert-Equal 17 (Get-CopiedCount $tD) 'd4: all 17 allowlisted files copied'
-    Assert-Contains (Get-LogText $tD) 'branch=master primary=yes' 'd5: log carries branch=master primary=yes'
+    Assert-Contains (Get-LogText $tD) 'branch=main primary=yes' 'd5: log carries branch=main primary=yes'
 
     # (h) provenance sidecar written on a real sync
     $provFile = Join-Path $tD '.sync-provenance.json'
     Assert-True (Test-Path $provFile -PathType Leaf) 'h1: .sync-provenance.json written on sync'
     $prov = Get-Content -LiteralPath $provFile -Raw | ConvertFrom-Json
-    Assert-Equal 'master' $prov.branch 'h2: sidecar records branch=master'
+    Assert-Equal 'main' $prov.branch 'h2: sidecar records branch=main'
     Assert-True ($prov.source_repo.Length -gt 0) 'h3: sidecar records source_repo'
 
     # (e) SYNC_FORCE=1 overrides the worktree refusal

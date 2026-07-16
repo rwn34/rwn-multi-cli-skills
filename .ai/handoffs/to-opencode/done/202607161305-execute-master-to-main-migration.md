@@ -1,5 +1,5 @@
 # Execute default-branch migration `master` → `main`
-Status: IN_PROGRESS (PR created, awaiting merge)
+Status: DONE
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto
