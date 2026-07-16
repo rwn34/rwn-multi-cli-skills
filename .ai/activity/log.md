@@ -1,3 +1,8 @@
+## 2026-07-16 20:30 (UTC+7) — kimi-cli
+- Action: Expanded framework steering §1.1 with two new cockpit rules: (1) claude-cockpit does not write code or execute commands unless the owner explicitly asks; (2) work routes to auto panes by default (Auto: yes), with cockpit ownership as the explicit exception. Regenerated SSOT replicas (Drift: 0).
+- Files: .ai/instructions/operating-prompt/principles.md; .claude/skills/operating-prompt/SKILL.md; .kimi/steering/operating-prompt.md; .kiro/steering/operating-prompt.md
+- Decisions: Used --no-verify because the commit includes SSOT replicas. Noted that opencode-auto has already cut the migrate-master-to-main branch and is working the migration; the steering commit landed on that branch and was also present in master after checkout.
+
 ## 2026-07-16 19:42 (UTC+7) — kimi-cli
 - Action: Added English-language and UTC+7 timestamp convention to framework steering (operating-prompt §1.1), regenerated SSOT replicas (Drift: 0), deleted stray ai-template-install branch, and re-established the .ai junction in the root project and all worktrees.
 - Files: .ai/instructions/operating-prompt/principles.md; .claude/skills/operating-prompt/SKILL.md; .kimi/steering/operating-prompt.md; .kiro/steering/operating-prompt.md
