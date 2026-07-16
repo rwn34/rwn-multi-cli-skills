@@ -1,3 +1,8 @@
+## 2026-07-16 20:45 (UTC+7) — kimi-cli
+- Action: Killed confirmed-stale opencode.exe child (PID 23820) under pane-runner PID 78056. Two signals: heartbeat 49m old and the opencode child had made no progress on the master-to-main migration handoff. Pane-runner respawned opencode.exe (PID 25272) with a resume prompt for the same handoff.
+- Files: .ai/.heartbeat-opencode.json; .ai/handoffs/.claims/opencode__202607161305-execute-master-to-main-migration.claim.json
+- Decisions: Killed only the CLI child, not the pane-runner/supervisor, per SSOT §8.1. Left the claim sidecar in place so the pane-runner resumes the same handoff rather than treating it as unclaimed. Continuing to monitor.
+
 ## 2026-07-16 20:40 (UTC+7) — kimi-cli
 - Action: Updated framework steering §1.1 to clarify that both claude-cockpit and claude-auto must not write source code, execute commands, or perform deploys unless the owner explicitly asks. Implementation stays with kimi/kiro auto; deploy/GitHub ops stays with opencode auto. Retained English-reply, UTC+7 timestamp, and auto-handoff-default rules. Regenerated SSOT replicas (Drift: 0).
 - Files: .ai/instructions/operating-prompt/principles.md; .claude/skills/operating-prompt/SKILL.md; .kimi/steering/operating-prompt.md; .kiro/steering/operating-prompt.md
