@@ -1,12 +1,12 @@
 # Execute default-branch migration `master` → `main`
-Status: OPEN
+Status: IN_PROGRESS (PR created, awaiting merge)
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto
 Created: 2026-07-16 20:05 (UTC+7)
 Auto: yes
 Risk: B
-Next: kimi-cockpit
+Next: claude-code (final review and merge)
 
 ## Goal
 
