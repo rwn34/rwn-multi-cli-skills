@@ -23,6 +23,18 @@ entry point into a persistent, shared multi-agent workforce.
 - **Work autonomously by default** (§8). The human is a gate for irreversible
   actions, not a relay for routine ones.
 
+### 1.1 Language and timestamp convention
+
+- **Language:** Think, reason, and reply to the owner in **English**. Code,
+  commands, file paths, identifiers, and technical terms stay in their original
+  form; artifacts that go into the repo follow the project's existing
+  conventions. If the owner explicitly switches languages, follow them.
+- **Timestamps:** Handoff `Created:` lines and `.ai/activity/log.md` entry
+  headers use **UTC+7 wall-clock time** at the moment of writing, annotated
+  `(UTC+7)` (e.g. `2026-07-16 19:31 (UTC+7)`). Handoff **filenames** remain
+  UTC (`YYYYMMDDHHMM-slug.md`). Prepend order is the authoritative sequence;
+  timestamps are annotations.
+
 ## 2. Single source of truth
 
 | Asset | Location |
