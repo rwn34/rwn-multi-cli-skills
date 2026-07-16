@@ -52,7 +52,7 @@ This template solves each: shared `.ai/activity/log.md` for the audit trail; a `
 
 Before running any install path, verify these:
 
-- **Git installed.** `git --version` should print a version. Fresh installs of git default new repos to `main` (not `master`) since 2020 — keep that in mind for the Phase 6 follow-up below.
+- **Git installed.** `git --version` should print a version. Fresh installs of git default new repos to `main` since 2020 — keep that in mind for the Phase 6 follow-up below.
 - **Git user configured globally.** The installer makes a commit; without global identity, git aborts with `fatal: unable to auto-detect email address`. Run once:
   ```
   git config --global user.email "you@example.com"
@@ -73,7 +73,7 @@ Three install paths. The bash scripts (A, B) are battle-tested. The Node.js inst
   ```powershell
   & "C:\Program Files\Git\bin\bash.exe" "<script-path>" "<args>"
   ```
-- **Default branch is `main`, not `master`** on freshly-initialized repos. If a follow-up step says `git checkout master` and your branch is `main`, substitute.
+- **Default branch is `main`** on freshly-initialized repos. If a follow-up step says `git checkout main` and your branch is different, substitute.
 
 | Mode | Path | When |
 |---|---|---|
@@ -192,11 +192,11 @@ The bash path will stay canonical until the Node.js installer reaches v1.0.0 wit
 
 ### After install — merge the install branch
 
-The installer leaves you on the `ai-template-install` branch with one commit. Merge it into your default branch (modern git: `main`; older repos: `master`):
+The installer leaves you on the `ai-template-install` branch with one commit. Merge it into your default branch (`main`):
 
 ```bash
 # Pick whichever is your default branch
-git checkout main   # or: git checkout master
+git checkout main
 git merge --no-ff ai-template-install
 ```
 

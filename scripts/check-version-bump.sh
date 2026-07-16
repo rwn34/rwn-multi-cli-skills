@@ -1,23 +1,23 @@
 #!/bin/bash
 # check-version-bump.sh — CI DETECTIVE gate (ADR-0012): after a merge lands on
-# master, fail the master-push run if versioned framework content changed without
+# main, fail the main-push run if versioned framework content changed without
 # a strict semver bump of tools/multi-cli-install/package.json .version (+ its
-# matching CHANGELOG heading). It runs on `push: master`, comparing the PREVIOUS
-# master tip to the NEW one — NOT on feature-branch PRs.
+# matching CHANGELOG heading). It runs on `push: main`, comparing the PREVIOUS
+# main tip to the NEW one — NOT on feature-branch PRs.
 #
 # Why the trigger moved (ADR-0012, 2026-07-12): requiring the bump on every
 # feature branch forced N concurrent PRs to collide on the same two lines
 # (package.json .version + the CHANGELOG heading), hand-serializing an otherwise
 # parallel merge train and risking a merge-order version downgrade. The
 # release-engineer now assigns ONE version at the single serialized merge point;
-# this gate verifies — detectively, on the resulting master push — that the
+# this gate verifies — detectively, on the resulting main push — that the
 # assignment actually happened. Feature-branch PRs deliberately do NOT bump.
 #
 # Why it still exists at all: onboarded projects compare their .ai/.framework-version
 # against the template's package.json .version to decide whether to warn the
 # operator about drift (tools/4ai-panes/Selector.ps1 `Test-FrameworkDrift` and the
 # Node installer's tools/multi-cli-install/src/upgrade/version.ts). If framework
-# *content* changes on master but the version does NOT, every onboarded project's
+# *content* changes on main but the version does NOT, every onboarded project's
 # version still equals the template's → the drift warning stays silent → drift
 # ships undetected. One increment per merge keeps adopter drift-detection honest.
 #
@@ -57,9 +57,9 @@
 #
 # Usage (from repo root):
 #   scripts/check-version-bump.sh <base-ref>
-#     - CI (push: master): base-ref = the previous master tip (github.event.before)
-#     - Local:             base-ref = origin/master (checks your committed diff)
-#   BASE_REF=origin/master scripts/check-version-bump.sh
+#     - CI (push: main): base-ref = the previous main tip (github.event.before)
+#     - Local:             base-ref = origin/main (checks your committed diff)
+#   BASE_REF=origin/main scripts/check-version-bump.sh
 #
 # Exit codes: 0 = PASS (no versioned change, or version properly bumped),
 #             1 = FAIL (versioned change without a valid bump),
@@ -221,7 +221,7 @@ main() {
   BASE_REF="${1:-${BASE_REF:-}}"
   [ -n "$BASE_REF" ] || { echo "check-version-bump: no base ref (pass as arg1 or BASE_REF env)"; exit 2; }
 
-  # Fail CLOSED on an unresolvable base ref. On `push: master` the base is
+  # Fail CLOSED on an unresolvable base ref. On `push: main` the base is
   # github.event.before, which is the all-zero SHA on a branch-create/force-push
   # edge — a gate that cannot resolve its comparison point refuses (env error),
   # it never waves through.

@@ -4,7 +4,7 @@
 # asks the GitHub API to produce notes per these rules.
 #
 # Caveat — category matching is PR-label-driven. This repo currently lands
-# changes via direct-to-master commits (Conventional Commits), so the API
+# changes via direct-to-main commits (Conventional Commits), so the API
 # falls back to listing commit messages under "Other changes" until PRs
 # carrying the labels below appear. That's expected; sections fill in once
 # PR-driven flow starts.

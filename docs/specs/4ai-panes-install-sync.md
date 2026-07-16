@@ -15,7 +15,7 @@
 >   Merge, checkout, AND same-branch commit now all auto-sync in lockstep.
 >
 > **Amendment (2026-07-13, hole 1):** the sync now carries a **provenance
-> guard** — only the primary checkout on `master` may deploy (see
+> guard** — only the primary checkout on `main` may deploy (see
 > **Provenance guard** below) — plus `scripts/test-sync-4ai-panes-install.ps1`
 > (34-assertion harness) and the `.sync-provenance.json` sidecar the
 > supervisor uses for a launch-time drift warning.
@@ -204,7 +204,7 @@ Before any file work (above the graceful-skip block) the sync requires:
    must equal `--git-common-dir` for the source. Equal ⇒ primary checkout;
    different (git-dir is `<common>/worktrees/<name>`) ⇒ linked worktree.
    Canonical test — no path pattern-matching.
-2. **Branch test.** `git symbolic-ref --short HEAD` must be `master`. A
+2. **Branch test.** `git symbolic-ref --short HEAD` must be `main`. A
    detached HEAD (`symbolic-ref` fails) refuses as `branch=DETACHED`.
 3. **Fail closed.** git unavailable or the source not a repo ⇒ refuse. An
    unverifiable provenance is not a licence to deploy.
