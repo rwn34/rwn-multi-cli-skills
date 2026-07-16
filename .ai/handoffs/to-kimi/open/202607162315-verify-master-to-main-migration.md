@@ -1,4 +1,5 @@
 # Verify master→main migration
+Status: OPEN
 
 ## Sender: opencode-auto
 ## Recipient: kimi-cockpit
