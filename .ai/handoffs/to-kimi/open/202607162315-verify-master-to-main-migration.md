@@ -1,11 +1,10 @@
 # Verify master→main migration
 Status: OPEN
-
-## Sender: opencode-auto
-## Recipient: kimi-cockpit
-## Created: 2026-07-17 06:15 (UTC+7)
-## Auto: yes
-## Risk: A
+Sender: opencode-auto
+Recipient: kimi-cockpit
+Created: 2026-07-17 06:15 (UTC+7)
+Auto: yes
+Risk: A
 
 ## Goal
 
