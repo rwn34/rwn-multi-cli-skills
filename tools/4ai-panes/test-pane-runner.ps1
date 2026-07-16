@@ -1248,12 +1248,20 @@ Assert-Equal $true ($loopSrc -match 'Write-Heartbeat') 'be: anti-rot - Start-Pan
 Assert-Equal $true ($loopSrc -match 'try\s*\{[\s\S]*?Write-Heartbeat[\s\S]*?\}\s*catch') 'be2: anti-rot - the heartbeat write is fail-open (try/catch)'
 
 # (bf) ANTI-ROT WIRING GUARD: stale worktree fail-fast (ADR-0004 disarm).
-#      A pane whose branch is behind origin/master must refuse to start, because
-#      a junctioned .ai/ lets any checkout/restore/stash write stale blobs back
-#      into the primary.
+#      A pane whose branch is behind the resolved default branch must refuse to
+#      start, because a junctioned .ai/ lets any checkout/restore/stash write stale
+#      blobs back into the primary.
 $freshSrc = (Get-Command Assert-WorktreeFresh).Definition
-Assert-Equal $true ($freshSrc -match 'git rev-list --count HEAD\.\.origin/master') 'bf: Assert-WorktreeFresh measures HEAD..origin/master'
+Assert-Equal $true ($freshSrc -match 'Resolve-DefaultBase') 'bf: Assert-WorktreeFresh resolves the default base instead of hardcoding origin/master'
+Assert-Equal $true ($freshSrc -match 'HEAD\.\.\$base') 'bf1: Assert-WorktreeFresh measures HEAD..$base'
 Assert-Equal $true ($loopSrc -match 'Assert-WorktreeFresh') 'bf2: Start-PaneRunner invokes the freshness guard before polling'
+
+# (bf3) FAIL-CLOSED: when the default base cannot be resolved, Assert-WorktreeFresh
+#       refuses to start rather than silently allowing an unverifiable worktree.
+$emptyProj = Join-Path $env:TEMP ("pane-runner-empty-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $emptyProj -Force | Out-Null
+git init --quiet $emptyProj
+Assert-Equal $false (Assert-WorktreeFresh -ProjectDir $emptyProj) 'bf3: unresolvable default base -> Assert-WorktreeFresh returns $false'
 
 # (bg-bi) REGRESSION for handoff 202607140930 (malformed -Cli spawns malformed
 #         supervisors): [ValidateSet('claude','kimi','kiro','opencode')] on

@@ -22,7 +22,7 @@ If neither template fits, open a blank issue and say so in the first line.
 
 ## Submitting pull requests
 
-1. Fork / branch from `master`.
+1. Fork / branch from `main`.
 2. Make the change. Keep the diff scoped — one concern per PR.
 3. Fill in `.github/pull_request_template.md` when you open the PR
    (GitHub loads it automatically). The checklist there is the minimum bar.
