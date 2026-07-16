@@ -364,9 +364,49 @@ $script:GetCliWorktreePath = {
     return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName)
 }
 
+# Discover the repo's default branch. Order of preference, first resolvable
+# wins: fresh origin fetch, origin/HEAD, origin/main, local main, HEAD.
+# Returns the resolved ref name (e.g. 'origin/main'), or $null when none resolve.
+function Resolve-DefaultBase {
+    param([string]$ProjectDir)
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        git -C $ProjectDir fetch origin *>$null
+        # Fetch failure is not fatal — stale cached refs are still declared bases.
+
+        $sym = git -C $ProjectDir symbolic-ref refs/remotes/origin/HEAD 2>$null
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0 -and $sym) {
+            $sym = $sym -replace '^refs/remotes/', ''
+            git -C $ProjectDir rev-parse --verify --quiet "$sym^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $sym }
+        }
+
+        # No cached origin/HEAD. Best-effort auto-detect over the network, but never
+        # fail if the network is unreachable — fall back to the chain.
+        git -C $ProjectDir remote set-head origin -a *>$null
+        $sym = git -C $ProjectDir symbolic-ref refs/remotes/origin/HEAD 2>$null
+        $rc = $LASTEXITCODE
+        if ($rc -eq 0 -and $sym) {
+            $sym = $sym -replace '^refs/remotes/', ''
+            git -C $ProjectDir rev-parse --verify --quiet "$sym^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $sym }
+        }
+
+        foreach ($candidate in @('origin/main', 'main', 'HEAD')) {
+            git -C $ProjectDir rev-parse --verify --quiet "$candidate^{commit}" *>$null
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    return $null
+}
+
 # Read an optional `Base:` line from a handoff's status block (first 20 lines,
-# mirrors dispatch-handoffs.sh base_for()); if absent, discovers the repo's
-# default branch offline-first so the pane-runner never hardcodes `origin/master`.
+# mirrors dispatch-handoffs.sh base_for()); if absent, delegates to
+# Resolve-DefaultBase so the pane-runner never hardcodes `origin/master`.
 function Get-DeclaredBase-Real {
     param([string]$HandoffPath)
     $head = Get-Content -Path $HandoffPath -TotalCount 20 -ErrorAction SilentlyContinue
@@ -376,47 +416,14 @@ function Get-DeclaredBase-Real {
         }
     }
 
-    # No explicit Base: — discover the repo's default branch. Order of preference,
-    # first resolvable wins: fresh origin fetch, origin/HEAD, origin/main, local main, HEAD.
+    # No explicit Base: — discover the repo's default branch.
     $projectDir = Split-Path -Path $HandoffPath -Parent
     $projectDir = Split-Path -Path $projectDir -Parent      # .ai/handoffs
     $projectDir = Split-Path -Path $projectDir -Parent      # .ai
     $projectDir = Split-Path -Path $projectDir -Parent      # project root
 
-    Push-Location $projectDir
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        git fetch origin *>$null
-        # Fetch failure is not fatal — stale cached refs are still declared bases.
-
-        $sym = git symbolic-ref refs/remotes/origin/HEAD 2>$null
-        $rc = $LASTEXITCODE
-        if ($rc -eq 0 -and $sym) {
-            $sym = $sym -replace '^refs/remotes/', ''
-            git rev-parse --verify --quiet "$sym^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $sym }
-        }
-
-        # No cached origin/HEAD. Best-effort auto-detect over the network, but never
-        # fail if the network is unreachable — fall back to the chain.
-        git remote set-head origin -a *>$null
-        $sym = git symbolic-ref refs/remotes/origin/HEAD 2>$null
-        $rc = $LASTEXITCODE
-        if ($rc -eq 0 -and $sym) {
-            $sym = $sym -replace '^refs/remotes/', ''
-            git rev-parse --verify --quiet "$sym^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $sym }
-        }
-
-        foreach ($candidate in @('origin/main', 'main', 'HEAD')) {
-            git rev-parse --verify --quiet "$candidate^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $candidate }
-        }
-    } finally {
-        $ErrorActionPreference = $prevEAP
-        Pop-Location
-    }
+    $base = Resolve-DefaultBase -ProjectDir $projectDir
+    if ($base) { return $base }
 
     throw "Could not resolve a declared base for $HandoffPath (tried: origin/HEAD auto-detect, origin/main, main, HEAD)"
 }
@@ -1266,7 +1273,7 @@ function Assert-WorktreeFresh {
     <#
     .SYNOPSIS
         Fail-fast guard: refuse to start a pane whose worktree branch is behind
-        origin/master. A stale branch combined with a junctioned .ai/ is the
+        the resolved default branch. A stale branch combined with a junctioned .ai/ is the
         reverse-write weapon that caused the 2026-07-13 outage (ADR-0004).
     #>
     param([string]$ProjectDir)
@@ -1274,15 +1281,20 @@ function Assert-WorktreeFresh {
     $ErrorActionPreference = 'Continue'
     Push-Location $ProjectDir
     try {
-        git fetch origin *>$null
-        $behind = git rev-list --count HEAD..origin/master 2>$null
+        $base = Resolve-DefaultBase -ProjectDir $ProjectDir
+        if (-not $base) {
+            Write-Host "  STALE: could not resolve the default base branch for '$ProjectDir'." -ForegroundColor Red
+            Write-Host "  Refusing to start: unresolvable base means we cannot verify the worktree is fresh." -ForegroundColor Red
+            return $false
+        }
+        $behind = git rev-list --count "HEAD..$base" 2>$null
         if ($behind -match '^\d+$') {
             $behindN = [int]$behind
             if ($behindN -gt 0) {
                 $branch = git branch --show-current 2>$null
-                Write-Host "  STALE: worktree branch '$branch' is $behindN commits behind origin/master." -ForegroundColor Red
+                Write-Host "  STALE: worktree branch '$branch' is $behindN commits behind $base." -ForegroundColor Red
                 Write-Host "  Refusing to start: a stale branch + junctioned .ai/ can rewrite the primary .ai/ with old blobs." -ForegroundColor Red
-                Write-Host "  Fix: stop this pane, rebase the branch onto origin/master, recreate the worktree, then restart." -ForegroundColor Yellow
+                Write-Host "  Fix: stop this pane, rebase the branch onto $base, recreate the worktree, then restart." -ForegroundColor Yellow
                 return $false
             }
         }

@@ -337,7 +337,7 @@ is an Open question below.
 - **How is the version-bump discipline enforced?** *Resolved — see
   `docs/architecture/0012-version-assigned-at-merge.md`.* Enforcement is a CI
   check (`scripts/check-version-bump.sh` via `gates.yml`), but per ADR-0012 it
-  runs as a **detective check on `push: master`** — comparing the previous master
+  runs as a **detective check on `push: main`** — comparing the previous main
   tip to the new one — rather than as a preventive `pull_request` gate. Feature
   branches deliberately do NOT bump (that collided N concurrent PRs on the same
   two lines); the release-engineer assigns one version and promotes the

@@ -11,7 +11,7 @@
  Contract:
    exit 0  - synced, already in sync (no-op), target absent (graceful skip),
              or REFUSED by the provenance guard (refusal is CORRECT behavior in
-             a worktree / off-master checkout, not an error - see below).
+             a worktree / off-main checkout, not an error - see below).
    exit 1  - a .ps1 source file failed the syntax gate, OR a copy was attempted
              but post-copy hash verification failed, OR an allowlisted file is
              missing from the source tree. Loud stderr warn.
@@ -23,8 +23,8 @@
    fired at ~05:45 deployed branch code over the live launcher). So before any
    file work the sync requires (a) the source to be the PRIMARY checkout
    (git-dir == git-common-dir; in a linked worktree git-dir is
-   <common>/worktrees/<name>) and (b) HEAD on branch 'master' (detached HEAD
-   refuses) - only merged master code may deploy. Unverifiable provenance (git
+   <common>/worktrees/<name>) and (b) HEAD on branch 'main' (detached HEAD
+   refuses) - only merged main code may deploy. Unverifiable provenance (git
    unavailable / source not a repo) fails CLOSED. Refusal prints a one-liner,
    still writes its install-sync.log line, and exits 0 - exit 1 stays reserved
    for genuine failures because the hooks paint non-zero as "sync REPORTED
@@ -143,7 +143,7 @@ function Write-SyncLog {
     }
 }
 
-# --- Provenance guard: only primary-checkout master code may deploy ---------
+# --- Provenance guard: only primary-checkout main code may deploy ---------
 # One choke point covering the hooks AND manual/agent invocation. Refusal is
 # CORRECT behavior, not an error: print one clear line, write the log line,
 # exit 0 (exit 1 is reserved for genuine failures - the hooks treat non-zero as
@@ -193,8 +193,8 @@ finally { $ErrorActionPreference = $prevEAP }
 
 if ($forced) {
     Write-Line "sync-4ai-panes-install: FORCED - provenance guard overridden (-Force/SYNC_FORCE=1): toplevel=$toplevel branch=$branch primary=$primaryStr"
-} elseif (-not $gitOk -or -not $isPrimary -or $branch -ne 'master') {
-    Write-Line "sync-4ai-panes-install: REFUSED - not primary/master (toplevel=$toplevel branch=$branch primary=$primaryStr). Only merged master code may reach the live install. Override: -Force or SYNC_FORCE=1."
+} elseif (-not $gitOk -or -not $isPrimary -or $branch -ne 'main') {
+    Write-Line "sync-4ai-panes-install: REFUSED - not primary/main (toplevel=$toplevel branch=$branch primary=$primaryStr). Only merged main code may reach the live install. Override: -Force or SYNC_FORCE=1."
     Write-SyncLog -Result 'refused' -Actions @()
     exit 0
 }
