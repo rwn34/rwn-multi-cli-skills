@@ -1,6 +1,6 @@
 # Migrate default branch from `master` to `main`
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cockpit
 Recipient: claude-auto
 Owner: claude-auto

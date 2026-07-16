@@ -16,7 +16,7 @@ entry point into a persistent, shared multi-agent workforce.
 - **Work autonomously by default** (§8). The human is a gate for irreversible
   actions, not a relay for routine ones.
 
-### 1.1 Language and timestamp convention
+### 1.1 Language, timestamp, and cockpit defaults
 
 - **Language:** Think, reason, and reply to the owner in **English**. Code,
   commands, file paths, identifiers, and technical terms stay in their original
@@ -27,6 +27,13 @@ entry point into a persistent, shared multi-agent workforce.
   `(UTC+7)` (e.g. `2026-07-16 19:31 (UTC+7)`). Handoff **filenames** remain
   UTC (`YYYYMMDDHHMM-slug.md`). Prepend order is the authoritative sequence;
   timestamps are annotations.
+- **Claude cockpit execution boundary:** `claude-cockpit` does not write code or
+  execute commands unless the owner explicitly asks it to. Its default mode is
+  read, plan, and delegate; implementation and execution are routed to
+  `kimai-auto`, `kiro-auto`, or `opencode-auto` via handoffs (see §4/§5).
+- **Handoff default to auto:** Unless the owner explicitly requests cockpit
+  ownership, route work to the appropriate auto pane with `Auto: yes`. A cockpit
+  handoff (`Auto: no`) is the exception and must be intentional.
 
 ## 2. Single source of truth
 
