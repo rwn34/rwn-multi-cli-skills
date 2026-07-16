@@ -1,5 +1,5 @@
 # Apply remaining master→main file changes to `migrate-master-to-main` branch
-Status: OPEN
+Status: DONE
 Sender: opencode-auto
 Recipient: kimi-cockpit
 Owner: opencode-auto
@@ -7,6 +7,14 @@ Created: 2026-07-16 21:02 (UTC+7)
 Auto: yes
 Risk: B
 Next: opencode-auto
+
+## Touched
+- scripts/sync-4ai-panes-install.ps1 (master→main, functional provenance guard)
+- scripts/check-version-bump.sh (master→main, functional CI gate)
+- tools/4ai-panes/pane-runner.ps1 (Resolve-DefaultBase helper + fail-closed Assert-WorktreeFresh)
+- tools/4ai-panes/test-pane-runner.ps1 (bf/bf1/bf3 assertions for resolved base + fail-closed path)
+- README.md, scripts/README.md, docs/specs/4ai-panes-install-sync.md, docs/specs/framework-install-drift-check.md, docs/guides/framework-upgrade-runbook.md, docs/guides/contributing.md, .github/release.yml (prose master→main)
+- git config init.defaultBranch main (repo-local)
 
 ## Goal
 
