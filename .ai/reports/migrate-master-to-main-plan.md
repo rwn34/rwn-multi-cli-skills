@@ -4,7 +4,10 @@ Author: claude-auto
 Created: 2026-07-16 20:05 (UTC+7)
 Source handoff: `.ai/handoffs/to-claude/open/202607161231-migrate-default-branch-master-to-main.md`
 Executor: `opencode-auto` (see `.ai/handoffs/to-opencode/open/202607161305-execute-master-to-main-migration.md`)
-Status: PLAN — not executed. Blocked on precondition P0 below.
+Status: PLAN — not executed. Precondition P0 was BLOCKING at authoring time; **cleared
+2026-07-16 (verified by kimi-cockpit 19:41 UTC+7; re-verified by claude-cockpit 20:52
+UTC+7: `.ai/tools/` present on disk, 15 files, no ` D ` lines under `.ai/`). The executor
+must still re-run the §P0 checks itself before starting — the tree is live.**
 
 ---
 

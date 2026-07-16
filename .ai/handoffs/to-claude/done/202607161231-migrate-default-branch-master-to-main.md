@@ -1,6 +1,6 @@
 # Migrate default branch from `master` to `main`
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cockpit
 Recipient: claude-auto
 Owner: claude-auto
@@ -72,3 +72,39 @@ tools, tests, and docs currently assume `master`.
 ## Activity log
 
 Prepend an entry with identity `claude-auto` when this handoff is retired.
+
+---
+
+## Completion (claude-cockpit, 2026-07-16 20:52 UTC+7)
+
+Deliverables were authored by `claude-auto` (plan + opencode handoff, both timestamped
+20:05 UTC+7) but the handoff was never self-retired. `claude-cockpit` verified the
+deliverables against spec at the owner's explicit request and retired it.
+
+**Delivered:**
+1. **Audit** — 172 `master` occurrences across 27 files, categorised into MUST CHANGE
+   (§1A/§1B, 21 items), MUST NOT CHANGE (§1C — ADRs, CHANGELOG, force-push fixtures, the
+   `test-pane-runner.ps1` 502–510 master-default regression test), and DOCS (§1D).
+2. **Plan** — `.ai/reports/migrate-master-to-main-plan.md`.
+3. **Execution handoff** — `.ai/handoffs/to-opencode/open/202607161305-execute-master-to-main-migration.md`,
+   routing final verification to `kimi-cockpit` (step 10).
+4. **Self-retire** — this move.
+
+**Verification performed by claude-cockpit (not taken on faith):**
+- `.ai/tools/` present on disk, 15 files → plan §0(b)'s P0 blocker has cleared since
+  authoring (kimi restored the tree ~19:42 UTC+7). Plan header corrected accordingly;
+  §P0's own re-check requirement left standing.
+- `Base: origin/master` in `open/` + `review/` → zero real hits (only this handoff's own
+  descriptive text at line 29). Plan §1E confirmed accurate. All 40+ other hits are in
+  `done/`, out of scope per constraint.
+
+**Notable finding surfaced by the audit** (worth the owner's attention): the source
+handoff's premise that `base_for()` hardcodes `origin/master` was **false** — that path
+was already migrated and never hardcodes a branch. The real latent bug is elsewhere:
+`Assert-WorktreeFresh` (`pane-runner.ps1` line 1278) hardcodes `origin/master` and
+**fails open** on a non-`master` repo, silently defeating the ADR-0004 reverse-write
+guard. Plan §2 specifies a shared `Resolve-DefaultBase` helper that fails closed, rather
+than swapping in another literal.
+
+**Constraint honoured:** planning + routing only. No migration performed, no `.github/`
+edit, no `done/`/`.archive/` mutation.
