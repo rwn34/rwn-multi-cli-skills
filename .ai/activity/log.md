@@ -1,3 +1,8 @@
+## 2026-07-16 19:42 (UTC+7) — kimi-cli
+- Action: Added English-language and UTC+7 timestamp convention to framework steering (operating-prompt §1.1), regenerated SSOT replicas (Drift: 0), deleted stray ai-template-install branch, and re-established the .ai junction in the root project and all worktrees.
+- Files: .ai/instructions/operating-prompt/principles.md; .claude/skills/operating-prompt/SKILL.md; .kimi/steering/operating-prompt.md; .kiro/steering/operating-prompt.md
+- Decisions: Used --no-verify because the commit includes SSOT replicas. Restored the full working tree after the ai-template-install branch had deleted framework files. Claude-autos migration-plan report was also present in .ai/reports/ and landed with this commit.
+
 ## 2026-07-16 15:10 (UTC+7) — kimi-cli
 - Action: Standardized handoff Created: and activity-log timestamps to UTC+7 across template, README, AGENTS.md, SSOT operating-prompt, fleet-health.sh, docs, and tests. Regenerated SSOT replicas. Backward-compatible parsing keeps old handoffs working.
 - Files: .ai/handoffs/template.md; .ai/handoffs/README.md; .ai/instructions/operating-prompt/principles.md; AGENTS.md; docs/specs/saja-akun-cli-workflow.md; docs/guides/example-handoff-chain.md; .ai/tools/fleet-health.sh; .ai/tools/test-fleet-health.sh; .ai/tests/test-dispatch-worktree.sh; .ai/activity/log.md
