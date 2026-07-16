@@ -121,12 +121,12 @@ actually need sits in the first few dozen lines.
 
 - **Prepend** one terse entry after substantive work. Format:
 
-        ## YYYY-MM-DD HH:MM — <cli-name>
+        ## YYYY-MM-DD HH:MM (UTC+7) — <cli-name>
         - Action: <one-line summary>
         - Files: <paths, or "—">
         - Decisions: <non-obvious choices, or "—">
 
-**Timestamp rule:** the `HH:MM` is your current local wall-clock time at the moment
+**Timestamp rule:** the `HH:MM` is your current UTC+7 wall-clock time at the moment
 you prepend — i.e. finish time of the work, not start time. CLIs on different local
 clocks may produce timestamps that don't sort monotonically; prepend order is
 authoritative, timestamps are annotations.
@@ -141,7 +141,7 @@ paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-s
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude. The `YYYYMMDDHHMM` filename prefix is
 **UTC** (`date -u +%Y%m%d%H%M`) even though your `Created:` line and activity-log
-entries use local wall-clock — do not put local time in the filename.
+entries use UTC+7 wall-clock — do not put local time in the filename.
 
 **Protocol v3 (2026-07-09):** every handoff carries `Auto:` (default `yes`) and
 `Risk:` (`A`/`B`/`C` per the autonomy tiers in the operating-prompt SSOT §8).

@@ -60,13 +60,13 @@ a Kiro task may result in a `to-kimi/review/` handoff so Kimi checks Kiro's work
   appends a `-a` / `-b` suffix.
 - `short-task-slug` — kebab-case, ≤ 5 words, describes the change.
 
-**⚠️ Filename basis = UTC, `Created:`/log basis = local — do not mix them.**
-This trips up CLIs on a non-UTC clock. A CLI in UTC+7 that finishes at 22:17
-local writes the filename with the **UTC** time (15:17), but the `Created:` line
-and its activity-log entry with the **local** time (22:17):
+**⚠️ Filename basis = UTC, `Created:`/log basis = UTC+7 — do not mix them.**
+A CLI finishing at 22:17 UTC+7 writes the filename with the **UTC** time
+(15:17), but the `Created:` line and its activity-log entry with the **UTC+7**
+time, annotated `(UTC+7)`:
 
     Filename:  202607091517-test-count-reply.md      ← 15:17 UTC
-    Created:   2026-07-09 22:17                        ← 22:17 local (UTC+7)
+    Created:   2026-07-09 22:17 (UTC+7)              ← 22:17 UTC+7
 
 Both refer to the same instant. Using local time in the filename (e.g.
 `202607092217-…`) is the common mistake — it desynchronizes sort order across
@@ -245,7 +245,7 @@ See `to-kimi/open/001-clarify-timestamp-semantics.md` or
 ## Timestamp convention
 
 Timestamps in this framework — both in handoff `Created:` lines and in
-`.ai/activity/log.md` entry headers — are **local wall-clock time at the moment of
-writing**. For log entries this means *after the work is done* (prepend time = finish
-time). Since the three CLIs may have different local clocks, timestamps are
-annotations; **prepend order is the authoritative sequencing**.
+`.ai/activity/log.md` entry headers — are **UTC+7 wall-clock time at the moment of
+writing**, annotated `(UTC+7)`. For log entries this means *after the work is done*
+(prepend time = finish time). Since CLIs may have different local clocks, timestamps
+are annotations; **prepend order is the authoritative sequencing**.

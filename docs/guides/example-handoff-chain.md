@@ -18,7 +18,7 @@ Status: OPEN
 Sender: claude-cockpit
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-15 22:00
+Created: 2026-07-15 22:00 (UTC+7)
 Auto: yes
 Risk: B
 Next: kimai-auto,kiro-auto
@@ -57,8 +57,8 @@ Status: DONE
 Sender: claude-cockpit
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-15 22:00
-Completed: 2026-07-15 22:25
+Created: 2026-07-15 22:00 (UTC+7)
+Completed: 2026-07-15 22:25 (UTC+7)
 Auto: yes
 Risk: B
 Next: kimai-auto,kiro-auto
@@ -90,7 +90,7 @@ Status: OPEN
 Sender: claude-auto
 Recipient: kimai-auto
 Owner: kimai-auto
-Created: 2026-07-15 23:00
+Created: 2026-07-15 23:00 (UTC+7)
 Auto: yes
 Risk: B
 ReviewBy: kiro
@@ -119,7 +119,7 @@ Status: OPEN
 Sender: claude-auto
 Recipient: kiro-auto
 Owner: kiro-auto
-Created: 2026-07-15 23:00
+Created: 2026-07-15 23:00 (UTC+7)
 Auto: yes
 Risk: B
 ReviewBy: kimi
@@ -154,7 +154,7 @@ Status: OPEN
 Sender: kimai-auto
 Recipient: kiro-auto
 Owner: kiro-auto
-Created: 2026-07-16 01:00
+Created: 2026-07-16 01:00 (UTC+7)
 Auto: yes
 Risk: B
 FinalReview: claude
@@ -179,7 +179,7 @@ Status: OPEN
 Sender: kiro-auto
 Recipient: kimai-auto
 Owner: kimai-auto
-Created: 2026-07-16 01:00
+Created: 2026-07-16 01:00 (UTC+7)
 Auto: yes
 Risk: B
 FinalReview: claude
@@ -204,7 +204,7 @@ Status: OPEN
 Sender: kiro-auto
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-16 02:00
+Created: 2026-07-16 02:00 (UTC+7)
 Auto: yes
 Risk: B
 Deploy: yes
@@ -240,7 +240,7 @@ Status: OPEN
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto
-Created: 2026-07-16 03:00
+Created: 2026-07-16 03:00 (UTC+7)
 Auto: yes
 Risk: B
 
@@ -292,7 +292,7 @@ Status: OPEN
 Sender: claude-cockpit
 Recipient: opencode-auto
 Owner: opencode-cockpit
-Created: 2026-07-16 04:00
+Created: 2026-07-16 04:00 (UTC+7)
 Auto: no
 Risk: C
 

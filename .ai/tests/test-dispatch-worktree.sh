@@ -114,7 +114,7 @@ mk_handoff() {
 Status: OPEN
 Sender: claude-code
 Recipient: $cli
-Created: 2026-07-11 00:00
+Created: 2026-07-11 00:00 (UTC+7)
 Auto: yes
 Risk: A
 $extra
@@ -290,7 +290,7 @@ mk_handoff_for() {
 Status: OPEN
 Sender: claude-code
 Recipient: $cli
-Created: 2026-07-11 00:00
+Created: 2026-07-11 00:00 (UTC+7)
 Auto: yes
 Risk: A
 $extra

@@ -3,7 +3,7 @@ Status: OPEN
 Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
-Created: YYYY-MM-DD HH:MM
+Created: YYYY-MM-DD HH:MM (UTC+7)
 Auto: yes
 Risk: <A | B | C>
 # ReviewBy: <cli>       # optional: executor emits review handoff to to-<cli>/review/ on done
@@ -66,7 +66,7 @@ conventions. Delete this section if not applicable.>
 if the surrounding system changes. 1-2 sentences.>
 
 ## Activity log template
-    ## YYYY-MM-DD HH:MM — <six-actor identity, e.g. kimai-auto>
+    ## YYYY-MM-DD HH:MM (UTC+7) — <six-actor identity, e.g. kimai-auto>
     - Action: <summary — include the handoff filename, e.g. "per handoff 202607081200-slug">
     - Files: <paths touched, or "—">
     - Decisions: <non-obvious choices, or "—">

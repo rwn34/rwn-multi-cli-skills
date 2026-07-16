@@ -140,10 +140,10 @@ between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
 actor: `claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`,
-`kiro-auto`, or `opencode-auto`; local wall-clock finish time; prepend order is
-authoritative). If another CLI must continue, write a handoff to
-`.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp
-filename).
+`kiro-auto`, or `opencode-auto`; UTC+7 wall-clock finish time, annotated
+`(UTC+7)`; prepend order is authoritative). If another CLI must continue, write
+a handoff to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC
+timestamp filename) with a `Created:` line in UTC+7.
 
 **Handoff protocol v3:** every handoff carries `Auto:` (default **yes**) and
 `Risk:` (A/B/C per §8). `Auto: yes` + Risk A/B handoffs are dispatched

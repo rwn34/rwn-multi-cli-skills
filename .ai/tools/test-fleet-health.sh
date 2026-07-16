@@ -24,8 +24,11 @@ HOST="$(hostname)"
 NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 OLD_ISO="$(date -u -d '30 min ago' +%Y-%m-%dT%H:%M:%SZ)"
 VERY_OLD_ISO="$(date -u -d '120 min ago' +%Y-%m-%dT%H:%M:%SZ)"
-NOW_LOCAL="$(date '+%Y-%m-%d %H:%M')"
-OLD_LOCAL="$(date -d '30 min ago' '+%Y-%m-%d %H:%M')"
+NOW_LOCAL="$(date '+%Y-%m-%d %H:%M (UTC+7)')"
+OLD_LOCAL="$(date -d '30 min ago' '+%Y-%m-%d %H:%M (UTC+7)')"
+
+# fleet-health.sh strips the optional (UTC+7) annotation before parsing, so these
+# fixture timestamps are valid regardless of the host's actual local timezone.
 
 mkroot() { mktemp -d; }
 

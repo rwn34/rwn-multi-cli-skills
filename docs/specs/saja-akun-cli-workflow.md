@@ -55,7 +55,7 @@ Status: OPEN
 Sender: claude-cockpit
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-15 22:00
+Created: 2026-07-15 22:00 (UTC+7)
 Auto: yes
 Risk: B
 Next: kimai-auto
@@ -258,7 +258,7 @@ If an auto pane is persistently down:
 Activity-log entry headers use the six-actor identity:
 
 ```markdown
-## 2026-07-15 22:00 — kimai-auto
+## 2026-07-15 22:00 (UTC+7) — kimai-auto
 - Action: Implemented checkout API per handoff 202607152300-implement-checkout-api.md.
 - Files: src/routes/checkout.ts
 - Decisions: —

@@ -172,12 +172,13 @@ claim_live() {
   return 0
 }
 
-# Age of a handoff in minutes: the Created: status-block line is local
+# Age of a handoff in minutes: the Created: status-block line is UTC+7
 # wall-clock per the handoff protocol (filename prefix is UTC, Created: is
-# local), so parse it as LOCAL. Fall back to file mtime.
+# UTC+7), so strip the optional `(UTC+7)` annotation and parse it as local.
+# Fall back to file mtime.
 handoff_age_min() {
   local f="$1" created ep=""
-  created="$(head -20 "$f" | grep -m1 -E '^Created:[[:space:]]*' | sed -E 's/^Created:[[:space:]]*//')"
+  created="$(head -20 "$f" | grep -m1 -E '^Created:[[:space:]]*' | sed -E 's/^Created:[[:space:]]*//' | sed -E 's/[[:space:]]*\(UTC\+7\)[[:space:]]*$//')"
   [ -n "$created" ] && ep="$(date -d "$created" +%s 2>/dev/null)"
   [ -z "$ep" ] && ep="$(stat -c %Y "$f" 2>/dev/null)"
   [ -z "$ep" ] && { echo ""; return; }
