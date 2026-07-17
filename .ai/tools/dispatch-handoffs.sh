@@ -11,7 +11,6 @@
 #   bash .ai/tools/dispatch-handoffs.sh                    # dry-run: list what would dispatch
 #   bash .ai/tools/dispatch-handoffs.sh --exec             # launch recipient CLIs (all queues)
 #   bash .ai/tools/dispatch-handoffs.sh --exec --only claude  # scope to one queue (to-claude)
-#   bash .ai/tools/dispatch-handoffs.sh --exec --reuse-dirty  # reuse worktrees on a different branch or with uncommitted non-.ai changes
 #
 # Recursion guard: in --exec mode each spawned CLI child inherits
 # AI_HANDOFF_DISPATCH=1 in its environment. A SessionStart/Stop hook that itself
@@ -47,14 +46,12 @@ set -u
 
 MODE="dry-run"
 ONLY=""
-REUSE_DIRTY=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --exec)        MODE="exec" ;;
-        --reuse-dirty) REUSE_DIRTY=1 ;;
-        --only)        ONLY="${2:-}"; shift ;;
-        --only=*)      ONLY="${1#--only=}" ;;
-        *)             echo "Unknown argument: $1" >&2; exit 2 ;;
+        --exec)     MODE="exec" ;;
+        --only)     ONLY="${2:-}"; shift ;;
+        --only=*)   ONLY="${1#--only=}" ;;
+        *)          echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
 done
@@ -268,16 +265,12 @@ ensure_declared_base_branch() {
     # This grep is scoped to exactly that known false-positive; it does not
     # touch or attempt to fix the underlying junction/exclude gap, which is
     # explicitly out of scope for this change (see the handoff's NON-goal).
-    local current
-    current="$(git -C "$wt_path" branch --show-current 2>/dev/null)"
     dirty="$(git -C "$wt_path" status --porcelain 2>/dev/null | grep -v ' \.ai/' || true)"
     if [ -n "$dirty" ]; then
-        if [ "${REUSE_DIRTY:-0}" = "1" ]; then
-            echo "WARN: $wt_path is dirty (branch '$current', expected '$branch'; uncommitted non-.ai changes) — reusing as-is, not cutting $branch" >&2
-            return 0
-        fi
-        echo "ERROR: $wt_path is dirty (branch '$current', expected '$branch'; uncommitted non-.ai changes) — refusing to reuse; dispatch aborted" >&2
-        return 1
+        local current
+        current="$(git -C "$wt_path" branch --show-current 2>/dev/null)"
+        echo "WARN: $wt_path has uncommitted changes on '$current' — reusing as-is, not cutting $branch" >&2
+        return 0
     fi
 
     # Best-effort fetch for a fresh base ref. Never fatal: a stale-but-present
@@ -335,35 +328,6 @@ ensure_declared_base_branch() {
     return 0
 }
 
-# header_value <file> <key> -> echoes the value of the first matching key in
-# the handoff's status block. The status block is defined as all consecutive
-# header lines ("Key: value") at the top of the file, stopping at the first
-# blank line or `## ` section header. Keys are matched case-insensitively and
-# trailing CR characters are stripped. This replaces the brittle `head -20 | grep`
-# scan (S3-4).
-header_value() {
-    local file="$1" key="$2"
-    awk -v key="$key" '
-        BEGIN { k = tolower(key) }
-        /^## / || /^[[:space:]]*$/ { exit }
-        {
-            line = $0
-            sub(/\r$/, "", line)
-            pos = index(line, ":")
-            if (pos > 0) {
-                kpart = substr(line, 1, pos - 1)
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", kpart)
-                if (tolower(kpart) == k) {
-                    val = substr(line, pos + 1)
-                    gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
-                    print val
-                    exit
-                }
-            }
-        }
-    ' "$file"
-}
-
 # base_for <file> -> echoes the declared base ref for a handoff. Reads an
 # optional `Base:` line from the status block (first 20 lines, mirrors the
 # Auto:/Risk: scan below); if absent, discovers the repo's default branch
@@ -374,7 +338,7 @@ header_value() {
 # resolve.
 base_for() {
     local file="$1" base sym candidate
-    base="$(header_value "$file" Base | awk '{print $1}')"
+    base="$(head -20 "$file" | grep -iE '^Base:[[:space:]]*' | head -1 | sed -E 's/^Base:[[:space:]]*//i' | awk '{print $1}')"
     if [ -n "$base" ]; then
         echo "$base"
         return 0
@@ -497,50 +461,15 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
         for f in "$dir"/*.md; do
             [ -f "$f" ] || continue
             # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
-            rel="${f#$root/}"
-            slug=$(basename "$f" .md)
-            auto_val="$(header_value "$f" Auto | tr '[:upper:]' '[:lower:]')"
-            status_val="$(header_value "$f" Status | tr '[:upper:]' '[:lower:]')"
-            risk_val="$(header_value "$f" Risk | tr '[:upper:]' '[:lower:]')"
-            [ "$auto_val" = "yes" ] || continue
-            [ "$status_val" = "open" ] || continue
+            head -20 "$f" | grep -qiE '^Auto:[[:space:]]*yes' || continue
+            head -20 "$f" | grep -qiE '^Status:[[:space:]]*OPEN' || continue
             # Risk gate (protocol v2): only Risk A/B auto-dispatch. Missing Risk = C.
-            case "$risk_val" in
-                a|b) ;;
-                *)
-                    echo "HOLD  [$cli] $rel — Risk C or no Risk field (human relays)"
-                    continue
-                    ;;
-            esac
-            found=$((found+1))
-            # S2-4: a handoff sent to itself would loop — reject before launching.
-            sender_val="$(header_value "$f" Sender)"
-            recipient_val="$(header_value "$f" Recipient)"
-            if [ -n "$sender_val" ] && [ -n "$recipient_val" ]; then
-                s_low="$(echo "$sender_val" | tr '[:upper:]' '[:lower:]')"
-                r_low="$(echo "$recipient_val" | tr '[:upper:]' '[:lower:]')"
-                if [ "$s_low" = "$r_low" ]; then
-                    echo "FAIL  [$cli] $rel — self-addressed handoff (Sender == Recipient: $sender_val); refusing to dispatch" >&2
-                    EXEC_FAILED=$((EXEC_FAILED+1))
-                    ts=$(date -u +%Y%m%d%H%M%S)
-                    report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
-                    {
-                        echo "# Dispatch failure — $cli (self-addressed)"
-                        echo ""
-                        echo "- Handoff: $rel"
-                        echo "- UTC: $ts"
-                        echo "- Sender: $sender_val"
-                        echo "- Recipient: $recipient_val"
-                        echo "- Stage: status-block validation (S2-4)"
-                        echo ""
-                        echo "A handoff cannot be sent to itself. Correct the Sender/Recipient fields"
-                        echo "or retire this handoff manually. It remains OPEN until a human resolves it."
-                    } > "$report"
-                    echo "ALERT: dispatch failed — report written to ${report#$root/}"
-                    fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
-                    continue
-                fi
+            if ! head -20 "$f" | grep -qiE '^Risk:[[:space:]]*[AB][[:space:]]*$'; then
+                echo "HOLD  [$cli] ${f#$root/} — Risk C or no Risk field (human relays)"
+                continue
             fi
+            found=$((found+1))
+        rel="${f#$root/}"
         bin=$(bin_for "$cli")
         if ! command -v "$bin" >/dev/null 2>&1; then
             echo "SKIP  [$cli] $rel — '$bin' not on PATH"
@@ -550,6 +479,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
         # logs/reports/dry-run ONLY — it is never executed (execution uses the array).
         headless_cmd "$cli" "$rel" || { echo "SKIP  [$cli] $rel — unknown CLI"; continue; }
         cmd="${HEADLESS_ARGV[*]}"
+        slug=$(basename "$f" .md)
         claim="$claim_dir/${cli}__${slug}.claim.json"
         if [ "$MODE" = "exec" ]; then
             # Claim-lock gate: never double-process a handoff a live pane holds.
