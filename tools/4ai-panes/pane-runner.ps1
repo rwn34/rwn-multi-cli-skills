@@ -613,6 +613,12 @@ $script:InvokeCli = {
     # property of where the child runs, independent of the dispatch-guard env,
     # so it must be established before — and torn down after — everything else.
     Push-Location $Cwd
+    # S3-1 root cause: force UTF-8 locale for any bash/PowerShell subprocess the
+    # CLI spawns, so em-dashes and other non-ASCII chars are not written as cp1252.
+    $prevLC_ALL = $env:LC_ALL
+    $prevLANG = $env:LANG
+    $env:LC_ALL = 'C.UTF-8'
+    $env:LANG = 'C.UTF-8'
     try {
         # F3: tell the child (and its SessionStart hooks) that a dispatcher is
         # already driving this queue, so a nested dispatch-own-queue short-circuits
@@ -637,6 +643,8 @@ $script:InvokeCli = {
     } finally {
         Pop-Location
         $ErrorActionPreference = $prevEAP
+        $env:LC_ALL = $prevLC_ALL
+        $env:LANG = $prevLANG
     }
     return $LASTEXITCODE
 }

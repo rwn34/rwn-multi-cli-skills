@@ -860,7 +860,9 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             # every dispatched CLI runs in its OWN working tree, never the primary
             # checkout, so a concurrent dispatch's `git checkout` can never revert
             # this session's on-disk files (ADR-0004 amendment).
-            ( cd "$wt_path" && export AI_HANDOFF_DISPATCH=1 && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
+            # S3-1 root cause: force UTF-8 locale so any bash subprocess the CLI
+            # spawns writes em-dashes and other non-ASCII chars as UTF-8, not cp1252.
+            ( cd "$wt_path" && export AI_HANDOFF_DISPATCH=1 && export LC_ALL='C.UTF-8' && export LANG='C.UTF-8' && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
             rc=${PIPESTATUS[0]}
             echo "---- [$cli] finished (exit $rc) ----"
             # Failure alerting (Tier B — act, then notify): non-zero exit writes a

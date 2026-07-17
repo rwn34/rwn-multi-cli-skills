@@ -1011,6 +1011,17 @@ try {
     Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# -- (an) REAL invoke path: the spawned child inherits UTF-8 locale env vars (S3-1) --
+#     Guards the root-cause fix for cp1252 em-dash corruption: any bash/PowerShell
+#     subprocess the CLI spawns must see C.UTF-8 so non-ASCII chars are UTF-8.
+$origHeadlessAn = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%LC_ALL%"=="C.UTF-8" if "%LANG%"=="C.UTF-8" (exit 7) else (exit 9)') }
+$anCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+${function:Get-HeadlessCmd} = $origHeadlessAn
+Assert-Equal 7 $anCode 'an: child spawned by real InvokeCli sees LC_ALL=C.UTF-8 and LANG=C.UTF-8 (exit 7)'
+Assert-Equal $false (Test-Path Env:\LC_ALL) 'an: LC_ALL removed from runner env after the call'
+Assert-Equal $false (Test-Path Env:\LANG) 'an: LANG removed from runner env after the call'
+
 # -- (an-at) FLAT-INSTALL TOPOLOGY: the deployed shape, which was NEVER tested. --
 #
 # THE REGRESSION THIS GUARDS (2026-07-12, total fleet outage): the resolver had a

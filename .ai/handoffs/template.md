@@ -1,5 +1,5 @@
 # <Task title — one short clear line>
-Status: <OPEN | BLOCKED | DONE | IMPOSSIBLE | NOT-A-BUG>
+Status: OPEN
 Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
@@ -20,13 +20,8 @@ Risk: <A | B | C>
 # Next: <actor>         # optional: general next-actor routing when ReviewBy/FinalReview/Deploy do not fit
 
 <!-- Protocol v4 (2026-07-16; supersedes v3 2026-07-09):
-     Recipient self-retires the handoff to done/ on a terminal status; sender
-     validates post-hoc. See docs/specs/handoff-protocol-v4.md for the full
-     lifecycle.
-     Status:    = OPEN (active), BLOCKED (needs help), DONE (complete),
-                  IMPOSSIBLE (sender's premise disproven — requires ## Why),
-                  NOT-A-BUG (reported behavior is correct — requires ## Why).
-                  IMPOSSIBLE and NOT-A-BUG are terminal; recipient moves to done/.
+     Recipient self-retires the handoff to done/ on completion; sender validates
+     post-hoc. See docs/specs/handoff-protocol-v4.md for the full lifecycle.
      Auto: yes  = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh.
                   DEFAULT is yes — the human is a gate, not a relay.
                   Auto: yes + Risk A/B is owned by the auto pane.
@@ -77,19 +72,15 @@ conventions. Delete this section if not applicable.>
       presence; a completion claim needs both.>
 - (b) ...
 
-## Why
-<Required for Status: IMPOSSIBLE or NOT-A-BUG. Disproof or explanation of why
-no action is needed. Cite commands/output or file refs.>
-
 ## Next step / future note
 <Per delivery-integrity §3: what comes after this handoff, and what breaks first
 if the surrounding system changes. 1-2 sentences.>
 
 ## Activity log template
-    ## YYYY-MM-DD HH:MM (UTC+7) — <six-actor identity, e.g. kimai-auto>
+    ## YYYY-MM-DD HH:MM (UTC+7) - <six-actor identity, e.g. kimai-auto>
     - Action: <summary — include the handoff filename, e.g. "per handoff 202607081200-slug">
-    - Files: <paths touched, or "—">
-    - Decisions: <non-obvious choices, or "—">
+    - Files: <paths touched, or "-">
+    - Decisions: <non-obvious choices, or "-">
 
 ## Report back with
 - (a) <concrete item the sender will use to validate, e.g. "config file path(s) touched">
