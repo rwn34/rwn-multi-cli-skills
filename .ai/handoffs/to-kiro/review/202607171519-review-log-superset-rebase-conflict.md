@@ -7,11 +7,11 @@ Owner: kiro-auto
 Created: 2026-07-17 22:19 (UTC+7)
 Auto: yes
 Risk: B
-Observed-in: exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock@80be2f5a651cb75854db036812b80456efb7b52f
+Observed-in: exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock@0799b9257e37e35c79636ce76c8d2edebc3cbdbf
 Evidence: VERIFIED
 ReviewOf: .ai/handoffs/to-kimi/open/202607171445-rebase-log-superset-gate-onto-main.md
 Branch: exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock
-Commit: 80be2f5a651cb75854db036812b80456efb7b52f
+Commit: 0799b9257e37e35c79636ce76c8d2edebc3cbdbf
 PR: #114 (https://github.com/rwn34/rwn-multi-cli-skills/pull/114)
 
 ## What to review
@@ -36,7 +36,7 @@ The gate logic files are unchanged by the rebase and do not need re-review:
 
 ## Required checks
 
-1. The rebased tip is `80be2f5a651cb75854db036812b80456efb7b52f`.
+1. The rebased tip is `0799b9257e37e35c79636ce76c8d2edebc3cbdbf`.
 2. `check-log-superset.sh` and `pre-commit` wiring are unchanged from the
    approved `79e5cc3` version (rebase did not touch them).
 3. `test-pre-commit.sh` contains **both**:
@@ -51,12 +51,12 @@ The gate logic files are unchanged by the rebase and do not need re-review:
 - (b) `bash scripts/git-hooks/test-pre-commit.sh` → **123 passed, 0 failed**
   (executed by kimai-cockpit on the rebased tip).
 - (c) `gh pr view 114 --json mergeable,headRefOid` → `mergeable: MERGEABLE`,
-  `headRefOid: 80be2f5a651cb75854db036812b80456efb7b52f`.
+  `headRefOid: 0799b9257e37e35c79636ce76c8d2edebc3cbdbf`.
 
 ## Next step / future note
 
 On approval, emit a final-review handoff to `to-claude/review/` pinned to
-`80be2f5a651cb75854db036812b80456efb7b52f` so `claude-cockpit` can reopen the
+`0799b9257e37e35c79636ce76c8d2edebc3cbdbf` so `claude-cockpit` can reopen the
 merge gate for PR #114. Rejection should move this file back to
 `to-kiro/open/` with a `## Blocker` section explaining what must be fixed.
 

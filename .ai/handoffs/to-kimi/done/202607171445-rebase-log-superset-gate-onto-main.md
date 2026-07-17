@@ -81,9 +81,9 @@ merge:
   regression tests and the branch's activity-log superset gate tests.
 - Force-pushed the rebased branch; PR #114 updated in place and reports
   `mergeable: MERGEABLE`.
-- Added bookkeeping commit `80be2f5a651cb75854db036812b80456efb7b52f` to prepend
-  the activity-log entry and persist the done/ + review/ handoffs; final branch
-  tip pushed to `origin/exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock`.
+- Added a bookkeeping commit (the commit that contains this file) to prepend
+  the activity-log entry and persist the done/ + review/ handoffs; the branch
+  tip at push time is the commit that contains this done handoff.
 - Suite counts on rebased tip:
   - `bash .ai/tools/test-check-log-superset.sh` → 9 passed, 0 failed
   - `bash scripts/git-hooks/test-pre-commit.sh` → 123 passed, 0 failed
