@@ -110,19 +110,27 @@ if [ "$MODE" = "exec" ]; then
     bash "$root/.ai/tools/reconcile-done-handoffs.sh" "$root" || true
 fi
 
-# S3-1: cheap encoding assertion for shared-state files. Bad encoding makes
-# grep-based history lookups silently lie and git treat the file as binary.
-# Fail-open: warn loudly and notify, but never block dispatch.
+# S3-1: cheap encoding assertion + auto-repair for shared-state files. Bad
+# encoding makes grep-based history lookups silently lie and git treat the file
+# as binary. Fail-open: repair the common cases, warn+notify if repair fails.
 check_shared_encoding() {
-    local f out
+    local f out norm_out
     for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
         [ -f "$f" ] || continue
         out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
         if [ -n "$out" ]; then
-            printf '%s\n' "$out" | while IFS= read -r line; do
-                echo "WARN: $line" >&2
-            done
-            fleet_notify alert "$project_name" "encoding-check" "bash" "kimi-cli" >/dev/null 2>&1 || true
+            echo "WARN: $out" >&2
+            norm_out="$(bash "$root/.ai/tools/normalize-encoding.sh" "$f" 2>&1)" || true
+            if [ -n "$norm_out" ]; then
+                echo "WARN: attempted repair: $norm_out" >&2
+            fi
+            if bash "$root/.ai/tools/check-encoding.sh" "$f" >/dev/null 2>&1; then
+                echo "WARN: encoding repaired: $f" >&2
+                fleet_notify alert "$project_name" "encoding-repaired" "bash" "kimi-cli" >/dev/null 2>&1 || true
+            else
+                echo "WARN: encoding repair failed for $f" >&2
+                fleet_notify alert "$project_name" "encoding-check" "bash" "kimi-cli" >/dev/null 2>&1 || true
+            fi
         fi
     done
 }

@@ -1,3 +1,8 @@
+## 2026-07-18 00:04 (UTC+7) — kimi-cli
+- Action: Added auto-repair for shared .ai/ file encoding corruption (S3-1 follow-up): created normalize-encoding.sh and wired it into dispatch-handoffs.sh so bad encoding is repaired instead of only warned about.
+- Files: .ai/tools/normalize-encoding.sh, .ai/tests/test-normalize-encoding.sh, .ai/tests/test-dispatch-encoding.sh, .ai/tools/dispatch-handoffs.sh, .ai/activity/log.md
+- Decisions: normalize-encoding repairs UTF-16LE, UTF-8 BOM, cp1252 em-dash (0x97), and NUL bytes; unrepairable bytes still warn and notify. Dispatcher runs repair after check-encoding fails, then re-verifies. All regression tests pass (13 normalize + 6 dispatch-encoding + 10 check-encoding + others).
+
 ## 2026-07-17 23:53 (UTC+7) — kimi-cli
 - Action: Implemented UTF-8 encoding guard for shared .ai/ files (S3-1 framework hardening): created check-encoding.sh, regression tests, dispatcher integration, and repaired .ai/activity/log.md corruption.
 - Files: .ai/tools/check-encoding.sh, .ai/tests/test-check-encoding.sh, .ai/tests/test-dispatch-encoding.sh, .ai/tools/dispatch-handoffs.sh, .ai/activity/log.md
