@@ -1,3 +1,8 @@
+## 2026-07-17 05:06 (UTC+7) — kimi-auto
+- Action: Implemented ADR-0015 required corrections to protocol v4 on branch exec/kimi/202607171103-adr-0015-v4-fixes: Observed-in now resolves and accepts ancestor SHAs; Evidence: HYPOTHESIS dispatches a verify-first pass (Risk A/B only); Risk-C hard gates never auto-dispatch. Tests updated and branch pushed; ready for Kiro review.
+- Files: .ai/tools/dispatch-handoffs.sh, .ai/tools/lint-handoff.sh, .ai/tests/test-dispatch-worktree.sh, docs/specs/handoff-protocol-v4.md, .ai/reports/kimi-202607170335-adr-0015-v4-fixes-report.md
+- Decisions: Restored the append-only activity log after an earlier commit rewrote it; fixed via checkout-from-main + prepend. Did not merge to main; routing review to Kiro per ADR-0015 Decision 3.4.
+
 ## 2026-07-17 03:22 (UTC+7) — kimi-auto
 - Action: Implemented handoff protocol v4 (Observed-in, Evidence, Gate/Relay), added dispatcher gating, lint, tests, and pushed to main; filed ADR ratification handoff to Claude.
 - Files: .ai/tools/dispatch-handoffs.sh, .ai/tools/lint-handoff.sh, .ai/tests/test-dispatch-worktree.sh, .ai/instructions/operating-prompt/principles.md, .ai/handoffs/template.md, docs/specs/handoff-protocol-v4.md, .ai/handoffs/to-claude/open/202607170308-ratify-adr-0015-handoff-protocol-v4.md, tools/4ai-panes/test-claim-handoff.ps1, SSOT replicas.

@@ -390,6 +390,34 @@ gate_satisfied_by() {
     header_value "$1" Gate-satisfied-by
 }
 
+# gate_value <file> -> echoes the Gate: value, stripped.
+gate_value() {
+    header_value "$1" Gate
+}
+
+# is_hard_gate <value> -> 0 if the Gate: value names an owner's hard gate that
+# must never auto-dispatch, regardless of Gate-satisfied-by. Matching is
+# case-insensitive and strips non-alphanumeric characters, then uses
+# substring matching so that "Production deploy v2.3.1" still triggers the
+# hard-gate rule.
+is_hard_gate() {
+    local val="${1:-}"
+    [ -n "$val" ] || return 1
+    local norm
+    norm="$(echo "$val" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+    case "$norm" in
+        *"productiondeploy"*)        return 0 ;;
+        *"publishtoapublicregistry"*) return 0 ;;
+        *"tagrelease"*)              return 0 ;;
+        *"forcepush"*)               return 0 ;;
+        *"destructiveopsonsharedhistory"*) return 0 ;;
+        *"gitresethard"*)            return 0 ;;
+        *"secrets"*)                 return 0 ;;
+        *"productiondata"*)          return 0 ;;
+    esac
+    return 1
+}
+
 # base_for <file> -> echoes the declared base ref for a handoff. Reads an
 # optional `Base:` line from the status block (first 20 lines, mirrors the
 # Auto:/Risk: scan below); if absent, discovers the repo's default branch
@@ -532,23 +560,33 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             [ "$auto_val" = "yes" ] || continue
             [ "$status_val" = "open" ] || continue
 
-            # Evidence gate (protocol v4): HYPOTHESIS claims are not auto-dispatched.
-            # The first step is to verify the premise; once verified, change Evidence
-            # to VERIFIED or manually relay.
-            if [ "$evidence_val" = "hypothesis" ]; then
-                echo "HOLD  [$cli] $rel — Evidence: HYPOTHESIS; verify premise before auto-dispatch"
-                continue
+            # Evidence gate (protocol v4, ADR-0015): HYPOTHESIS dispatches at Risk
+            # A/B with premise-verification as the recipient's first step. HYPOTHESIS
+            # capped at Risk A/B; Risk C HYPOTHESIS is a lint error and falls through
+            # to the Risk-C gate (which will HOLD without a non-hard Gate:).
+            if [ "$evidence_val" = "hypothesis" ] && { [ "$risk_val" = "a" ] || [ "$risk_val" = "b" ]; }; then
+                echo "DISPATCH [$cli] $rel — Evidence: HYPOTHESIS at Risk $risk_val; recipient verifies premise"
             fi
 
             # Risk gate (protocol v2/v4): Risk A/B auto-dispatch by default. Risk C
-            # requires either the legacy human-relay pattern OR a satisfied Gate:.
+            # requires an explicit Gate: and Gate-satisfied-by:, unless the Gate: names
+            # an owner's hard gate (ADR-0015) — those always HOLD for a cockpit.
             case "$risk_val" in
                 a|b) ;;
                 c)
+                    gate_val="$(gate_value "$f")"
+                    if [ -z "$gate_val" ]; then
+                        echo "HOLD  [$cli] $rel — Risk C with no Gate: (human relays)"
+                        continue
+                    fi
+                    if is_hard_gate "$gate_val"; then
+                        echo "HOLD  [$cli] $rel — Risk C hard gate '$gate_val' requires cockpit, regardless of Gate-satisfied-by"
+                        continue
+                    fi
                     if [ -n "$(gate_satisfied_by "$f")" ]; then
-                        echo "DISPATCH [$cli] $rel — Risk C with satisfied Gate-satisfied-by"
+                        echo "DISPATCH [$cli] $rel — Risk C with non-hard Gate: and satisfied Gate-satisfied-by"
                     else
-                        echo "HOLD  [$cli] $rel — Risk C with no satisfied gate (human relays)"
+                        echo "HOLD  [$cli] $rel — Risk C with non-hard Gate: but no Gate-satisfied-by"
                         continue
                     fi
                     ;;
@@ -659,15 +697,63 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 rm -f "$claim"
                 continue
             fi
-            # Observed-in evidence-base check (protocol v4): if the handoff asserts
-            # file-level facts were observed in a specific commit, the resolved base
-            # must match. A mismatch means the sender's evidence does not apply to
-            # the tree the recipient will run in; stop and report, do not dispatch.
+            # Observed-in evidence-base check (protocol v4, ADR-0015): normalize the
+            # sender's SHA and accept an ancestor of the resolved base. Equality fails
+            # whenever the base advances; ancestor check keeps the field useful.
             observed_sha="$(observed_in_sha "$f")"
             if [ -n "$observed_sha" ]; then
-                base_sha="$(git -C "$root" rev-parse --verify --quiet "$base^{commit}" 2>/dev/null || true)"
-                if [ -z "$base_sha" ] || [ "$base_sha" != "$observed_sha" ]; then
-                    echo "FAIL  [$cli] $rel — evidence-base mismatch (Observed-in: $observed_sha, base $base: ${base_sha:-<unresolvable>})"
+                observed_full="$(git -C "$root" rev-parse --verify --quiet "$observed_sha^{commit}" 2>/dev/null || true)"
+                if [ -z "$observed_full" ]; then
+                    echo "FAIL  [$cli] $rel — Observed-in resolves to unknown commit ($observed_sha)"
+                    EXEC_FAILED=$((EXEC_FAILED+1))
+                    ts=$(date -u +%Y%m%d%H%M%S)
+                    report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                    {
+                        echo "# Dispatch failure — $cli (evidence-base unknown commit)"
+                        echo ""
+                        echo "- Handoff: $rel"
+                        echo "- UTC: $ts"
+                        echo "- Worktree: ${wt_path#$root/}"
+                        echo "- Resolved base: $base"
+                        echo "- Observed-in SHA: $observed_sha"
+                        echo "- Stage: evidence-base unknown commit (protocol v4)"
+                        echo ""
+                        echo "The handoff asserts evidence was observed in commit $observed_sha,"
+                        echo "but that commit cannot be resolved. The sender should correct"
+                        echo "Observed-in: or re-verify the evidence. The handoff stays OPEN until"
+                        echo "corrected or retired manually."
+                    } > "$report"
+                    echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                    fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                    rm -f "$claim"
+                    continue
+                fi
+                base_full="$(git -C "$root" rev-parse --verify --quiet "$base^{commit}" 2>/dev/null || true)"
+                if [ -z "$base_full" ]; then
+                    echo "FAIL  [$cli] $rel — declared base '$base' does not resolve for Observed-in check"
+                    EXEC_FAILED=$((EXEC_FAILED+1))
+                    ts=$(date -u +%Y%m%d%H%M%S)
+                    report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                    {
+                        echo "# Dispatch failure — $cli (evidence-base unresolvable base)"
+                        echo ""
+                        echo "- Handoff: $rel"
+                        echo "- UTC: $ts"
+                        echo "- Worktree: ${wt_path#$root/}"
+                        echo "- Resolved base: $base"
+                        echo "- Observed-in SHA: $observed_sha"
+                        echo "- Stage: evidence-base base resolution (protocol v4)"
+                        echo ""
+                        echo "The declared dispatch base could not be resolved for the Observed-in"
+                        echo "check. The handoff stays OPEN until corrected or retired manually."
+                    } > "$report"
+                    echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                    fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                    rm -f "$claim"
+                    continue
+                fi
+                if [ "$observed_full" != "$base_full" ] && ! git -C "$root" merge-base --is-ancestor "$observed_full" "$base_full" 2>/dev/null; then
+                    echo "FAIL  [$cli] $rel — evidence-base mismatch (Observed-in: $observed_sha [$observed_full], base $base: $base_full; not an ancestor)"
                     EXEC_FAILED=$((EXEC_FAILED+1))
                     ts=$(date -u +%Y%m%d%H%M%S)
                     report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
@@ -678,14 +764,15 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                         echo "- UTC: $ts"
                         echo "- Worktree: ${wt_path#$root/}"
                         echo "- Resolved base: $base"
-                        echo "- Resolved base SHA: ${base_sha:-<unresolvable>}"
-                        echo "- Observed-in SHA: $observed_sha"
+                        echo "- Resolved base SHA: $base_full"
+                        echo "- Observed-in SHA: $observed_sha ($observed_full)"
                         echo "- Stage: evidence-base mismatch (protocol v4)"
                         echo ""
                         echo "The handoff asserts evidence was observed in commit $observed_sha,"
-                        echo "but the resolved dispatch base does not match. The sender should"
-                        echo "re-verify the evidence in the current tree or update Observed-in:."
-                        echo "The handoff stays OPEN until corrected or retired manually."
+                        echo "but that commit is not an ancestor of the resolved dispatch base."
+                        echo "The sender should re-verify the evidence in the current tree or"
+                        echo "update Observed-in:. The handoff stays OPEN until corrected or"
+                        echo "retired manually."
                     } > "$report"
                     echo "ALERT: dispatch failed — report written to ${report#$root/}"
                     fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true

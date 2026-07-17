@@ -518,15 +518,27 @@ if [ -d "$wt_kimi" ]; then
     git -C "$wt_kimi" reset --hard >/dev/null 2>&1 || true
 fi
 
-# ---- v4-1. Evidence: HYPOTHESIS holds auto-dispatch ----
+# Remove leftover kimi handoffs from earlier tests so each v4 dispatcher run
+# processes only the target handoff. This keeps the suite fast enough to finish
+# within the execution timeout without changing any assertions.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110004-t4.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110004-t4a.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110006-t6.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110007-t6b.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110010-s3-4-blocker.md"
+rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110004-t4c.md" \
+      "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110004-t4d.md"
+
+# ---- v4-1. Evidence: HYPOTHESIS at Risk A/B dispatches verify-first ----
 mk_handoff kimi 202607110011-v4-hypothesis "Evidence: HYPOTHESIS"
 out_v41="$(run_dispatcher --only kimi 2>&1)"
-check "v4-1: Evidence: HYPOTHESIS is HELD" "$(echo "$out_v41" | grep -q 'HOLD.*HYPOTHESIS' && echo 0 || echo 1)"
-check "v4-1: kimi stub was not invoked" "$(grep -q '202607110011-v4-hypothesis' "$LOGS/kimi.log" 2>/dev/null && echo 1 || echo 0)"
-check "v4-1: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kimi/open/202607110011-v4-hypothesis.md" && echo 0 || echo 1)"
+rc_v41=$?
+check "v4-1: Evidence: HYPOTHESIS at Risk A/B dispatches (exit 0)" "$([ "$rc_v41" -eq 0 ] && echo 0 || echo 1)"
+check "v4-1: dispatcher reports HYPOTHESIS verify-first" "$(echo "$out_v41" | grep -q 'HYPOTHESIS.*verifies premise' && echo 0 || echo 1)"
+check "v4-1: kimi stub was invoked" "$(grep -q '202607110011-v4-hypothesis' "$LOGS/kimi.log" && echo 0 || echo 1)"
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110011-v4-hypothesis.md"
 
-# ---- v4-2. Risk C without Gate-satisfied-by is HELD ----
+# ---- v4-2. Risk C without Gate: is HELD ----
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110012-v4-risk-c-no-gate.md" <<'EOF'
 # Risk C no-gate test
 Status: OPEN
@@ -537,61 +549,143 @@ Auto: yes
 Risk: C
 
 ## Goal
-Prove Risk C without Gate-satisfied-by is held.
+Prove Risk C with no Gate: is held.
 EOF
 out_v42="$(run_dispatcher --only kimi 2>&1)"
-check "v4-2: Risk C without gate is HELD" "$(echo "$out_v42" | grep -q 'HOLD.*Risk C with no satisfied gate' && echo 0 || echo 1)"
+check "v4-2: Risk C with no Gate: is HELD" "$(echo "$out_v42" | grep -q 'HOLD.*Risk C with no Gate:' && echo 0 || echo 1)"
 check "v4-2: kimi stub was not invoked" "$(grep -q '202607110012-v4-risk-c-no-gate' "$LOGS/kimi.log" 2>/dev/null && echo 1 || echo 0)"
 check "v4-2: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kimi/open/202607110012-v4-risk-c-no-gate.md" && echo 0 || echo 1)"
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110012-v4-risk-c-no-gate.md"
 
-# ---- v4-3. Risk C with Gate-satisfied-by dispatches ----
-cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-gate.md" <<'EOF'
-# Risk C gated test
+# ---- v4-3. Hard Gate: with Gate-satisfied-by still HOLDs ----
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-hard-gate.md" <<'EOF'
+# Risk C hard-gate test
 Status: OPEN
 Sender: claude-code
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
 Risk: C
+Gate: production deploy
 Gate-satisfied-by: owner@2026-07-17 00:00 (UTC+7)
 
 ## Goal
-Prove Risk C with satisfied gate dispatches.
+Prove a hard Gate: is never auto-dispatched, even with Gate-satisfied-by.
 EOF
 out_v43="$(run_dispatcher --only kimi 2>&1)"
 rc_v43=$?
-check "v4-3: Risk C with gate dispatches (exit 0)" "$([ "$rc_v43" -eq 0 ] && echo 0 || echo 1)"
-check "v4-3: dispatcher reports Risk C with satisfied Gate-satisfied-by" "$(echo "$out_v43" | grep -q 'Risk C with satisfied Gate-satisfied-by' && echo 0 || echo 1)"
-check "v4-3: kimi stub was invoked" "$(grep -q '202607110013-v4-risk-c-gate' "$LOGS/kimi.log" && echo 0 || echo 1)"
-rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-gate.md"
+check "v4-3: Risk C hard gate HOLDs even with Gate-satisfied-by (exit 0)" "$([ "$rc_v43" -eq 0 ] && echo 0 || echo 1)"
+check "v4-3: dispatcher reports hard gate requires cockpit" "$(echo "$out_v43" | grep -q 'hard gate.*requires cockpit' && echo 0 || echo 1)"
+check "v4-3: kimi stub was not invoked" "$(grep -q '202607110013-v4-risk-c-hard-gate' "$LOGS/kimi.log" 2>/dev/null && echo 1 || echo 0)"
+check "v4-3: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-hard-gate.md" && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-hard-gate.md"
 
-# ---- v4-4. Observed-in mismatch fails before branch cut ----
-MASTER_SHA="$(git -C "$PROJECT" rev-parse origin/master)"
-DECOY_SHA="$(git -C "$PROJECT" rev-parse decoy/should-not-be-base 2>/dev/null || true)"
-if [ -n "$DECOY_SHA" ]; then
-    mk_handoff kimi 202607110014-v4-observed-mismatch "Observed-in: master@$DECOY_SHA"
-    before_reports_v44="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
-    out_v44="$(run_dispatcher --only kimi 2>&1)"
+# ---- v4-3b. Non-hard Gate: with Gate-satisfied-by DISPATCHes ----
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110013b-v4-risk-c-soft-gate.md" <<'EOF'
+# Risk C soft-gate test
+Status: OPEN
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: C
+Gate: update documentation
+Gate-satisfied-by: owner@2026-07-17 00:00 (UTC+7)
+
+## Goal
+Prove a non-hard Gate: with Gate-satisfied-by auto-dispatches.
+EOF
+out_v43b="$(run_dispatcher --only kimi 2>&1)"
+rc_v43b=$?
+check "v4-3b: Risk C non-hard gate with Gate-satisfied-by dispatches (exit 0)" "$([ "$rc_v43b" -eq 0 ] && echo 0 || echo 1)"
+check "v4-3b: dispatcher reports non-hard Gate: with satisfied Gate-satisfied-by" "$(echo "$out_v43b" | grep -q 'non-hard Gate:.*satisfied Gate-satisfied-by' && echo 0 || echo 1)"
+check "v4-3b: kimi stub was invoked" "$(grep -q '202607110013b-v4-risk-c-soft-gate' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110013b-v4-risk-c-soft-gate.md"
+
+# ---- v4-4. Observed-in mismatch on origin/main fails before branch cut ----
+# Use the main-default project so the observed branch is origin/main.
+DECOY_SHA_MAIN="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet 'decoy/main-not-base^{commit}' 2>/dev/null || true)"
+if [ -z "$DECOY_SHA_MAIN" ]; then
+    git -C "$PROJECT_MAIN" checkout --quiet -b decoy/main-not-base
+    echo "decoy content main" > "$PROJECT_MAIN/decoy-main.txt"
+    git -C "$PROJECT_MAIN" add decoy-main.txt
+    git -C "$PROJECT_MAIN" commit --quiet -m "decoy commit not on main"
+    DECOY_SHA_MAIN="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet HEAD)"
+    git -C "$PROJECT_MAIN" checkout --quiet main
+fi
+if [ -n "$DECOY_SHA_MAIN" ]; then
+    mk_handoff_for "$PROJECT_MAIN" kimi 202607110014-v4-observed-mismatch "Observed-in: origin/main@$DECOY_SHA_MAIN"
+    before_reports_v44="$(ls "$PROJECT_MAIN/.ai/reports" 2>/dev/null | wc -l)"
+    (
+        cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+    ) >"$LOGS/t4-v44-dispatcher.out" 2>&1
     rc_v44=$?
-    after_reports_v44="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+    out_v44="$(cat "$LOGS/t4-v44-dispatcher.out")"
+    after_reports_v44="$(ls "$PROJECT_MAIN/.ai/reports" 2>/dev/null | wc -l)"
     check "v4-4: Observed-in mismatch exits non-zero" "$([ "$rc_v44" -ne 0 ] && echo 0 || echo 1)"
-    check "v4-4: dispatcher reports evidence-base mismatch" "$(echo "$out_v44" | grep -q 'evidence-base mismatch' && echo 0 || echo 1)"
+    check "v4-4: dispatcher reports evidence-base mismatch" "$(echo "$out_v44" | grep -Eq 'evidence-base mismatch|not an ancestor' && echo 0 || echo 1)"
     check "v4-4: dispatch-failure report was written" "$([ "$after_reports_v44" -gt "$before_reports_v44" ] && echo 0 || echo 1)"
-    check "v4-4: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kimi/open/202607110014-v4-observed-mismatch.md" && echo 0 || echo 1)"
+    check "v4-4: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014-v4-observed-mismatch.md" && echo 0 || echo 1)"
     check "v4-4: kimi stub was not invoked" "$(grep -q '202607110014-v4-observed-mismatch' "$LOGS/kimi.log" 2>/dev/null && echo 1 || echo 0)"
-    rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110014-v4-observed-mismatch.md"
+    rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014-v4-observed-mismatch.md"
 else
     check "v4-4: precondition (decoy branch exists)" 1
 fi
 
-# ---- v4-5. Observed-in match dispatches ----
-mk_handoff kimi 202607110015-v4-observed-match "Observed-in: origin/master@$MASTER_SHA"
-out_v45="$(run_dispatcher --only kimi 2>&1)"
+# ---- v4-4b. Observed-in abbreviated SHA of origin/main dispatches ----
+MAIN_SHA_SHORT="$(git -C "$PROJECT_MAIN" rev-parse --short=8 origin/main)"
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110014b-v4-observed-abbrev "Observed-in: origin/main@$MAIN_SHA_SHORT"
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+) >"$LOGS/t4-v44b-dispatcher.out" 2>&1
+rc_v44b=$?
+out_v44b="$(cat "$LOGS/t4-v44b-dispatcher.out")"
+check "v4-4b: Observed-in abbreviated SHA dispatches (exit 0)" "$([ "$rc_v44b" -eq 0 ] && echo 0 || echo 1)"
+check "v4-4b: dispatcher reports no evidence-base mismatch" "$(echo "$out_v44b" | grep -qv 'evidence-base mismatch' && echo 0 || echo 1)"
+check "v4-4b: kimi stub was invoked" "$(grep -q '202607110014b-v4-observed-abbrev' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014b-v4-observed-abbrev.md"
+
+# ---- v4-4c. Observed-in ancestor SHA of origin/main dispatches ----
+# Make the base advance by one commit so origin/main~1 is a strict ancestor.
+git -C "$PROJECT_MAIN" checkout --quiet main
+echo "ancestor advance" > "$PROJECT_MAIN/ancestor-advance.txt"
+git -C "$PROJECT_MAIN" add ancestor-advance.txt
+git -C "$PROJECT_MAIN" commit --quiet -m "advance main for v4-4c ancestor test"
+git -C "$PROJECT_MAIN" push --quiet origin main
+ANCESTOR_SHA="$(git -C "$PROJECT_MAIN" rev-parse origin/main~1)"
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110014c-v4-observed-ancestor "Observed-in: origin/main@$ANCESTOR_SHA"
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+) >"$LOGS/t4-v44c-dispatcher.out" 2>&1
+rc_v44c=$?
+out_v44c="$(cat "$LOGS/t4-v44c-dispatcher.out")"
+check "v4-4c: Observed-in ancestor SHA dispatches (exit 0)" "$([ "$rc_v44c" -eq 0 ] && echo 0 || echo 1)"
+check "v4-4c: dispatcher reports no evidence-base mismatch" "$(echo "$out_v44c" | grep -qv 'evidence-base mismatch' && echo 0 || echo 1)"
+check "v4-4c: kimi stub was invoked" "$(grep -q '202607110014c-v4-observed-ancestor' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014c-v4-observed-ancestor.md"
+
+# ---- v4-5. Evidence: HYPOTHESIS + Risk: C is a lint error ----
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md" <<'EOF'
+# HYPOTHESIS + Risk C lint test
+Status: OPEN
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: C
+Evidence: HYPOTHESIS
+
+## Goal
+Prove HYPOTHESIS with Risk C is rejected by lint-handoff.sh.
+EOF
+(
+    cd "$PROJECT" && bash "$REPO_ROOT/.ai/tools/lint-handoff.sh"
+) >"$LOGS/t4-v45-lint.out" 2>&1
 rc_v45=$?
-check "v4-5: Observed-in match dispatches (exit 0)" "$([ "$rc_v45" -eq 0 ] && echo 0 || echo 1)"
-check "v4-5: kimi stub was invoked" "$(grep -q '202607110015-v4-observed-match' "$LOGS/kimi.log" && echo 0 || echo 1)"
-rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110015-v4-observed-match.md"
+out_v45="$(cat "$LOGS/t4-v45-lint.out")"
+check "v4-5: lint exits non-zero for HYPOTHESIS + Risk C" "$([ "$rc_v45" -ne 0 ] && echo 0 || echo 1)"
+check "v4-5: lint reports HYPOTHESIS not allowed with Risk C" "$(echo "$out_v45" | grep -q 'HYPOTHESIS is not allowed with Risk: C' && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md"
 
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
