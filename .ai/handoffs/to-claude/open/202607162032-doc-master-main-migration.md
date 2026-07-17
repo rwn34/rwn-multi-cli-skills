@@ -1,10 +1,11 @@
 # Documentation updates for master→main migration
 
-## Sender: opencode-auto
-## Recipient: claude-code (code-reviewer)
-## Created: 2026-07-16 20:32 (UTC+7)
-## Auto: yes
-## Risk: B
+Status: OPEN
+Sender: opencode-auto
+Recipient: claude-code (code-reviewer)
+Created: 2026-07-16 20:32 (UTC+7)
+Auto: yes
+Risk: B
 
 ## Goal
 

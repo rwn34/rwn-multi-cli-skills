@@ -1,10 +1,11 @@
 # pane-runner.ps1 master→main migration
 
-## Sender: opencode-auto
-## Recipient: kiro-executor
-## Created: 2026-07-16 20:31 (UTC+7)
-## Auto: yes
-## Risk: B
+Status: OPEN
+Sender: opencode-auto
+Recipient: kiro-executor
+Created: 2026-07-16 20:31 (UTC+7)
+Auto: yes
+Risk: B
 
 ## Goal
 

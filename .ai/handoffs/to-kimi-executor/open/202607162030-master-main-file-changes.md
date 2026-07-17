@@ -2,11 +2,12 @@
 
 This handoff contains ONLY the file changes (no GitHub operations), which are routed to the appropriate CLIs per their lanes. GitHub operations (branch rename, PR, refs) remain in opencode's lane.
 
-## Sender: opencode-auto
-## Recipient: kimi-executor + kiro-executor
-## Created: 2026-07-16 20:30 (UTC+7)
-## Auto: yes
-## Risk: B
+Status: OPEN
+Sender: opencode-auto
+Recipient: kimi-executor + kiro-executor
+Created: 2026-07-16 20:30 (UTC+7)
+Auto: yes
+Risk: B
 
 ## Goal
 
