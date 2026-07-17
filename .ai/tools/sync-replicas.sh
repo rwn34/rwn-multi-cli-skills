@@ -31,6 +31,14 @@
 # tree. --check and --dest-root write only to their explicit sink, never the
 # tree, and are not guarded.
 #
+# SKIP-WORKTREE SOURCE GUARD (ADR-0015 follow-up, 2026-07-17): the same worktree
+# layout also sets skip-worktree on .ai/** sources so that git stops trusting
+# the working-tree view.  A generator that reads such a source would regenerate
+# replicas from the index's stale blob while the commit stat claims an update.
+# The generator therefore checks `git ls-files -v <ssot>` for every source and
+# aborts if the flag is 'S'.  Clear the bit with `git update-index
+# --no-skip-worktree <path>` before regenerating.
+#
 # Usage:
 #   bash .ai/tools/sync-replicas.sh                 # regenerate replicas in place
 #   bash .ai/tools/sync-replicas.sh --check         # drift report; exit 1 on drift
@@ -185,12 +193,35 @@ $pairs
 EOF
 }
 
+# Refuse to read SSOT sources that git has been told to ignore via
+# skip-worktree.  In a bootstrapped worktree the reverse-write guard sets this
+# bit on .ai/** sources; reading them would regenerate replicas from the index's
+# stale view while the commit's stat claims an update.  Fail closed: the fix is
+# to clear the bit on the source before trusting it.
+guard_skip_worktree_sources() {
+  while IFS="$(printf '\t')" read -r gsrc _gdst; do
+    [ -n "$gsrc" ] || continue
+    local lsout flag
+    lsout="$(git ls-files -v "$gsrc" 2>/dev/null)" \
+      || fail "SSOT source '$gsrc': skip-worktree probe failed (git ls-files -v). Refusing to regenerate from an untrusted source (fail closed)."
+    flag="$(printf '%s\n' "$lsout" | head -n1 | cut -c1)"
+    case "$flag" in
+      S|s)
+        fail "SSOT source '$gsrc' has skip-worktree bit set (git ls-files -v shows '$flag'). The file git is ignoring is the one the generator would read, so regenerating now would launder stale source text into the replicas. Clear the bit before regenerating: git update-index --no-skip-worktree '$gsrc'"
+        ;;
+    esac
+  done <<EOF
+$pairs
+EOF
+}
+
 # ---- the ONE generator -------------------------------------------------------
 # generate <dest-root> — write every replica under <dest-root>/<dest> and print
 # the `SOURCE<TAB>DEST` manifest (one line per replica) on stdout; a human
 # summary goes to stderr.
 generate() {
   gen_root="$1"
+  guard_skip_worktree_sources
   count=0
   # IFS=tab so paths keep any spaces; read src + dst from each manifest line.
   while IFS="$(printf '\t')" read -r src dst; do
@@ -239,7 +270,16 @@ if [ "$CHECK" = 1 ]; then
   # per line). The generator reads the registry + sources + committed preambles
   # from the CWD (repo root) and writes fresh replicas under $tmp/<dst>.
   tmp="$(mktemp -d)" || cfail "mktemp failed"
-  manifest="$(generate "$tmp" 2>/dev/null)" || { rm -rf "$tmp"; cfail "generation failed (fail closed)"; }
+  gen_err="$(mktemp)"
+  manifest="$(generate "$tmp" 2>"$gen_err")" || {
+    gen_err_text="$(cat "$gen_err")"
+    rm -f "$gen_err"; rm -rf "$tmp"
+    if [ -n "$gen_err_text" ]; then
+      { echo "sync-replicas.sh --check: generation failed:"; echo "$gen_err_text"; } >&2
+    fi
+    cfail "generation failed (fail closed)"
+  }
+  rm -f "$gen_err"
 
   while IFS="$(printf '\t')" read -r src dst; do
     [ -n "$src" ] && [ -n "$dst" ] || continue

@@ -36,11 +36,21 @@ comments above the body copied from SSOT. Regeneration keeps everything
 through the first `<!-- SSOT: ... -->` line plus one trailing blank line, and
 replaces only the body below it.
 
-**Junction safety (ADR-0004):** in-place regeneration refuses to write through
-any symlink or Windows-junction ancestor of a replica path, and refuses any
-registry destination under `.ai/` outright — the reverse-write class that
-clobbered the primary checkout's live `.ai/` on 2026-07-12/13. `--check` and
-`--dest-root` write only to their explicit sink and are not guarded.
+**Junction safety (ADR-0004) / snapshot-copy (ADR-0016):** in-place
+regeneration refuses to write through any symlink or Windows-junction ancestor
+of a replica path, and refuses any registry destination under `.ai/` outright.
+ADR-0016 removed the junction entirely in favor of a dispatcher-owned snapshot
+copy, so the symlink/junction guard is now a defense-in-depth belt-and-suspenders
+layer. `--check` and `--dest-root` write only to their explicit sink and are not
+guarded.
+
+**Skip-worktree source guard (ADR-0015 follow-up, 2026-07-17):** the worktree
+layout may set `skip-worktree` on `.ai/**` sources so that git stops trusting
+the working-tree view. A generator that reads such a source would regenerate
+replicas from the index's stale blob while the commit stat claims an update.
+The generator therefore checks `git ls-files -v <ssot>` for every source and
+aborts if the flag is 'S'. Clear the bit with `git update-index
+--no-skip-worktree <path>` before regenerating.
 
 ## `check-ssot-drift.sh` — compatibility shim
 
@@ -58,6 +68,7 @@ headers that already exist in `origin/main`, the current working tree, or any
 
 ```bash
 bash .ai/tools/check-log-superset.sh <candidate-log.md>
+bash .ai/tools/test-check-log-superset.sh
 ```
 
 **Exit codes:**
@@ -75,43 +86,6 @@ headers as a **set**, not line counts.
 **Pre-commit:** `scripts/git-hooks/pre-commit` runs this on any staged
 `.ai/activity/log.md` and rejects the commit if the staged content is not a
 strict superset of all sources.
-
-## `guard-ai-destructive.sh` — junction-aware destructive-op guard
-
-Blocks destructive commands while a worktree's `.ai/` is still a junction or
-symlink into the canonical coordination plane. Prevents the 2026-07-16 class
-of incident where `git clean -fd` or `git worktree remove --force` followed
-the junction and deleted shared `.ai/` state.
-
-**Usage:**
-
-```bash
-bash .ai/tools/guard-ai-destructive.sh --check [path]   # exit 0 if safe
-bash .ai/tools/guard-ai-destructive.sh git clean -fd    # run if safe
-bash .ai/tools/guard-ai-destructive.sh rm -rf junk
-```
-
-**Safe paths:** `.ai/` absent, or a normal directory. **Blocked paths:** `.ai/`
-is a symlink or Windows junction. Use `scripts/wt-bootstrap.sh --remove` to
-unmount `.ai/` and remove a worktree safely.
-
-## `checkpoint-ai.sh` — mechanical `.ai/` durability commits
-
-Commits the current state of `.ai/` with a signless, mechanical message so the
-shared coordination plane is recoverable from git history. Designed to be called
-manually, from a scheduler, or at the end of a dispatch cycle.
-
-**Usage:**
-
-```bash
-bash .ai/tools/checkpoint-ai.sh              # checkpoint current repo
-bash .ai/tools/checkpoint-ai.sh --dry-run    # preview only
-```
-
-**Guards:**
-- Refuses linked worktrees (the junction makes `.ai/` look like local changes).
-- Refuses if non-`.ai/` changes are present.
-- Only commits paths under `.ai/`.
 
 ## `fleet-health.sh` — pane liveness and queue-dir watchdog
 
@@ -137,9 +111,6 @@ open.
   `claude-code` committer auto-stages the regenerated replicas instead).
 - **Ad hoc** — whenever `.ai/instructions/` is edited: run the generator,
   commit SSOT + replicas together.
-- **Before destructive ops** — run `guard-ai-destructive.sh --check <worktree>`.
-- **Durability** — run `checkpoint-ai.sh` after heavy handoff activity or from
-  a periodic scheduler.
 - **Fleet monitoring** — run `fleet-health.sh` to detect stale panes or missing
   queue directories.
 
