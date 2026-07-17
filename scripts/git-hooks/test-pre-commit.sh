@@ -367,6 +367,57 @@ else
     pf "CI net (check-ssot-drift) goes RED on the bypassed stale tree" \
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
+
+    echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
+    d="$(mkrepo)"
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "sync-replicas refuses to run with skip-worktree SSOT source" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    srr_out="$(cd "$d" && bash .ai/tools/sync-replicas.sh 2>&1)"
+    printf '%s' "$srr_out" | grep -q "skip-worktree"
+    pf "refusal message names skip-worktree" "$?"
+    printf '%s' "$srr_out" | grep -q "git update-index --no-skip-worktree"
+    pf "refusal message names the fix" "$?"
+    rm -rf "$d"
+
+    echo "== regression: pre-commit auto-sync fails the commit when sync-replicas aborts =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Stage an SSOT change, then set skip-worktree so the generator refuses.
+    printf '\n<!-- skip-worktree marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/principles.md >/dev/null 2>&1 )
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    hout="$(cd "$d" && git commit -m "ssot: skip-worktree source" 2>&1)"; hrc=$?
+    pf "claude-code commit is REFUSED when sync-replicas aborts" \
+        "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "sync-replicas.sh refused"
+    pf "refusal surfaces the generator error" "$?"
+    rm -rf "$d"
+
+    echo "== regression: landed-blob check catches stale-source laundering that working-tree drift misses =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Working tree: edit source + dest consistently; index: only dest is updated.
+    # This reproduces the laundered commit: the stat claims a replica update but
+    # the SSOT source blob in the commit is stale.
+    printf '\n<!-- laundering marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    ( cd "$d" && git add .kimi/steering/karpathy-guidelines.md \
+                           .kiro/steering/karpathy-guidelines.md \
+                           .claude/skills/karpathy-guidelines/SKILL.md \
+                           .kiro/skills/karpathy-guidelines/SKILL.md \
+                           .kimi/resource/karpathy-guidelines-examples.md \
+                           .claude/skills/karpathy-guidelines/EXAMPLES.md >/dev/null 2>&1 )
+    # Leave the SSOT source UNSTAGED so the commit's source blob stays old.
+    ( cd "$d" && git commit -q -m "laundered replica update" --no-verify >/dev/null 2>&1 )
+    pf "laundered commit (dest updated, source not) lands with --no-verify" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "working-tree drift check is GREEN on the laundered tree" "$?"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "landed-blob check is RED on the laundered tree" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
 fi
 
 echo
