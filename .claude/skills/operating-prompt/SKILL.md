@@ -242,6 +242,23 @@ paste the output, an explicit per-deploy human confirmation, and refusal on a
 dirty tree or failing tests. Nothing in the fleet's git/GitHub authority weakens
 that gate.
 
+**Protocol-v4 handoff evidence discipline.** Handoffs support three fields that
+keep the human as a *gate* (who authorizes) without making the human a *relay*
+(who launches):
+
+- `Evidence: VERIFIED` — default; the handoff may auto-dispatch under normal tier
+  rules.
+- `Evidence: HYPOTHESIS` — the dispatcher HOLDS the handoff. The first step is to
+  verify the premise; once verified, update the field to `VERIFIED` or relay it
+  manually. A hypothesis may not carry a priority label.
+- `Risk: C` still requires a human gate, but `Gate-satisfied-by: <who>@<when>`
+  records that the gate was satisfied. Once recorded, the orchestrator may relay
+  the launch; the dispatcher still refuses an ungated Risk C item.
+- `Observed-in: <branch>@<sha>` is required when a handoff asserts file-level
+  facts. If the SHA does not match the resolved dispatch base, the dispatcher
+  rejects the handoff with an evidence-base mismatch report routed back to the
+  sender.
+
 ### 8.1 Confirmed-stale CLI kills are fleet-executed (Tier B)
 
 Owner directive 2026-07-13: *"Killing a stale auto CLI — if it is confirmed

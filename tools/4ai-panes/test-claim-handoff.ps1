@@ -152,7 +152,7 @@ try {
     Assert-Equal $true $dead 'c5: precondition - foreign pid is confirmed dead'
     $r = Invoke-ClaimTool -Tool $claimTool -HandoffPath $h2
     Assert-Equal 0 $r.Code 'c5b: dead same-host pid -> claim RECLAIMS (exit 0)'
-    Assert-Equal $true ((Get-Content $sc2 -Raw) -match '"owner":\s*"kimi-cli"') 'c5c: sidecar is now ours'
+    Assert-Equal $true ((Get-Content $sc2 -Raw) -match '"owner":\s*"kimai-cockpit"') 'c5c: sidecar is now ours'
     Assert-Equal 'Auto: no' (Get-AutoLine $h2).Trim() 'c5d: Auto: flipped to no'
 
     # -- (c6) IDEMPOTENT: claim again -> exit 0, handoff bytes unchanged, one sidecar --
