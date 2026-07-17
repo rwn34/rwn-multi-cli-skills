@@ -67,6 +67,18 @@ EXEC_FAILED=0
 root="$(pwd)"
 [ -d "$root/.ai/handoffs" ] || { echo "Run from repo root (no .ai/handoffs found)."; exit 1; }
 
+# S3-3: ensure every discovered recipient queue has open/review/done dirs.
+# Missing dirs are auto-created here so handoffs always have somewhere to land.
+ensure_queue_dirs() {
+    local dir
+    shopt -s nullglob
+    for dir in "$root"/.ai/handoffs/to-*; do
+        [ -d "$dir" ] || continue
+        mkdir -p "$dir"/open "$dir"/review "$dir"/done 2>/dev/null || true
+    done
+}
+ensure_queue_dirs
+
 # Fleet Telegram notifications for the HEADLESS path (closes the coverage gap:
 # before this, only the PS pane-runner notified — bash-dispatched handoffs were
 # silent). Sourced fail-open: if notify.sh is missing/broken, define a no-op so a
