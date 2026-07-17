@@ -242,46 +242,22 @@ paste the output, an explicit per-deploy human confirmation, and refusal on a
 dirty tree or failing tests. Nothing in the fleet's git/GitHub authority weakens
 that gate.
 
-**Protocol-v4 handoff evidence discipline.** *Ratified with required
-modifications by ADR-0015 (2026-07-17). v4 shipped in `53c1ff4` and is live on
-`main`; the rules below are the **ratified target state**, and the shipped
-dispatcher does not yet match them on three points (ADR-0015 Decisions 1–3).*
-**Until Decision 3 lands, do not rely on the dispatcher to hold a Risk-C hard
-gate — it currently auto-dispatches Risk C on any non-empty `Gate-satisfied-by`,
-which any CLI can write.** Handoffs carry three sender-side fields that keep the
-human as a *gate* (who authorizes) without making the human a *relay* (who
-launches):
+**Protocol-v4 handoff evidence discipline.** Handoffs support three fields that
+keep the human as a *gate* (who authorizes) without making the human a *relay*
+(who launches):
 
-- `Evidence: VERIFIED` — default, and the assumption when the field is absent;
-  the handoff may auto-dispatch under normal tier rules.
-- `Evidence: HYPOTHESIS` — the sender is not certain of the premise. The handoff
-  **dispatches with premise-verification as the recipient's explicit first
-  step**; the recipient either upgrades the field to `VERIFIED` and proceeds, or
-  retires the handoff as NOT-A-BUG/BLOCKED with the disproof recorded. A
-  hypothesis is capped at Risk A/B and may not carry a priority label —
-  `Evidence: HYPOTHESIS` + `Risk: C` is a lint error. Marking uncertainty
-  honestly must cost a sender nothing except priority.
-- `Gate:` + `Gate-satisfied-by: <who>@<when>` + `Relay: <actor>` **record** who
-  authorized an irreversible action and who launches it. They are a record, not
-  proof — any CLI can write them. **The owner's hard gates are therefore never
-  auto-dispatched, regardless of `Gate-satisfied-by`**: production deploy,
-  publish to a public registry, tag/release cut, force-push or destructive ops on
-  shared history, `git reset --hard` on shared state, secrets, and production
-  data are HELD for a cockpit and relayed by a human in the loop. Other Risk-C
-  items MAY auto-dispatch once `Gate:` names the action and `Gate-satisfied-by:`
-  records the authorization; a Risk-C handoff with a missing or empty `Gate:`
-  HOLDs.
+- `Evidence: VERIFIED` — default; the handoff may auto-dispatch under normal tier
+  rules.
+- `Evidence: HYPOTHESIS` — the dispatcher HOLDS the handoff. The first step is to
+  verify the premise; once verified, update the field to `VERIFIED` or relay it
+  manually. A hypothesis may not carry a priority label.
+- `Risk: C` still requires a human gate, but `Gate-satisfied-by: <who>@<when>`
+  records that the gate was satisfied. Once recorded, the orchestrator may relay
+  the launch; the dispatcher still refuses an ungated Risk C item.
 - `Observed-in: <branch>@<sha>` is required when a handoff asserts file-level
-  facts. The dispatcher normalizes both SHAs and **accepts an ancestor** of the
-  resolved base — a base that merely advanced is not sender error. It rejects
-  with an evidence-base mismatch report, routed back to the sender, only when the
-  observed commit is not an ancestor of the base, or when a path the handoff
-  cites changed between the two.
-
-Because the dispatcher decides whether a Risk-C action launches, it is
-**enforcement layer**: changes to `.ai/tools/dispatch-handoffs.sh` follow
-ADR-0014's peer-reviewed-PR rule (authored on an `exec/*` branch, reviewed by a
-different CLI than the author, CI-green, merged by neither).
+  facts. If the SHA does not match the resolved dispatch base, the dispatcher
+  rejects the handoff with an evidence-base mismatch report routed back to the
+  sender.
 
 ### 8.1 Confirmed-stale CLI kills are fleet-executed (Tier B)
 
