@@ -688,6 +688,92 @@ check "v4-5: lint reports HYPOTHESIS not allowed with Risk C" "$(echo "$out_v45"
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md"
 
 # ======================================================================
+# P0. Dark-queue regression tests (2026-07-17):
+#     parser tolerates real corpus shape; executor queues resolve to real
+#     binaries.
+# ======================================================================
+# Clean the kimi worktree so these tests prove parsing, not dirty-worktree behavior.
+if [ -d "$wt_kimi" ]; then
+    rm -f "$wt_kimi/.kimi-private-marker"
+    git -C "$wt_kimi" reset --hard >/dev/null 2>&1 || true
+fi
+# Remove any leftover kimi handoffs so each P0 run processes only the target handoff.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/"*.md
+
+# ---- P0-a. Blank line between `# Title` and `Status:` is seen and dispatched ----
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607170010-p0a-blank-line.md" <<'EOF'
+# Blank-line status block
+
+Status: OPEN
+Sender: claude-cockpit
+Recipient: kimai-auto
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+Prove the parser sees a handoff with a blank line after the title.
+EOF
+out_p0a="$(run_dispatcher --only kimi 2>&1)"
+rc_p0a=$?
+check "P0-a: blank line after title dispatches (exit 0)" "$([ "$rc_p0a" -eq 0 ] && echo 0 || echo 1)"
+check "P0-a: handoff was dispatched (slug in kimi log)" "$(grep -q '202607170010-p0a-blank-line' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607170010-p0a-blank-line.md"
+
+# ---- P0-b. No blank line (template shape) still works ----
+mk_handoff kimi 202607170011-p0b-no-blank-line
+out_p0b="$(run_dispatcher --only kimi 2>&1)"
+rc_p0b=$?
+check "P0-b: no blank line after title still dispatches (exit 0)" "$([ "$rc_p0b" -eq 0 ] && echo 0 || echo 1)"
+check "P0-b: handoff was dispatched (slug in kimi log)" "$(grep -q '202607170011-p0b-no-blank-line' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607170011-p0b-no-blank-line.md"
+
+# ---- P0-c. `## ` terminates the scan; prose below is never parsed as headers ----
+# If the scan did NOT stop at `## Goal`, the bogus `Base:` in prose would be
+# parsed and the dispatcher would fail to resolve origin/does-not-exist.
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607170012-p0c-terminator.md" <<'EOF'
+# Section-header terminator
+Status: OPEN
+Sender: claude-cockpit
+Recipient: kimai-auto
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+Base: origin/does-not-exist
+EOF
+before_reports_p0c="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+out_p0c="$(run_dispatcher --only kimi 2>&1)"
+rc_p0c=$?
+after_reports_p0c="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+check "P0-c: `## Goal` terminates status scan (exit 0)" "$([ "$rc_p0c" -eq 0 ] && echo 0 || echo 1)"
+check "P0-c: handoff was dispatched (slug in kimi log)" "$(grep -q '202607170012-p0c-terminator' "$LOGS/kimi.log" && echo 0 || echo 1)"
+check "P0-c: bogus Base: in prose was ignored (no failure report)" "$([ "$after_reports_p0c" -eq "$before_reports_p0c" ] && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607170012-p0c-terminator.md"
+
+# ---- P0-d. `to-kimi-executor/` queue resolves to the `kimi` binary ----
+mkdir -p "$PROJECT/.ai/handoffs/to-kimi-executor/open"
+cat > "$PROJECT/.ai/handoffs/to-kimi-executor/open/202607170013-p0d-executor-queue.md" <<'EOF'
+# Executor-queue binary resolution
+Status: OPEN
+Sender: claude-cockpit
+Recipient: kimai-auto
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+Prove to-kimi-executor/open/ resolves to the kimi binary.
+EOF
+out_p0d="$(run_dispatcher --only kimi-executor 2>&1)"
+rc_p0d=$?
+check "P0-d: to-kimi-executor handoff dispatches (exit 0)" "$([ "$rc_p0d" -eq 0 ] && echo 0 || echo 1)"
+check "P0-d: executor handoff invoked the kimi stub (slug in kimi log)" "$(grep -q '202607170013-p0d-executor-queue' "$LOGS/kimi.log" && echo 0 || echo 1)"
+check "P0-d: dispatcher did not report unknown CLI / empty binary" "$(echo "$out_p0d" | grep -Eq 'unknown CLI|not on PATH' && echo 1 || echo 0)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi-executor/open/202607170013-p0d-executor-queue.md"
+
+# ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
 # invocation `cd "$root"` must be GONE from the dispatch execution path.
 # ======================================================================

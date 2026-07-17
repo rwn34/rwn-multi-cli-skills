@@ -1,4 +1,5 @@
 # <Task title — one short clear line>
+
 Status: OPEN
 Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>

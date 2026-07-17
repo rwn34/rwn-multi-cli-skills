@@ -128,7 +128,9 @@ headless_cmd() {
         claude) HEADLESS_ARGV=(claude -p "$prompt" --dangerously-skip-permissions) ;;
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
-        kimi)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
+        # `kimi-executor` and `kiro-executor` queue names share the same
+        # binaries as their base CLIs (2026-07-17 dark-queue fix).
+        kimi|kimi-executor)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
         # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
         # "Tool approval required but --no-interactive was specified. Use
         # --trust-all-tools" (dispatch failure 2026-07-09, see
@@ -150,7 +152,7 @@ headless_cmd() {
         # (ADR-0005) is the version-agnostic mechanical floor for these commits.
         # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
         # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
-        kiro)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
+        kiro|kiro-executor)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
@@ -165,8 +167,8 @@ headless_cmd() {
 bin_for() {
     case "$1" in
         claude) echo "claude" ;;
-        kimi)   echo "kimi" ;;
-        kiro)   echo "kiro-cli" ;;
+        kimi|kimi-executor)   echo "kimi" ;;
+        kiro|kiro-executor)   echo "kiro-cli" ;;
         opencode) echo "opencode" ;;
     esac
 }
@@ -338,14 +340,17 @@ ensure_declared_base_branch() {
 # header_value <file> <key> -> echoes the value of the first matching key in
 # the handoff's status block. The status block is defined as all consecutive
 # header lines ("Key: value") at the top of the file, stopping at the first
-# blank line or `## ` section header. Keys are matched case-insensitively and
-# trailing CR characters are stripped. This replaces the brittle `head -20 | grep`
-# scan (S3-4).
+# `## ` section header. Blank lines and lines without a `Key: value` shape are
+# skipped rather than terminating the scan, so real handoffs that put a blank
+# line between `# Title` and `Status:` are parsed correctly. Keys are matched
+# case-insensitively and trailing CR characters are stripped. This replaces the
+# brittle `head -20 | grep` scan (S3-4).
 header_value() {
     local file="$1" key="$2"
     awk -v key="$key" '
         BEGIN { k = tolower(key) }
-        /^## / || /^[[:space:]]*$/ { exit }
+        /^## / { exit }
+        /^[[:space:]]*$/ { next }
         {
             line = $0
             sub(/\r$/, "", line)
