@@ -48,6 +48,86 @@ Kept for existing callers and docs. It `exec`s
 `sync-replicas.sh --check` with the identical output contract and exit codes.
 New call sites should use the authoritative entry point directly.
 
+## `check-log-superset.sh` — activity-log entry-loss gate
+
+Verifies that a candidate `.ai/activity/log.md` would not DROP any entry
+headers that already exist in `origin/main`, the current working tree, or any
+`.ai/activity/log.md.bak` / `.ai/activity/log.md.KEEP*` file.
+
+**Usage (from repo root):**
+
+```bash
+bash .ai/tools/check-log-superset.sh <candidate-log.md>
+```
+
+**Exit codes:**
+- `0` iff the candidate contains every `^## ` header from every source.
+- `1` on any missing entry, with the verbatim lost headers listed per source.
+- `2` on setup/argument errors (missing argument, unreadable candidate, etc.).
+
+**Why this exists:** the log is prepend-order and its timestamps are
+annotations, so diffing a recovery candidate against `main` is structurally
+blind to entries that exist on disk but in no commit. PR #107 nearly lost two
+such entries because an "additions-only" diff against `main` read green while
+the true working-tree diff showed deletions. This checker compares entry
+headers as a **set**, not line counts.
+
+**Pre-commit:** `scripts/git-hooks/pre-commit` runs this on any staged
+`.ai/activity/log.md` and rejects the commit if the staged content is not a
+strict superset of all sources.
+
+## `guard-ai-destructive.sh` — junction-aware destructive-op guard
+
+Blocks destructive commands while a worktree's `.ai/` is still a junction or
+symlink into the canonical coordination plane. Prevents the 2026-07-16 class
+of incident where `git clean -fd` or `git worktree remove --force` followed
+the junction and deleted shared `.ai/` state.
+
+**Usage:**
+
+```bash
+bash .ai/tools/guard-ai-destructive.sh --check [path]   # exit 0 if safe
+bash .ai/tools/guard-ai-destructive.sh git clean -fd    # run if safe
+bash .ai/tools/guard-ai-destructive.sh rm -rf junk
+```
+
+**Safe paths:** `.ai/` absent, or a normal directory. **Blocked paths:** `.ai/`
+is a symlink or Windows junction. Use `scripts/wt-bootstrap.sh --remove` to
+unmount `.ai/` and remove a worktree safely.
+
+## `checkpoint-ai.sh` — mechanical `.ai/` durability commits
+
+Commits the current state of `.ai/` with a signless, mechanical message so the
+shared coordination plane is recoverable from git history. Designed to be called
+manually, from a scheduler, or at the end of a dispatch cycle.
+
+**Usage:**
+
+```bash
+bash .ai/tools/checkpoint-ai.sh              # checkpoint current repo
+bash .ai/tools/checkpoint-ai.sh --dry-run    # preview only
+```
+
+**Guards:**
+- Refuses linked worktrees (the junction makes `.ai/` look like local changes).
+- Refuses if non-`.ai/` changes are present.
+- Only commits paths under `.ai/`.
+
+## `fleet-health.sh` — pane liveness and queue-dir watchdog
+
+Cross-checks heartbeat sidecars (`.ai/.heartbeat-<cli>.json`) against open
+handoff queues and classifies each pane as OK, DOWN (idle), STALL, or WEDGED.
+Also verifies every `to-<actor>/{open,review,done}/` queue directory exists.
+
+**Usage:**
+
+```bash
+bash .ai/tools/fleet-health.sh [project-dir]
+```
+
+Exit `1` only on STALL/WEDGED/missing queue dir; internal checker errors fail
+open.
+
 ## When to run
 
 - **CI** — wired into `framework-check.yml` and `gates.yml`: an SSOT-changing
@@ -57,6 +137,11 @@ New call sites should use the authoritative entry point directly.
   `claude-code` committer auto-stages the regenerated replicas instead).
 - **Ad hoc** — whenever `.ai/instructions/` is edited: run the generator,
   commit SSOT + replicas together.
+- **Before destructive ops** — run `guard-ai-destructive.sh --check <worktree>`.
+- **Durability** — run `checkpoint-ai.sh` after heavy handoff activity or from
+  a periodic scheduler.
+- **Fleet monitoring** — run `fleet-health.sh` to detect stale panes or missing
+  queue directories.
 
 Runtime: under 2 seconds on the full matrix (a few seconds more on Windows
 hosts, where the junction guard probes each replica ancestor).
