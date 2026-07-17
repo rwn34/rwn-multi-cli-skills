@@ -1,3 +1,13 @@
+## 2026-07-17 14:25 (UTC+7) — kimai-auto
+- Action: Fix dispatcher dark-queue bug per handoff 202607170710-fix-dispatcher-dark-queue.
+- Files: .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh, .ai/handoffs/template.md, .ai/handoffs/to-claude/open/202607162032-doc-master-main-migration.md, .ai/handoffs/to-kimi-executor/open/202607162030-master-main-file-changes.md, .ai/handoffs/to-kiro-executor/open/202607162031-pane-runner-ps1-master-main-migration.md
+- Decisions: Kept parser fix (stop only at ##, skip blank/non-header lines) rather than editing handoffs for blank lines; normalized three malformed open handoffs that used ## Key: value status headers so the full queue surfaces. Routed kimi-executor/kiro-executor queues to kimi/kiro-cli binaries in bin_for() and headless_cmd(). Opened PR #104 for kiro review; merge gate is claude.
+
+## 2026-07-17 14:23 (UTC+7) — kimi-cli
+- Action: Fixed dispatcher dark-queue bug per handoff 202607170710-fix-dispatcher-dark-queue: parser now skips blank lines and only terminates at ## ; bin_for/headless_cmd route kimi-executor/kiro-executor queues; added P0 regression tests; reconciled template.md.
+- Files: .ai/tools/dispatch-handoffs.sh; .ai/tests/test-dispatch-worktree.sh; .ai/handoffs/template.md
+- Decisions: Made the blank-line-after-title shape canonical in template.md because the real corpus already uses it; also added headless_cmd cases for *-executor queues so binary resolution is complete.
+
 ## 2026-07-17 05:06 (UTC+7) — kimi-auto
 - Action: Implemented ADR-0015 required corrections to protocol v4 on branch exec/kimi/202607171103-adr-0015-v4-fixes: Observed-in now resolves and accepts ancestor SHAs; Evidence: HYPOTHESIS dispatches a verify-first pass (Risk A/B only); Risk-C hard gates never auto-dispatch. Tests updated and branch pushed; ready for Kiro review.
 - Files: .ai/tools/dispatch-handoffs.sh, .ai/tools/lint-handoff.sh, .ai/tests/test-dispatch-worktree.sh, docs/specs/handoff-protocol-v4.md, .ai/reports/kimi-202607170335-adr-0015-v4-fixes-report.md
