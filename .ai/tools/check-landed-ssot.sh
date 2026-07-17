@@ -20,10 +20,13 @@ REF="${1:-HEAD}"
 
 fail() { echo "check-landed-ssot: $*" >&2; exit 1; }
 
-[ -r "$SYNC_MD" ] || fail "registry unreadable: $SYNC_MD"
+# Read the registry from the LANDED ref, not the working tree: a skip-worktree-stale
+# on-disk .ai/sync.md must not shrink or skew the pair set we compare.
+sync_blob="$(git ls-tree -r "$REF" -- "$SYNC_MD" | awk '{print $3}')"
+[ -n "$sync_blob" ] || fail "registry $SYNC_MD not found in $REF"
 
 # Parse the registry into SOURCE<TAB>DEST pairs (same contract as sync-replicas.sh).
-pairs="$(awk -F'|' '
+pairs="$(git cat-file -p "$sync_blob" | awk -F'|' '
   /^\|/ {
     src = $2; dst = $3
     if (match(src, /`[^`]+`/)) {
@@ -38,7 +41,7 @@ pairs="$(awk -F'|' '
     print s "\t" d
   }
   END { if (malformed) exit 3 }
-' "$SYNC_MD")" || fail "registry malformed: a source→destination row is missing its destination path"
+')" || fail "registry malformed: a source→destination row is missing its destination path"
 
 [ -n "$pairs" ] || fail "registry parsed to zero mappings — refusing to run (fail closed)"
 

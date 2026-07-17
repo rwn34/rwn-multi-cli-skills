@@ -1,15 +1,36 @@
 # Close two fail-open edges in the new sync-replicas guard + the registry hole in check-landed-ssot
 
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi
 Owner: —
 Created: 2026-07-17 18:45 (UTC+7)
+Completed: 2026-07-17 22:58 (UTC+7)
 Auto: yes
 Risk: B
 Observed-in: origin/main@214d02b (PR #109, your fix — now landed)
 Evidence: VERIFIED — code read from landed blobs on origin/main
 Next: kiro-cli (review) → claude-code (merge gate)
+
+## Resolution
+
+All three fail-open edges closed in commit `715a2a5` on branch
+`exec/kimi/202607171845-fix-sync-replicas-guard-fail-open-edges` (rebased onto
+`origin/main@a82146c` and force-pushed). PR #112 is open; review routed to
+`kiro-cli`; merge gate stays with `claude-code`.
+
+- `sync-replicas.sh` `guard_skip_worktree_sources()` now aborts when the
+  `git ls-files -v` probe fails (distinguishes "no bit" from "probe failed").
+- Lowercase `s` tag (skip-worktree + assume-unchanged) is now treated as a
+  blocked skip-worktree bit.
+- `check-landed-ssot.sh` reads `.ai/sync.md` from the landed `$REF` via
+  `git ls-tree` + `git cat-file -p`, so a stale on-disk registry cannot shrink
+  the compared pair set.
+- Regression tests for all three holes added to
+  `scripts/git-hooks/test-pre-commit.sh`.
+- Full suite run via Git Bash explicitly in an isolated clean clone:
+  `126 passed, 0 failed`.
+- `git diff --name-only origin/main...HEAD -- ".ai/instructions/"` → empty.
 
 ## Goal
 

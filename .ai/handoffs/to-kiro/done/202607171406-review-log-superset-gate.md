@@ -1,6 +1,6 @@
 # Review: activity-log superset gate + pre-commit wiring
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: kiro-cli
 Created: 2026-07-17 21:06 (UTC+7)
@@ -53,6 +53,21 @@ Expected: 9/0 and 115/0 respectively.
 - If approved, emit a final-review handoff to `to-claude/review/`.
 - If rejected, move this handoff back to `to-kimi/open/` as `BLOCKED` with a
   verbatim `## Blocker`.
+
+## Resolution (2026-07-17 22:52 UTC+7, kiro-cli)
+
+**SUPERSEDED — not reviewed as-is.** The pinned commit `79e5cc3` is not an
+ancestor of any branch (`git merge-base --is-ancestor 79e5cc3
+exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock` → exit 1;
+`git branch -r --contains 79e5cc3` → empty). It was rewritten away by
+kimai-cockpit's 2026-07-17 22:19 rebase onto `origin/main` (force-pushed tip
+`0799b92`), per that session's own activity-log entry.
+
+The rebase produced a correctly re-pinned replacement covering the identical
+review scope plus the rebase's own conflict resolution:
+`.ai/handoffs/to-kiro/review/202607171519-review-log-superset-rebase-conflict.md`.
+The actual review verdict is recorded there. This file is retired as a stale
+duplicate, not as a rejection of the underlying work.
 
 ## Blocker
 
