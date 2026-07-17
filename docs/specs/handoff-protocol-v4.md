@@ -7,8 +7,9 @@ that confidently-wrong senders can be caught mechanically instead of burning
 executor budget on re-verification:
 
 - `Observed-in: <branch>@<sha>` — required when asserting file-level facts.
-- `Evidence: VERIFIED | HYPOTHESIS` — epistemic status; `HYPOTHESIS` blocks
-  auto-dispatch.
+- `Evidence: VERIFIED | HYPOTHESIS` — epistemic status; `HYPOTHESIS` dispatches
+  verify-first at Risk A/B and is capped there (`HYPOTHESIS` + `Risk: C` is a
+  lint error).
 - `Gate: <what>` + `Gate-satisfied-by: <who>@<when>` + `Relay: <actor>` — splits
   the *human gate* (who must authorize) from the *relay* (who launches), so Risk C
   does not force the owner to become a manual router.
@@ -49,53 +50,67 @@ Deploy v2.3.1 to production after CI is green.
 - Required when the handoff body asserts concrete file-level facts
   ("`package.json` line 12 says X", "lockfile version is Y").
 - The `<branch>` part is advisory; the `<sha>` part is authoritative.
-- The dispatcher resolves the dispatch base (honoring an explicit `Base:` line,
-  otherwise discovering the repo default branch), computes its commit SHA, and
-  compares it to the handoff's claimed SHA.
-- On mismatch the dispatcher writes a `dispatch-failure-<ts>-<cli>-<slug>.md`
-  report with stage `evidence-base mismatch`, leaves the handoff OPEN, and does
-  not launch the CLI. This is a first-class sender-wrong outcome, not a BLOCKED
-  recipient.
+- The dispatcher resolves both the claimed SHA and the dispatch base (honoring
+  an explicit `Base:` line, otherwise discovering the repo default branch) to
+  full 40-character SHAs. The claimed SHA may be abbreviated.
+- The claim passes if the observed commit is the base itself or an ancestor of
+  the base. Equality-only comparison would fail on every merge once the base
+  advances; ancestry keeps the field usable.
+- On divergence (the claimed commit is not an ancestor of the base) the
+  dispatcher writes a `dispatch-failure-<ts>-<cli>-<slug>.md` report with stage
+  `evidence-base mismatch`, leaves the handoff OPEN, and does not launch the
+  CLI. An unresolvable claimed SHA produces a distinct `unknown commit` failure.
+  These are first-class sender-wrong outcomes, not BLOCKED recipients.
 
 ### `Evidence: VERIFIED | HYPOTHESIS`
 
 - Absent or `VERIFIED` — auto-dispatch under normal Risk rules.
-- `HYPOTHESIS` — the dispatcher HOLDS the handoff. The recipient's first job is
-  to verify the premise and either upgrade the field to `VERIFIED` or retire the
-  handoff as NOT-A-BUG.
+- `HYPOTHESIS` at `Risk: A/B` — the dispatcher DISPATCHes the recipient with
+  premise-verification as the recipient's explicit first step. The recipient
+  either upgrades the field to `VERIFIED` and proceeds, or retires the handoff
+  as NOT-A-BUG/BLOCKED with the disproof recorded.
+- `HYPOTHESIS` is capped at `Risk: A/B`. `Evidence: HYPOTHESIS` + `Risk: C` is a
+  lint error in `.ai/tools/lint-handoff.sh`, not a dispatchable state.
 - A hypothesis must not carry a priority label (enforced by
   `.ai/tools/lint-handoff.sh`). A guess is not allowed to drive queue priority.
 
 ### `Gate:`, `Gate-satisfied-by:`, `Relay:`
 
-- `Gate:` names the irreversible action that requires authorization
-  (e.g. `production deploy`, `npm publish`, `force-push`).
-- `Gate-satisfied-by:` records who authorized the gate and when. Once present,
-  the orchestrator may relay the launch; the dispatcher may auto-dispatch a Risk C
-  handoff.
+- `Gate:` names the action that requires authorization. Some gates are *hard
+  gates* reserved for the owner/cockpit regardless of `Gate-satisfied-by`:
+  production deploy, publish to a public registry, tag/release cut, force-push
+  or destructive ops on shared history, `git reset --hard` on shared state,
+  secrets, and production data.
+- `Gate-satisfied-by:` records who authorized the gate and when. For non-hard
+  gates, once present the orchestrator may relay the launch and the dispatcher
+  may auto-dispatch a Risk C handoff. Hard gates always HOLD for a cockpit.
 - `Relay:` clarifies the actor that physically launches the action when it differs
   from the `Recipient`. If omitted, the recipient is the relay.
-- This preserves the safety property — no ungated irreversible action — while
-  deleting the human-busywork the framework explicitly rejects.
+- This preserves the safety property — no ungated irreversible action, and no
+  single-actor bypass of the owner's highest-stakes gates — while deleting the
+  human-busywork the framework explicitly rejects.
 
 ## Dispatch routing matrix
 
-| Risk | Gate satisfied | Evidence    | Result  |
-|------|----------------|-------------|---------|
-| A/B  | n/a            | VERIFIED    | DISPATCH |
-| A/B  | n/a            | HYPOTHESIS  | HOLD     |
-| C    | no             | any         | HOLD     |
-| C    | yes            | VERIFIED    | DISPATCH |
-| C    | yes            | HYPOTHESIS  | HOLD     |
+| Risk | Gate type | Gate satisfied | Evidence    | Result  |
+|------|-----------|----------------|-------------|---------|
+| A/B  | n/a       | n/a            | VERIFIED    | DISPATCH |
+| A/B  | n/a       | n/a            | HYPOTHESIS  | DISPATCH (verify-first) |
+| C    | none      | n/a            | any         | HOLD     |
+| C    | hard      | any            | any         | HOLD     |
+| C    | non-hard  | no             | any         | HOLD     |
+| C    | non-hard  | yes            | VERIFIED    | DISPATCH |
+| C    | non-hard  | yes            | HYPOTHESIS  | lint error |
 
 ## Failure outcomes
 
 - **Self-addressed** (`Sender == Recipient`): FAIL, report written, handoff stays
   OPEN.
-- **Evidence-base mismatch**: FAIL, report written, handoff stays OPEN, routed
-  back to sender.
+- **Evidence-base mismatch / unknown commit**: FAIL, report written, handoff stays
+  OPEN, routed back to sender.
 - **Ungated Risk C**: HOLD, handoff stays OPEN.
-- **HYPOTHESIS**: HOLD, handoff stays OPEN.
+- **Hard-gate Risk C**: HOLD, handoff stays OPEN.
+- **Non-hard-gate Risk C without Gate-satisfied-by**: HOLD, handoff stays OPEN.
 
 ## Tooling
 
@@ -105,6 +120,7 @@ Deploy v2.3.1 to production after CI is green.
   - `Status: DONE` must have a non-empty `Evidence`, `Report`, `Verification`, or
     `Output` section.
   - `Evidence: HYPOTHESIS` must not carry a priority label.
+  - `Evidence: HYPOTHESIS` must not be paired with `Risk: C`.
 - `.ai/handoffs/template.md` contains the new optional fields and comments.
 
 ## Migration

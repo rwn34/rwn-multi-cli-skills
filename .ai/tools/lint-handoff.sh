@@ -41,6 +41,7 @@ for dir in "$root"/.ai/handoffs/to-*/open "$root"/.ai/handoffs/to-*/review; do
         rel="${f#$root/}"
         status="$(header_value "$f" Status | tr '[:upper:]' '[:lower:]')"
         evidence="$(header_value "$f" Evidence | tr '[:upper:]' '[:lower:]')"
+        risk="$(header_value "$f" Risk | tr '[:upper:]' '[:lower:]')"
 
         if [ "$status" = "done" ] && ! has_evidence_section "$f"; then
             echo "ERROR: $rel — Status: DONE but missing a non-empty Evidence/Report/Verification/Output section"
@@ -49,6 +50,11 @@ for dir in "$root"/.ai/handoffs/to-*/open "$root"/.ai/handoffs/to-*/review; do
 
         if [ "$evidence" = "hypothesis" ] && has_priority_label "$f"; then
             echo "ERROR: $rel — Evidence: HYPOTHESIS must not carry a priority label"
+            errors=$((errors+1))
+        fi
+
+        if [ "$evidence" = "hypothesis" ] && [ "$risk" = "c" ]; then
+            echo "ERROR: $rel — Evidence: HYPOTHESIS is not allowed with Risk: C"
             errors=$((errors+1))
         fi
     done
