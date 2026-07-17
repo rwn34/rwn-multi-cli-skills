@@ -498,6 +498,47 @@ EOF
     pf "landed-blob check is RED on the laundered tree" \
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
+
+    echo "== generator: skip-worktree probe failure fails closed =="
+    d="$(mkrepo)"
+    # Remove the git metadata so the probe cannot answer. With the bug, the
+    # generator treats the empty flag as "no bit" and proceeds; fixed, it aborts.
+    rm -rf "$d/.git"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "probe failure (no .git) -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: lowercase 's' (skip-worktree + assume-unchanged) fails closed =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    git -C "$d" update-index --skip-worktree "$src"
+    git -C "$d" update-index --assume-unchanged "$src"
+    flag="$(git -C "$d" ls-files -v "$src" | head -n1 | cut -c1)"
+    # git lowercases the tag when both bits are set. Only assert when this host
+    # reproduces that exact condition; otherwise the test is non-hermetic.
+    if [ "$flag" = "s" ]; then
+        ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+        pf "lowercase 's' skip-worktree -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    else
+        echo "SKIP  git version did not produce lowercase 's' for combined skip-worktree+assume-unchanged"
+    fi
+    rm -rf "$d"
+
+    echo "== check-landed-ssot: reads registry from REF, not disk =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    # Commit a source→replica drift at HEAD.
+    printf '\n<!-- landed registry drift marker -->\n' >> "$src"
+    git -C "$d" add "$src" >/dev/null 2>&1
+    git -C "$d" commit -q -m "drift source" --no-verify >/dev/null 2>&1
+    # Now hide the drifted pair from the on-disk registry. The old checker read
+    # the disk copy and would pass; the fixed checker reads the landed registry
+    # and must still see the mismatch.
+    awk '!/karpathy-guidelines\/examples\.md/' "$d/.ai/sync.md" > "$d/.ai/sync.md.tmp"
+    mv "$d/.ai/sync.md.tmp" "$d/.ai/sync.md"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "stale on-disk sync.md does not hide landed mismatch" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
 fi
 
 echo

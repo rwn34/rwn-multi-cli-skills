@@ -201,11 +201,15 @@ EOF
 guard_skip_worktree_sources() {
   while IFS="$(printf '\t')" read -r gsrc _gdst; do
     [ -n "$gsrc" ] || continue
-    local flag
-    flag="$(git ls-files -v "$gsrc" 2>/dev/null | head -n1 | cut -c1)" || true
-    if [ "$flag" = "S" ]; then
-      fail "SSOT source '$gsrc' has skip-worktree bit set (git ls-files -v shows 'S'). The file git is ignoring is the one the generator would read, so regenerating now would launder stale source text into the replicas. Clear the bit before regenerating: git update-index --no-skip-worktree '$gsrc'"
-    fi
+    local lsout flag
+    lsout="$(git ls-files -v "$gsrc" 2>/dev/null)" \
+      || fail "SSOT source '$gsrc': skip-worktree probe failed (git ls-files -v). Refusing to regenerate from an untrusted source (fail closed)."
+    flag="$(printf '%s\n' "$lsout" | head -n1 | cut -c1)"
+    case "$flag" in
+      S|s)
+        fail "SSOT source '$gsrc' has skip-worktree bit set (git ls-files -v shows '$flag'). The file git is ignoring is the one the generator would read, so regenerating now would launder stale source text into the replicas. Clear the bit before regenerating: git update-index --no-skip-worktree '$gsrc'"
+        ;;
+    esac
   done <<EOF
 $pairs
 EOF
