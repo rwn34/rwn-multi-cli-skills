@@ -1,3 +1,8 @@
+## 2026-07-18 06:30 (UTC+7) — kimi-cli
+- Action: Retire three stale master→main migration handoffs as NOT-A-BUG (work already in HEAD), run reconcile-done-handoffs.sh to clear DONE-in-open items, add .gitkeep files for six-actor queue dirs, commit and push.
+- Files: .ai/handoffs/to-claude/open/202607162032-doc-master-main-migration.md, .ai/handoffs/to-kimi-executor/open/202607162030-master-main-file-changes.md, .ai/handoffs/to-kiro-executor/open/202607162031-pane-runner-ps1-master-main-migration.md, .ai/handoffs/to-{claude,kimi,kiro,opencode}/done/202607171720-update-activity-log-format-hyphen.md, .ai/handoffs/to-claude-cockpit/*/.gitkeep, .ai/handoffs/to-kimi-cockpit/*/.gitkeep, .ai/handoffs/to-kimi-executor/*/.gitkeep, .ai/handoffs/to-kiro-executor/*/.gitkeep
+- Decisions: Verified target files already reference 'main' / Resolve-DefaultBase; left remaining untracked done handoffs/reports/entry files for claude-auto review handoff 202607172324-review-post-adr0016-artifacts-and-s4-1-consistency.
+
 ## 2026-07-18 06:24 (UTC+7) — kimi-cli
 - Action: ADR-0016 follow-up — clean accidental regressions, remove obsolete junction-era tools, add log-superset/landed-ssot utilities, commit, sync pane scripts to ~/.rwn-auto/rwn-4AI-panes/, and file handoff to claude-auto for operational-artifact review.
 - Files: .ai/tools/README.md, .ai/tools/sync-replicas.sh, .ai/tools/check-log-superset.sh, .ai/tools/test-check-log-superset.sh, .ai/tools/check-landed-ssot.sh, .ai/tests/test-checkpoint-ai.sh, .ai/tests/test-wt-bootstrap-remove.sh, .ai/tools/checkpoint-ai.sh, .ai/tools/guard-ai-destructive.sh, tools/4ai-panes/*.ps1, .ai/handoffs/to-claude/open/202607172324-review-post-adr0016-artifacts-and-s4-1-consistency.md
