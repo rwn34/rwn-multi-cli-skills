@@ -22,6 +22,11 @@ set -euo pipefail
 # ---------- defaults ----------
 DEFAULT_EXECUTORS="kiro kimi opencode"
 
+# All dispatchable actors that need a handoff queue tree.  Keep in sync with
+# .ai/handoffs/README.md (six-actor model) and .ai/tools/fleet-health.sh.
+# kimi-executor and kiro-executor are live in this repo (have open handoffs).
+HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode"
+
 # ---------- logging ----------
 log()  { echo "[wt-bootstrap] $*"; }
 warn() { echo "[wt-bootstrap] WARN: $*" >&2; }
@@ -68,6 +73,21 @@ is_windows() {
   esac
 }
 
+# Ensure the shared coordination-plane handoff queue directories exist for every
+# configured actor.  This is shared state (all worktrees junction to the same
+# .ai/), so it is repaired once per bootstrap run, not once per executor.
+# .gitkeep files are touched so the empty subdirectories are stable even on a
+# fresh clone where bootstrap has not yet run.
+ensure_handoff_queues() {
+  local base="$1/.ai/handoffs"
+  for actor in $HANDOFF_ACTORS; do
+    for sub in open review done; do
+      mkdir -p "$base/to-$actor/$sub"
+      touch "$base/to-$actor/$sub/.gitkeep"
+    done
+  done
+}
+
 # ---------- arg parsing ----------
 PROJECT_ARG=""
 EXECUTORS=""
@@ -101,6 +121,10 @@ PROJECT_DIR="$(cd "$PROJECT_ARG" && pwd)"
 git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 \
   || die "Not a git repository: $PROJECT_DIR"
 [ -d "$PROJECT_DIR/.ai" ] || die "Canonical coordination plane missing: $PROJECT_DIR/.ai"
+
+# Shared handoff queue structure must exist before any worktree is created;
+# dispatchers and health checks assume every actor has open/review/done dirs.
+ensure_handoff_queues "$PROJECT_DIR"
 
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 PARENT_DIR="$(dirname "$PROJECT_DIR")"

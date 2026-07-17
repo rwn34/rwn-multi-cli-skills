@@ -35,8 +35,21 @@ for to_dir in "$handoffs_dir"/to-*; do
             if head -10 "$f" 2>/dev/null | grep -qiE '^Status:[[:space:]]*DONE'; then
                 done_dir="$to_dir/done"
                 mkdir -p "$done_dir" 2>/dev/null
-                if mv "$f" "$done_dir/" 2>/dev/null; then
-                    echo "reconcile-done: moved $f -> done/ (Status:DONE was left in $sub/)"
+                target="$done_dir/$(basename "$f")"
+                if [ -e "$target" ]; then
+                    # Collision: a file with the same name already exists in done/.
+                    # Fail-open contract requires exit 0, but we must never silently
+                    # destroy the existing done/ file. Move the incoming file to a
+                    # superseded name so both are preserved and the conflict is visible.
+                    suffix="$(date -u +%Y%m%d%H%M%S)"
+                    safe_target="$done_dir/$(basename "$f" .md)-superseded-$suffix.md"
+                    if mv "$f" "$safe_target" 2>/dev/null; then
+                        echo "reconcile-done: WARNING collision at $target; moved $f -> $safe_target (Status:DONE was left in $sub/)"
+                    fi
+                else
+                    if mv "$f" "$done_dir/" 2>/dev/null; then
+                        echo "reconcile-done: moved $f -> done/ (Status:DONE was left in $sub/)"
+                    fi
                 fi
             fi
         done

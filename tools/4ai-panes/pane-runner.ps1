@@ -528,6 +528,16 @@ function Ensure-DeclaredBaseBranchReal {
             Write-Host "  ERROR: could not sync $WtPath to $branch (excluding .ai/)" -ForegroundColor Red
             return $false
         }
+        # Sync the .ai/ INDEX entries to the branch tip without touching the
+        # worktree. The live junctioned .ai/ must stay live, but leaving the
+        # index stale would make `git status --porcelain -- .ai` report staged
+        # phantoms — which in turn makes wt-bootstrap.sh's DEGRADED guard
+        # falsely reject a clean real .ai/ directory (av4).
+        git restore --source=$branch --staged -- .ai *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: could not sync the .ai/ index entries in $WtPath" -ForegroundColor Red
+            return $false
+        }
         return $true
     } finally {
         Pop-Location

@@ -185,15 +185,39 @@ handoff_age_min() {
   echo $(( (NOW - ep) / 60 ))
 }
 
+# Verify every discovered handoff queue has the required open/review/done
+# subdirectories.  Missing dirs are a framework health problem: handoffs have
+# nowhere to land.  Emits one clear line per missing dir with the fix command.
+check_queue_dirs() {
+  local root="$1"
+  local missing=0 dir actor
+  shopt -s nullglob
+  for dir in "$root"/.ai/handoffs/to-*; do
+    [ -d "$dir" ] || continue
+    actor="$(basename "$dir")"; actor="${actor#to-}"
+    for sub in open review done; do
+      if [ ! -d "$dir/$sub" ]; then
+        echo "FRAMEWORK: missing queue dir: .ai/handoffs/to-$actor/$sub/ — fix: bash scripts/wt-bootstrap.sh \"$root\""
+        missing=$((missing + 1))
+      fi
+    done
+  done
+  return "$missing"
+}
+
 # --- main -------------------------------------------------------------------
-# Returns the number of non-OK panes (STALL/WEDGED). Never dies on a bad
-# record: every parser above defaults to the benign reading.
+# Returns the number of non-OK panes (STALL/WEDGED) plus framework queue-dir
+# problems. Never dies on a bad record: every parser above defaults to the
+# benign reading.
 main() {
   local root="$1"
   if [ ! -d "$root/.ai/handoffs" ]; then
     echo "fleet-health: $root/.ai/handoffs not found — nothing to check (fail-open)"
     return 0
   fi
+
+  local queue_problems=0
+  check_queue_dirs "$root" || queue_problems=$?
 
   echo "fleet-health — $(cd "$root" 2>/dev/null && pwd)"
   echo "window: heartbeat/claim stale > ${STALE_MINUTES}m (mirrors pane-runner.ps1); quarantine retry after ${QUARANTINE_STALE_MINUTES}m"
@@ -243,21 +267,25 @@ main() {
   done
 
   echo ""
-  if [ "$bad" -gt 0 ]; then
-    echo "$bad pane(s) need attention (STALL/WEDGED). Detection only — restarts stay with the owner/claude."
+  if [ "$queue_problems" -gt 0 ]; then
+    echo "$queue_problems queue dir(s) missing. Run the fix command above."
+  fi
+  if [ "$bad" -gt 0 ] || [ "$queue_problems" -gt 0 ]; then
+    echo "$((bad + queue_problems)) pane(s)/queue dir(s) need attention (STALL/WEDGED/missing queue dir). Detection only — restarts stay with the owner/claude."
   else
     echo "all panes OK or down-idle."
   fi
-  return "$bad"
+  return $((bad + queue_problems))
 }
 
 out="$(main "$ROOT" 2>&1)"; rc=$?
 printf '%s\n' "$out"
 
-# Fail-open on INTERNAL errors: a non-zero main with no STALL/WEDGED verdict in
-# its output means the checker itself broke (set -u abort, missing util) — that
-# must never gate the fleet.
-if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED'; then
+# Fail-open on INTERNAL errors: a non-zero main with no STALL/WEDGED/FRAMEWORK
+# verdict in its output means the checker itself broke (set -u abort, missing
+# util) — that must never gate the fleet.  Queue-dir problems are real health
+# findings, not internal errors.
+if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED|FRAMEWORK:'; then
   echo "fleet-health: internal error (exit $rc) — failing open" >&2
   exit 0
 fi

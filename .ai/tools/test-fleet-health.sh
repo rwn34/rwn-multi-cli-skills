@@ -32,11 +32,36 @@ OLD_LOCAL="$(date -d '30 min ago' '+%Y-%m-%d %H:%M (UTC+7)')"
 
 mkroot() { mktemp -d; }
 
+# mkproject — create a throwaway project dir inside a temp parent so that
+# wt-bootstrap.sh's sibling .wt/ container also lives inside the temp tree and
+# is removed cleanly.  Returns the project dir path.
+mkproject() {
+  local tmp parent
+  tmp="$(mktemp -d)"
+  parent="$tmp/parent"
+  mkdir -p "$parent"
+  git init "$parent/project" >/dev/null 2>&1
+  git -C "$parent/project" config user.email "test@example.com"
+  git -C "$parent/project" config user.name "Test"
+  mkdir -p "$parent/project/.ai/handoffs"
+  # git worktree add needs at least one commit to check out.
+  echo "init" > "$parent/project/README.txt"
+  git -C "$parent/project" add README.txt >/dev/null 2>&1
+  git -C "$parent/project" commit -m "init" >/dev/null 2>&1
+  echo "$parent/project"
+}
+
+# rmproject <project-dir> — remove the temp parent tree (including .wt worktrees).
+rmproject() {
+  local project_dir="$1"
+  rm -rf "$(dirname "$project_dir")"
+}
+
 # mkhandoff <root> <cli> <name> <risk> <created-local>
 mkhandoff() {
-  local dir="$1/.ai/handoffs/to-$2/open"
-  mkdir -p "$dir"
-  cat > "$dir/$3.md" <<EOF
+  local dir="$1/.ai/handoffs/to-$2"
+  mkdir -p "$dir/open" "$dir/review" "$dir/done"
+  cat > "$dir/open/$3.md" <<EOF
 # Test handoff $3
 Status: OPEN
 Sender: claude-code
@@ -101,7 +126,7 @@ expect 1 "stale heartbeat + open Auto:yes B -> STALL, exit 1" "$R" "STALL"
 
 # --- 2. DOWN (idle): stale heartbeat + EMPTY queue -> informational, exit 0.
 R="$(mkroot)"
-mkdir -p "$R/.ai/handoffs/to-kimi/open"
+mkdir -p "$R/.ai/handoffs/to-kimi/"{open,review,done}
 mkheartbeat "$R" kimi "$OLD_ISO" 999999 "$HOST"
 expect 0 "stale heartbeat + empty queue -> DOWN (idle), exit 0" "$R" "DOWN (idle)"
 
@@ -152,6 +177,43 @@ mkhandoff "$R" opencode 202607130007-retry-due B "$OLD_LOCAL"
 mkheartbeat "$R" opencode "$OLD_ISO" 999999 "$HOST"
 mkquarantine "$R" opencode 202607130007-retry-due "$VERY_OLD_ISO"
 expect 1 "expired quarantine + stale heartbeat -> STALL, exit 1" "$R" "STALL"
+
+# --- 10. wt-bootstrap.sh creates the full handoff queue structure.
+P="$(mkproject)"
+# Pass one executor so we create the minimum worktree churn; queue creation is
+# shared state and must still create every actor's open/review/done dirs.
+out="$(bash "$ROOT/scripts/wt-bootstrap.sh" "$P" claude 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "FAIL: bootstrap creates queue dirs — bootstrap exited $rc"
+  echo "$out" | sed 's/^/      /'
+  fail=$((fail + 1)); rmproject "$P"
+else
+  missing=""
+  for actor in claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode; do
+    for sub in open review done; do
+      [ -d "$P/.ai/handoffs/to-$actor/$sub" ] || missing="$missing to-$actor/$sub"
+    done
+  done
+  if [ -n "$missing" ]; then
+    echo "FAIL: bootstrap creates queue dirs — missing:$missing"
+    fail=$((fail + 1)); rmproject "$P"
+  else
+    out="$(bash "$CHECK" "$P" 2>&1)"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "FAIL: bootstrap creates queue dirs — health check failed (exit $rc)"
+      echo "$out" | sed 's/^/      /'
+      fail=$((fail + 1)); rmproject "$P"
+    else
+      echo "PASS: bootstrap creates queue dirs and health check passes"
+      pass=$((pass + 1)); rmproject "$P"
+    fi
+  fi
+fi
+
+# --- 11. fleet-health flags a missing queue directory.
+R="$(mkroot)"
+mkdir -p "$R/.ai/handoffs/to-kimi/open"
+expect 1 "missing queue dir flagged by health check" "$R" "missing queue dir"
 
 echo ""
 echo "==== fleet-health tests: $pass passed, $fail failed ===="

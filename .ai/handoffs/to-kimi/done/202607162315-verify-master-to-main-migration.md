@@ -1,8 +1,9 @@
 # Verify master→main migration
-Status: OPEN
+Status: DONE
 Sender: opencode-auto
 Recipient: kimi-cockpit
 Created: 2026-07-17 06:15 (UTC+7)
+Completed: 2026-07-17 06:31 (UTC+7)
 Auto: yes
 Risk: A
 
@@ -56,6 +57,26 @@ All verification items pass, confirming:
 - Base resolution auto-follows `origin/HEAD`
 - Tests pass, including the preserved master-default regression test
 - Only §1C `master` references remain in the codebase
+
+## Completed
+
+Verification performed by kimi-cockpit. Results:
+
+- [x] `gh repo view --json defaultBranchRef` → `{"defaultBranchRef":{"name":"main"}}`
+- [x] Branch protection for `main` verified via GraphQL: contexts `["gates","framework-check"]`, `allowsForcePushes: false`, `allowsDeletions: false` (REST `/branches/main/protection` returned GitHub 503; GraphQL equivalent confirmed the same values)
+- [x] `git ls-remote origin refs/heads/master` → empty
+- [x] `git symbolic-ref refs/remotes/origin/HEAD` → `refs/remotes/origin/main`
+- [x] `bash .ai/tests/test-dispatch-worktree.sh` → 38 passed, 0 failed (case 4c main-only repo passes)
+- [x] `bash scripts/test-check-version-bump.sh` → 64 passed, 0 failed
+- [x] `powershell.exe -ExecutionPolicy Bypass -File scripts/test-sync-4ai-panes-install.ps1` → 34 passed, 0 failed
+- [x] `bash .ai/tools/dispatch-handoffs.sh` (dry-run) → no base-resolution errors; only this verification handoff queued
+- [x] `grep -rn "origin/master" tools/ scripts/ .github/ --include=*.ps1 --include=*.sh --include=*.yml` → only §1C-sanctioned hits in `tools/4ai-panes/test-pane-runner.ps1` (cases 502–510 and related test fixtures) plus a non-hardcoding comment in `tools/4ai-panes/pane-runner.ps1`
+- [x] PR into `main` triggers both `gates` and `framework-check` → `gh pr checks 99` shows both passing
+
+Known issues validated:
+1. `tools/4ai-panes/test-pane-runner.ps1` reports exactly 3 failures in the `av4` junction-degradation guard case, matching the pre-existing known issue. The other 159 tests pass. This is environmental/pre-existing (Windows junction re-creation after `.ai` was a real directory) and does not block declaring the migration done.
+2. The four primary executor worktrees (`claude`, `kiro`, `opencode`, and the current `kimi` worktree) are clean and on `exec/<cli>/init` or the current task branch, all pointing at `4b76929` (`main` tip). `Assert-WorktreeFresh` no longer refuses to start (verified by pane-runner tests `bf*`).
+3. §1C deliberate `master` references are intact: ADRs 0004/0012/0013/0014, `CHANGELOG.md`, force-push guard fixtures in `.opencode/plugin/test-guard.mjs` and `tools/multi-cli-install/test/installer.test.ts`, and `test-pane-runner.ps1` cases 502–510.
 
 ## Activity log
 

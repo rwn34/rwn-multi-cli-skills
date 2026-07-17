@@ -194,6 +194,7 @@ check "test3: stub was NEVER invoked (no fallback to primary checkout)" "$([ ! -
 check "test3: primary checkout untouched (no stray opencode worktree artifacts in \$PROJECT)" "$([ ! -e "$PROJECT/.sentinel-from-test" ] && echo 0 || echo 1)"
 
 rm -f "$WORK/.wt/project/opencode"   # clear the induced failure for later tests
+rm -f "$PROJECT/.ai/handoffs/to-opencode/open/202607110003-t3.md"  # don't let it dispatch in later tests
 
 # ======================================================================
 # 4. Branch is cut from the DECLARED base (origin/master), not ambient HEAD.
@@ -420,6 +421,93 @@ wait "$pid_kimi6b"
 kimi_branch_after6b="$(git -C "$wt_kimi" branch --show-current 2>/dev/null)"
 check "test6b: kimi worktree branch unchanged (dirty -> reuse-as-is, never destroyed, even under concurrency)" "$([ "$kimi_branch_after6b" = "$kimi_branch_before" ] && echo 0 || echo 1)"
 check "test6b: kimi's private marker survived a concurrent kiro dispatch" "$([ -f "$wt_kimi/.kimi-private-marker" ] && echo 0 || echo 1)"
+
+# ======================================================================
+# S2-4. Self-addressed handoff is rejected before launch.
+# ======================================================================
+cat > "$PROJECT/.ai/handoffs/to-opencode/open/202607110008-s2-4-self.md" <<'EOF'
+# Self-addressed test
+Status: OPEN
+Sender: opencode-auto
+Recipient: opencode-auto
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+Prove self-addressed handoffs are rejected.
+EOF
+before_reports_s24="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+out_s24="$(run_dispatcher --only opencode 2>&1)"
+after_reports_s24="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+check "S2-4: dispatcher reports FAIL for self-addressed handoff" "$(echo "$out_s24" | grep -qi 'self-addressed' && echo 0 || echo 1)"
+check "S2-4: dispatch-failure report was written" "$([ "$after_reports_s24" -gt "$before_reports_s24" ] && echo 0 || echo 1)"
+check "S2-4: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-opencode/open/202607110008-s2-4-self.md" && echo 0 || echo 1)"
+check "S2-4: stub was not invoked" "$([ ! -f "$LOGS/opencode.log" ] && echo 0 || echo 1)"
+
+# ======================================================================
+# S2-5. Dirty worktree (different branch) fails by default;
+#       --reuse-dirty allows reuse.
+# ======================================================================
+# Put the kiro worktree on a different branch with uncommitted work.
+if [ -d "$wt_kiro" ]; then
+    git -C "$wt_kiro" checkout --quiet -b test/s2-5-dirty
+    echo "dirty" > "$wt_kiro/.dirty-marker"
+fi
+cat > "$PROJECT/.ai/handoffs/to-kiro/open/202607110009-s2-5-dirty.md" <<'EOF'
+# Dirty-worktree test
+Status: OPEN
+Sender: claude-code
+Recipient: kiro
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+Prove dirty worktree default failure and --reuse-dirty reuse.
+EOF
+before_reports_s25="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+out_s25_default="$(run_dispatcher --only kiro 2>&1)"
+after_reports_s25="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+check "S2-5: default dispatch FAILs on dirty worktree" "$(echo "$out_s25_default" | grep -qi 'FAIL.*kiro' && echo 0 || echo 1)"
+check "S2-5: default dispatch wrote a failure report" "$([ "$after_reports_s25" -gt "$before_reports_s25" ] && echo 0 || echo 1)"
+check "S2-5: handoff stays OPEN after default failure" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kiro/open/202607110009-s2-5-dirty.md" && echo 0 || echo 1)"
+check "S2-5: stub not invoked for the dirty handoff by default" "$(grep -q '202607110009-s2-5-dirty' "$LOGS/kiro.log" 2>/dev/null && echo 1 || echo 0)"
+
+# Now run with --reuse-dirty; the dirty worktree is reused and the handoff dispatches.
+before_reports_s25r="$after_reports_s25"
+out_s25_reuse="$(run_dispatcher --only kiro --reuse-dirty 2>&1)"
+after_reports_s25r="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
+check "S2-5: --reuse-dirty emits a WARN" "$(echo "$out_s25_reuse" | grep -qi 'WARN.*dirty' && echo 0 || echo 1)"
+check "S2-5: --reuse-dirty dispatches the handoff" "$(grep -q '202607110009-s2-5-dirty' "$LOGS/kiro.log" && echo 0 || echo 1)"
+check "S2-5: --reuse-dirty wrote no new failure report" "$([ "$after_reports_s25r" -eq "$before_reports_s25r" ] && echo 0 || echo 1)"
+
+# ======================================================================
+# S3-4. Status block parsing is key-based and tolerates extra headers / ## Blocker.
+# ======================================================================
+# Clean the kimi worktree so this test proves parsing, not dirty-worktree behavior.
+if [ -d "$wt_kimi" ]; then
+    rm -f "$wt_kimi/.kimi-private-marker"
+    git -C "$wt_kimi" reset --hard >/dev/null 2>&1 || true
+fi
+cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110010-s3-4-blocker.md" <<'EOF'
+# Status-block parsing test
+Status: OPEN
+Owner: claude-cockpit
+Auto: yes
+Risk: A
+## Blocker
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+
+## Goal
+Prove status block parsing tolerates extra header lines and a ## Blocker before Sender.
+EOF
+out_s34="$(run_dispatcher --only kimi 2>&1)"
+rc_s34=$?
+check "S3-4: dispatcher exits 0 despite extra header lines and ## Blocker" "$([ "$rc_s34" -eq 0 ] && echo 0 || echo 1)"
+check "S3-4: handoff was dispatched (slug in kimi log)" "$(grep -q '202607110010-s3-4-blocker' "$LOGS/kimi.log" && echo 0 || echo 1)"
 
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
