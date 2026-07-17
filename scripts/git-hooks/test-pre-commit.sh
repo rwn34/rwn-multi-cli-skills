@@ -237,12 +237,15 @@ mkrepo() {
     cp -R "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
           "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
     cp "$REPO_ROOT/.gitattributes" "$d/" 2>/dev/null
-    git -C "$d" init -q 2>/dev/null
+    git -C "$d" init -q -b main 2>/dev/null
     git -C "$d" config core.hooksPath scripts/git-hooks
     git -C "$d" config user.email test@example.com
     git -C "$d" config user.name claude-code
     git -C "$d" add -A >/dev/null 2>&1
     git -C "$d" commit -q -m init --no-verify >/dev/null 2>&1
+    # Make origin/main resolve for checks that compare against the landed blob.
+    git -C "$d" remote add origin "$d" >/dev/null 2>&1 || true
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
     printf '%s' "$d"
 }
 
@@ -368,6 +371,83 @@ else
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
 
+    echo "== activity-log gate: dropping a main entry is BLOCKED =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # Stage a log missing the 09:00 entry.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    hout="$(cd "$d" && git commit -m "log: drop entry" 2>&1)"; hrc=$?
+    pf "commit dropping a main log entry is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "LOG-SUPERSET FAIL"
+    pf "refusal names the log-superset gate" "$?"
+    rm -rf "$d"
+
+    echo "== activity-log gate: PR #107 repro (superset of main, subset of disk) =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # PR #107 shape: staged candidate is a superset of main (so a naive
+    # additions-only diff against main reads green and git will commit it),
+    # but the working tree still contains an entry the staged candidate omits.
+    # The hook reads the STAGED content as the candidate and compares it against
+    # the working tree, so the commit is blocked.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    # Working tree now has an extra entry not present in the staged candidate.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 11:00 (UTC+7) — opencode
+- Action: uncommitted on disk only
+
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    hout="$(cd "$d" && git commit -m "log: additions-only blind gate" 2>&1)"; hrc=$?
+    pf "PR #107 additions-only blind commit is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "working tree"
+    pf "refusal identifies the working-tree source" "$?"
     echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
     d="$(mkrepo)"
     git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
