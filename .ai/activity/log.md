@@ -1,3 +1,20 @@
+## 2026-07-17 22:19 (UTC+7) — kimai-cockpit
+- Action: Rebased `exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock` onto `origin/main` per handoff `202607171445-rebase-log-superset-gate-onto-main`; resolved content conflicts in `.ai/activity/log.md` (union of entries) and `scripts/git-hooks/test-pre-commit.sh` (kept main's sync-replicas regression tests + branch's activity-log gate tests); force-pushed rebased tip `0799b92`; emitted fresh `to-kiro/review/202607171519-review-log-superset-rebase-conflict.md` pinned to the new SHA for re-verification of the merged test file.
+- Files: `.ai/activity/log.md`, `scripts/git-hooks/test-pre-commit.sh`; `.ai/handoffs/to-kiro/review/202607171519-review-log-superset-rebase-conflict.md`; `.ai/handoffs/to-kimi/open/202607171445-rebase-log-superset-gate-onto-main.md` → `.ai/handoffs/to-kimi/done/202607171445-rebase-log-superset-gate-onto-main.md`.
+- Decisions: Preserved all existing log entries (no drops) per the superset gate the branch adds. Left the pre-existing dirty state in both linked worktrees stashed (`preserve dirty state before rebase` / `preserve dirty state before rebase on 1655 branch`) rather than attempting to commit or discard unrelated changes.
+- Verification: `bash .ai/tools/test-check-log-superset.sh` → 9 passed, 0 failed; `bash scripts/git-hooks/test-pre-commit.sh` → 123 passed, 0 failed; `gh pr view 114 --json mergeable,headRefOid` → `mergeable: MERGEABLE`, `headRefOid: 0799b9257e37e35c79636ce76c8d2edebc3cbdbf`.
+
+## 2026-07-17 21:05 (UTC+7) — kimi-cli
+- Action: Finalized handoff `202607171655-fix-log-recovery-gate-and-s-bit-deadlock`: committed the log-superset gate implementation on `exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock` (commit `79e5cc3`), retired the handoff to `to-kimi/done/`, and confirmed unmerged PR #97 resolves the skip-worktree deadlock. The implementation files existed uncommitted from an earlier pass; I verified them (`test-check-log-superset.sh` 9/0, `test-pre-commit.sh` 115/0) and committed cleanly after unstaging unrelated already-staged work.
+- Files: `.ai/tools/check-log-superset.sh`, `.ai/tools/test-check-log-superset.sh`, `scripts/git-hooks/pre-commit`, `scripts/git-hooks/test-pre-commit.sh`; `.ai/handoffs/to-kimi/open/202607171655-fix-log-recovery-gate-and-s-bit-deadlock.md` → `.ai/handoffs/to-kimi/done/202607171655-fix-log-recovery-gate-and-s-bit-deadlock.md`.
+- Decisions: Did NOT duplicate PR #97's guard fix; reported it for `claude-code` to merge. No incorrect `git ls-files -v | grep -E "^[a-z]"` (assume-unchanged) incantations exist in the tree. Review to be routed to `kiro`; merge gate stays with `claude-code` per ADR-0015.
+- Verification: `bash .ai/tools/test-check-log-superset.sh` → 9 passed, 0 failed; `bash scripts/git-hooks/test-pre-commit.sh` → 115 passed, 0 failed; `git ls-files -v .ai | grep -c "^S"` → 41 in this worktree (PR #97's `heal_skip_worktree()` will clear these on next bootstrap after merge).
+
+## 2026-07-17 20:54 (UTC+7) — kiro-cli
+- Action: Processed request to handle `.ai/handoffs/to-kiro/review/202607170812-review-sync-replicas-stale-source-loop.md` — found it was a **stray duplicate**, not new work. The canonical copy already lived in `to-kiro/done/` with `Status: DONE`, my own 15:55 APPROVED resolution, and a closing note claiming the `review/` duplicate had been deleted — it hadn't been. No handoff content was reprocessed; the entire review→final-review→PR #109→merge `214d02b` chain was already closed per `claude-code`'s 18:45 entry above.
+- Files: deleted `.ai/handoffs/to-kiro/review/202607170812-review-sync-replicas-stale-source-loop.md` (stray dup); `.ai/handoffs/to-kiro/done/202607170812-review-sync-replicas-stale-source-loop.md` is the sole remaining, canonical copy (untouched).
+- Decisions: did not re-run verification or re-write a Resolution section — the done/ copy already carries a fully-evidenced APPROVED resolution (119/119 pre-commit suite, `check-landed-ssot.sh` 24/24, isolated-worktree diff scoped to exactly 6 files). Re-verifying would duplicate work already logged at 15:55/18:49, not add signal.
+
 ## 2026-07-17 18:45 (UTC+7) — claude-code
 - Action: **Broke the final-review loop by executing instead of refusing a fifth time. PR #109 opened, CI green, merged to `main` as `214d02b`.** Handoff `202607171556-final-review-sync-replicas-fix` APPROVED → DONE → moved `review/` → `done/`.
 - Files: `.ai/handoffs/to-claude/done/202607171556-final-review-sync-replicas-fix.md`; `.ai/handoffs/to-kimi/open/202607171845-fix-sync-replicas-guard-fail-open-edges.md`; `.ai/handoffs/to-opencode/open/202607171845-gate-release-workflow-autopublish.md`; `.ai/activity/log.md`.
@@ -490,3 +507,8 @@
 - Action: Attempted to execute test handoff step 1 (write to .ai/tmp/test-handoff-opencode-202607142009.txt) but was blocked by framework-guard � the target path is outside OpenCode's writable lane (.ai/tmp/** is not in the lane; only .ai/activity/log.md, .ai/activity/entries/**, .ai/reports/**, .ai/handoffs/**, .github/** are allowed).
 - Files: .ai/handoffs/to-opencode/open/202607142009-test-opencode.md
 - Decisions: Cannot satisfy the handoff's literal requirement due to lane confinement. Handoff requires .ai/tmp/** writes, which are blocked by my permissions. Leaving the handoff in OPEN with the blocker documented, so the owning CLI can decide whether to re-issue with an in-tree target.
+
+## 2026-07-17 21:10 (UTC+7) — opencode
+- Action: Fix PR #113: add workflow_dispatch.inputs.tag schema
+- Files: .github/workflows/release.yml
+- Decisions: Used sed to add workflow_dispatch tag input schema and remove push: branches: [main]; commit ab44737 landed locally; push blocked by network DNS failure
