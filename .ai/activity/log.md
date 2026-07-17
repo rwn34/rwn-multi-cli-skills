@@ -1,3 +1,8 @@
+## 2026-07-17 23:53 (UTC+7) — kimi-cli
+- Action: Implemented UTF-8 encoding guard for shared .ai/ files (S3-1 framework hardening): created check-encoding.sh, regression tests, dispatcher integration, and repaired .ai/activity/log.md corruption.
+- Files: .ai/tools/check-encoding.sh, .ai/tests/test-check-encoding.sh, .ai/tests/test-dispatch-encoding.sh, .ai/tools/dispatch-handoffs.sh, .ai/activity/log.md
+- Decisions: Guard rejects UTF-16LE, UTF-8 BOM, and invalid UTF-8 byte sequences; dispatcher warns fail-open via fleet_notify alert after reconcile-done-handoffs. Log.md working tree contained cp1252 em-dash bytes and a NUL byte from recent append operations; restored to HEAD (valid UTF-8 with legacy U+FFFD mojibake) and prepended this entry. Any entries appended directly to log.md after HEAD were lost in the restore.
+
 ## 2026-07-17 18:55 (UTC+7) — kimi-cockpit
 - Action: Implemented Status: IMPOSSIBLE / NOT-A-BUG terminal outcomes (S2-7): lint checks, reconcile support, template/README docs, and regression tests. Committed and pushed to PR #105.
 - Files: .ai/tools/lint-handoff.sh, .ai/tools/reconcile-done-handoffs.sh, .ai/handoffs/template.md, .ai/handoffs/README.md, .ai/tests/test-lint-handoff.sh, .ai/tests/test-reconcile-done-handoffs.sh
