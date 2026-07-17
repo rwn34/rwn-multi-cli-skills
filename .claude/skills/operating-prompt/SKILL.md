@@ -33,7 +33,10 @@ entry point into a persistent, shared multi-agent workforce.
   headers use **UTC+7 wall-clock time** at the moment of writing, annotated
   `(UTC+7)` (e.g. `2026-07-16 19:31 (UTC+7)`). Handoff **filenames** remain
   UTC (`YYYYMMDDHHMM-slug.md`). Prepend order is the authoritative sequence;
-  timestamps are annotations.
+  timestamps are annotations. On this Windows + Git Bash/MSYS host the local
+  system clock is kept at UTC+7, so emit timestamps with plain
+  `date +'%Y-%m-%d %H:%M'`; do **not** use `TZ=Asia/Bangkok date`, which MSYS
+  treats as UTC and prints the wrong hour.
 - **Claude does not code or deploy.** Neither `claude-cockpit` nor
   `claude-auto` writes project source code, executes commands, or performs
   deploys unless the owner explicitly asks. Claude reads, plans, designs,
@@ -247,17 +250,42 @@ keep the human as a *gate* (who authorizes) without making the human a *relay*
 (who launches):
 
 - `Evidence: VERIFIED` — default; the handoff may auto-dispatch under normal tier
-  rules.
-- `Evidence: HYPOTHESIS` — the dispatcher HOLDS the handoff. The first step is to
-  verify the premise; once verified, update the field to `VERIFIED` or relay it
-  manually. A hypothesis may not carry a priority label.
-- `Risk: C` still requires a human gate, but `Gate-satisfied-by: <who>@<when>`
-  records that the gate was satisfied. Once recorded, the orchestrator may relay
-  the launch; the dispatcher still refuses an ungated Risk C item.
+  rules. Absent `Evidence` means `VERIFIED` (backward compatibility).
+- `Evidence: HYPOTHESIS` — the handoff **dispatches**, with premise-verification
+  as the recipient's explicit first step. The recipient either upgrades the field
+  to `VERIFIED` and proceeds, or retires the handoff `NOT-A-BUG`/`BLOCKED` with
+  the disproof recorded. A hypothesis may not carry a priority label, and is
+  capped at Risk A/B — `Evidence: HYPOTHESIS` + `Risk: C` is a lint error. It is
+  **not** a HOLD: holding a hypothesis punishes honest uncertainty and teaches
+  senders to overstate confidence (ADR-0015 Decision 2).
+- `Gate:` / `Gate-satisfied-by: <who>@<when>` / `Relay:` **record** authorization
+  and route the launch; they are **not proof** of it. The owner's hard gates —
+  production deploy, publish to a public registry, tag/release cut, force-push or
+  destructive ops on shared history, `git reset --hard` on shared state, secrets,
+  production data — are **never auto-dispatched regardless of
+  `Gate-satisfied-by`**; they are HELD for a cockpit and relayed by a human in the
+  loop. Non-hard-gate Risk-C items MAY auto-dispatch when `Gate:` names a specific
+  action and `Gate-satisfied-by:` records who authorized it and when. A missing or
+  empty `Gate:` on a Risk-C handoff HOLDs. A self-written line is not an owner
+  signature (ADR-0015 Decision 3).
 - `Observed-in: <branch>@<sha>` is required when a handoff asserts file-level
-  facts. If the SHA does not match the resolved dispatch base, the dispatcher
-  rejects the handoff with an evidence-base mismatch report routed back to the
-  sender.
+  facts. The dispatcher normalizes both SHAs (`git rev-parse --verify
+  "<observed>^{commit}"`) so abbreviated SHAs work, and **accepts an ancestor** of
+  the resolved base — a base that has merely advanced is not sender error. It
+  FAILs only on divergence (observed is not an ancestor of the base), an
+  unresolvable SHA (`unknown commit`), or a cited path changed in
+  `<observed>..<base>`, routing an evidence-base mismatch report back to the
+  sender. The branch part is advisory; the SHA part is authoritative
+  (ADR-0015 Decision 1).
+
+**The dispatcher is enforcement layer.** Because `.ai/tools/dispatch-handoffs.sh`
+decides whether a Risk-C action launches, it is a guard, not a convenience script:
+changes to it fall under ADR-0014's peer-reviewed-PR rule — authored on an `exec/*`
+branch, reviewed by a different CLI than the author, CI-green, merged by neither
+(ADR-0015 Decision 3.4).
+
+See `docs/architecture/0015-handoff-protocol-v4.md` (the ratifying ADR, which is
+authoritative where it and `docs/specs/handoff-protocol-v4.md` disagree).
 
 ### 8.1 Confirmed-stale CLI kills are fleet-executed (Tier B)
 

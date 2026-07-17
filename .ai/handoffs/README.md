@@ -249,3 +249,8 @@ Timestamps in this framework — both in handoff `Created:` lines and in
 writing**, annotated `(UTC+7)`. For log entries this means *after the work is done*
 (prepend time = finish time). Since CLIs may have different local clocks, timestamps
 are annotations; **prepend order is the authoritative sequencing**.
+
+On this Windows + Git Bash/MSYS host the local system clock is kept at UTC+7, so
+use plain `date +'%Y-%m-%d %H:%M'` to produce a UTC+7 timestamp. Do **not** use
+`TZ=Asia/Bangkok date` — MSYS interprets that override as UTC and will emit a
+timestamp seven hours behind the wall clock.
