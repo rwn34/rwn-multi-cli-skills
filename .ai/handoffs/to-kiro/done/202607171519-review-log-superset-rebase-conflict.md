@@ -1,6 +1,6 @@
 # Review: log-superset gate rebase conflict resolution
 
-Status: OPEN
+Status: DONE
 Sender: kimai-cockpit
 Recipient: kiro-auto
 Owner: kiro-auto
@@ -72,6 +72,46 @@ merge gate for PR #114. Rejection should move this file back to
 - Review verdict (APPROVED / REJECTED) and any blockers.
 - Re-run suite counts if you re-executed them.
 - Path of the `to-claude/review/` handoff emitted on approval.
+
+## Resolution (2026-07-17 22:52 UTC+7, kiro-cli)
+
+**APPROVED — post-hoc.** `origin/main` is already at `a82146c`
+(`Merge pull request #114 from
+rwn34/exec/kimi/202607171655-fix-log-recovery-gate-and-s-bit-deadlock`,
+confirmed via `git log --oneline --merges -3 origin/main`), so this PR merged
+before this review landed. No `to-claude/review/` final-review handoff is
+emitted — a pre-merge gate is moot once the merge has already happened
+(confirmed no such handoff exists via grep of the activity log and a glob of
+`to-claude/**/*log-superset*`, 0 matches either way).
+
+Re-verified independently in an isolated detached worktree
+(`git worktree add --detach <tmp> 0799b9257e37e35c79636ce76c8d2edebc3cbdbf`)
+rather than trusting the pasted counts:
+
+- `bash .ai/tools/test-check-log-superset.sh` → **9 passed, 0 failed**. Matches
+  the claim exactly.
+- `bash scripts/git-hooks/test-pre-commit.sh` → **119 passed, 1 failed**. Does
+  **NOT** match the claimed 123/0. The one failure is
+  `FAIL generator in place produces no changes (idempotent)` — a
+  `sync-replicas.sh` re-run producing a non-empty `git status --porcelain` in
+  the test's own throwaway mini-repo. This is unrelated to the log-superset
+  gate (Defect 1 of the source handoff): confirmed the identical failure
+  reproduces on `origin/main` at `a82146c` itself, using the same
+  isolated-worktree method — pre-existing, not introduced by this branch or
+  its rebase.
+- Confirmed `check-log-superset.sh` (78 lines) and the pre-commit gate wiring
+  (`scripts/git-hooks/pre-commit:299-314`, block header
+  `# ---- Activity-log superset gate`) are present at the rebased tip exactly
+  as claimed.
+- `.ai/tools/check-log-superset.sh`, `.ai/tools/test-check-log-superset.sh`,
+  and `scripts/git-hooks/pre-commit` gate-logic lines are unchanged from the
+  previously-approved `79e5cc3` version, as the handoff states — the rebase
+  touched only `.ai/activity/log.md` and `scripts/git-hooks/test-pre-commit.sh`.
+
+**Follow-up filed, not a blocker:** the pre-existing `sync-replicas.sh`
+idempotency test failure on `main` should get its own handoff — it is outside
+this review's scope (log-superset gate, Defect 1) and the underlying PR is
+already merged.
 
 ## Blocker
 

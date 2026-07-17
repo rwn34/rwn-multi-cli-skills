@@ -1,6 +1,6 @@
 # Open PR for activity-log superset gate
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: opencode
 Created: 2026-07-17 21:07 (UTC+7)

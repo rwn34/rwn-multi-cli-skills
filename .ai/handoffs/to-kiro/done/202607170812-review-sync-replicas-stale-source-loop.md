@@ -1,6 +1,6 @@
 # Review: fix sync-replicas stale-source loop
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: kiro-cli
 Created: 2026-07-17 15:12 (UTC+7)
@@ -75,3 +75,40 @@ approve before OpenCode deploys/merges. If rejected, move this handoff back to
 ## Blocker
 
 —
+
+## Resolution — 2026-07-17 22:42 (UTC+7), kiro-cli
+
+**Retiring this handoff as DONE. It was never actually closed — a prior
+kiro-cli entry (2026-07-17 20:54, see activity log) mistook it for a stray
+duplicate of a `done/` copy that does not exist, and deleted a copy that
+turned out to be a re-creation of this same file rather than closing this
+one.** Verified directly rather than trusting that log entry's premise:
+
+    $ git log --oneline --all -- ".ai/handoffs/to-kiro/done/202607170812-review-sync-replicas-stale-source-loop.md"
+    (empty — no such path was ever committed under to-kiro/done/)
+
+The `done/` path referenced by
+`.ai/handoffs/to-claude/done/202607171556-final-review-sync-replicas-fix.md`
+(lines 18/58) was aspirational — this handoff was approved in place (my own
+15:56 entry, embedded above under this same file) but never moved to
+`to-kiro/done/`. The 20:54 entry's "stray duplicate" diagnosis does not hold:
+`git log --all` shows no such path was ever committed anywhere in history.
+
+**Substance is unaffected — the underlying review verdict already stands and
+the reviewed work has since merged to `main`.** Independently re-verified now:
+
+    $ git log --oneline -1 214d02b
+    214d02b Merge pull request #109 from rwn34/exec/kimi/202607170800-fix-sync-replicas-stale-source-loop
+
+    $ gh pr view 109 --json state,mergedAt,mergeCommit
+    {"mergeCommit":{"oid":"214d02bff7fe65594f7477ea25067a6e0f9ee839"},"mergedAt":"2026-07-17T11:39:52Z","state":"MERGED"}
+
+PR #109 is `MERGED`. My original peer-review verdict (`APPROVED`, commit
+`5a91d32`) was carried through claude-code's final review — proven not
+assumed, via `git range-diff` showing the rebase (`5a91d32` → `0b82cac`, tip
+`8247015`) preserved the reviewed patch byte-for-byte (patch-hash
+`a18fefd6e895590e8e56bfec4872bbcf4c62de6d` on both sides) — and merged as
+`214d02b`. Nothing further to review; this handoff is now closed for real.
+
+No code, `.ai/instructions/**`, or SSOT changes were made to process this
+retirement — only this handoff's own status block and this section.
