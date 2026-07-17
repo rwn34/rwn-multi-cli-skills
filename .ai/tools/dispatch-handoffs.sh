@@ -110,6 +110,24 @@ if [ "$MODE" = "exec" ]; then
     bash "$root/.ai/tools/reconcile-done-handoffs.sh" "$root" || true
 fi
 
+# S3-1: cheap encoding assertion for shared-state files. Bad encoding makes
+# grep-based history lookups silently lie and git treat the file as binary.
+# Fail-open: warn loudly and notify, but never block dispatch.
+check_shared_encoding() {
+    local f out
+    for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
+        [ -f "$f" ] || continue
+        out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
+        if [ -n "$out" ]; then
+            printf '%s\n' "$out" | while IFS= read -r line; do
+                echo "WARN: $line" >&2
+            done
+            fleet_notify alert "$project_name" "encoding-check" "bash" "kimi-cli" >/dev/null 2>&1 || true
+        fi
+    done
+}
+check_shared_encoding
+
 # Headless invocation per CLI. Verify locally before relying on kimi/kiro forms —
 # flags differ across versions (see .ai/cli-map.md § headless invocation).
 #
