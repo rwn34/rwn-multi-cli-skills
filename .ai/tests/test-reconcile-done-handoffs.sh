@@ -5,9 +5,10 @@
 # This suite verifies that it:
 #   1. moves a DONE handoff from open/ to done/ when there is no collision
 #   2. moves a DONE handoff from review/ to done/ when there is no collision
-#   3. does NOT silently overwrite an existing done/ file on collision
+#   3. moves IMPOSSIBLE and NOT-A-BUG terminal-status handoffs to done/
+#   4. does NOT silently overwrite an existing done/ file on collision
 #      (it renames the incoming file to <basename>-superseded-<UTC>.md and warns)
-#   4. leaves non-DONE handoffs untouched
+#   5. leaves non-terminal handoffs untouched
 #
 # Run: bash .ai/tests/test-reconcile-done-handoffs.sh
 set -u
@@ -128,7 +129,7 @@ check "test3: superseded file contains incoming handoff" "$(grep -q 'incoming op
 check "test3: prints a WARNING on collision" "$(echo "$out3" | grep -qi 'WARNING' && echo 0 || echo 1)"
 
 # ==============================================================================
-# 4. Non-DONE handoffs are left untouched.
+# 4. Non-terminal handoffs are left untouched.
 # ==============================================================================
 mk_open "202607170004-open.md" "still open" "OPEN"
 out4="$(run_reconcile 2>&1)"
@@ -138,12 +139,26 @@ check "test4: OPEN handoff stays in open/" "$([ -f "$HANDOFFS/to-kimi/open/20260
 check "test4: no output for OPEN handoff" "$([ -z "$out4" ] && echo 0 || echo 1)"
 
 # ==============================================================================
-# 5. Idempotency: re-running with no stray DONE handoffs is silent and exits 0.
+# 5. Terminal statuses IMPOSSIBLE and NOT-A-BUG also move to done/.
 # ==============================================================================
+mk_open "202607170005-impossible.md" "sender was wrong; premise disproven" "IMPOSSIBLE"
+mk_open "202607170006-notabug.md" "reported behavior is intentional" "NOT-A-BUG"
 out5="$(run_reconcile 2>&1)"
 rc5=$?
-check "test5: second run exits 0" "$([ "$rc5" -eq 0 ] && echo 0 || echo 1)"
-check "test5: second run is silent" "$([ -z "$out5" ] && echo 0 || echo 1)"
+check "test5: reconcile exits 0 with terminal statuses" "$([ "$rc5" -eq 0 ] && echo 0 || echo 1)"
+check "test5: IMPOSSIBLE handoff moved out of open/" "$([ ! -f "$HANDOFFS/to-kimi/open/202607170005-impossible.md" ] && echo 0 || echo 1)"
+check "test5: IMPOSSIBLE handoff now in done/" "$([ -f "$HANDOFFS/to-kimi/done/202607170005-impossible.md" ] && echo 0 || echo 1)"
+check "test5: NOT-A-BUG handoff moved out of open/" "$([ ! -f "$HANDOFFS/to-kimi/open/202607170006-notabug.md" ] && echo 0 || echo 1)"
+check "test5: NOT-A-BUG handoff now in done/" "$([ -f "$HANDOFFS/to-kimi/done/202607170006-notabug.md" ] && echo 0 || echo 1)"
+check "test5: reports both terminal moves" "$(echo "$out5" | grep -c 'moved .* -> done/' | grep -q '2' && echo 0 || echo 1)"
+
+# ==============================================================================
+# 6. Idempotency: re-running with no stray terminal handoffs is silent and exits 0.
+# ==============================================================================
+out6="$(run_reconcile 2>&1)"
+rc6=$?
+check "test6: second run exits 0" "$([ "$rc6" -eq 0 ] && echo 0 || echo 1)"
+check "test6: second run is silent" "$([ -z "$out6" ] && echo 0 || echo 1)"
 
 echo ""
 echo "==== reconcile-done-handoffs suite: $pass passed, $fail failed ===="

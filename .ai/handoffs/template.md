@@ -1,6 +1,5 @@
 # <Task title — one short clear line>
-
-Status: OPEN
+Status: <OPEN | BLOCKED | DONE | IMPOSSIBLE | NOT-A-BUG>
 Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
 Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
@@ -21,8 +20,13 @@ Risk: <A | B | C>
 # Next: <actor>         # optional: general next-actor routing when ReviewBy/FinalReview/Deploy do not fit
 
 <!-- Protocol v4 (2026-07-16; supersedes v3 2026-07-09):
-     Recipient self-retires the handoff to done/ on completion; sender validates
-     post-hoc. See docs/specs/handoff-protocol-v4.md for the full lifecycle.
+     Recipient self-retires the handoff to done/ on a terminal status; sender
+     validates post-hoc. See docs/specs/handoff-protocol-v4.md for the full
+     lifecycle.
+     Status:    = OPEN (active), BLOCKED (needs help), DONE (complete),
+                  IMPOSSIBLE (sender's premise disproven — requires ## Why),
+                  NOT-A-BUG (reported behavior is correct — requires ## Why).
+                  IMPOSSIBLE and NOT-A-BUG are terminal; recipient moves to done/.
      Auto: yes  = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh.
                   DEFAULT is yes — the human is a gate, not a relay.
                   Auto: yes + Risk A/B is owned by the auto pane.
@@ -72,6 +76,10 @@ conventions. Delete this section if not applicable.>
       dry-run. Per delivery-integrity: execution proves behavior, grep proves
       presence; a completion claim needs both.>
 - (b) ...
+
+## Why
+<Required for Status: IMPOSSIBLE or NOT-A-BUG. Disproof or explanation of why
+no action is needed. Cite commands/output or file refs.>
 
 ## Next step / future note
 <Per delivery-integrity §3: what comes after this handoff, and what breaks first

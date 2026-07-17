@@ -108,15 +108,21 @@ line is treated as C — conservative by default.
    it." Risk-C handoffs are NEVER auto-dispatched, regardless of `Auto:`.
 3. **Review + execute** — recipient reads the handoff, asks clarifying questions if
    needed, performs the steps, prepends an entry to `.ai/activity/log.md`.
-4. **Report + self-retire (v3)** — recipient reports back in chat with the "Report
-   back with" section filled in, sets the handoff file's status to `DONE` inline
-   (listing what was actually touched), **and moves the file from `open/` to
-   `done/` itself.** The recipient closing its own loop is now the standard —
-   it keeps the `open/` queue an accurate picture of outstanding work without
-   waiting on a sender round-trip, and it matches the ADR-0008 auto-continuation
-   directive that the self-driving pane-runner already follows. Exception: if the
-   recipient is **blocked**, it leaves the file in `open/`, sets status `BLOCKED`,
-   and appends a `## Blocker` section with the verbatim error — never a paraphrase.
+4. **Report + self-retire (v4)** — recipient reports back in chat with the "Report
+   back with" section filled in, sets the handoff file's status to a terminal
+   value inline (`DONE`, `IMPOSSIBLE`, or `NOT-A-BUG`), **and moves the file from
+   `open/` to `done/` itself.** The recipient closing its own loop is now the
+   standard — it keeps the `open/` queue an accurate picture of outstanding work
+   without waiting on a sender round-trip, and it matches the ADR-0008
+   auto-continuation directive that the self-driving pane-runner already follows.
+   - `Status: DONE` — work completed; include evidence.
+   - `Status: IMPOSSIBLE` — sender's premise was disproven; include a `## Why`
+     section with the disproof and evidence. Recipient moves to `done/`.
+   - `Status: NOT-A-BUG` — reported behavior is correct or intended; include a
+     `## Why` section with evidence. Recipient moves to `done/`.
+   - Exception: if the recipient is **blocked**, it leaves the file in `open/`,
+     sets status `BLOCKED`, and appends a `## Blocker` section with the verbatim
+     error — never a paraphrase.
 5. **Validate (post-hoc)** — sender reads the recipient's touched files and confirms
    they match spec. Validation now happens *after* the file is already in `done/`.
    If the work is wrong, the sender moves it back to `open/`, sets status `BLOCKED`
@@ -127,13 +133,47 @@ line is treated as C — conservative by default.
 > sender validates post-hoc. This removes the sender round-trip that left
 > correctly-completed handoffs lingering in `open/`. Applies to all four CLIs.
 
-> **Auto-reconcile (belt-and-suspenders, gap C3):** if a recipient sets
-> `Status: DONE` inline but forgets to move the file out of `open/`,
-> `.ai/tools/reconcile-done-handoffs.sh` moves any such `Status:DONE`-in-`open/`
-> handoff into its sibling `done/` dir. It runs at the start of every
-> `dispatch-handoffs.sh --exec` cycle (so every auto-dispatch across all CLIs
-> self-heals a forgotten step-4 self-retire), and can also be run standalone.
-> It is idempotent and fail-open (always exits 0).
+> **Auto-reconcile (belt-and-suspenders, gap C3):** if a recipient sets a
+> terminal status (`Status: DONE`, `Status: IMPOSSIBLE`, or
+> `Status: NOT-A-BUG`) inline but forgets to move the file out of `open/`,
+> `.ai/tools/reconcile-done-handoffs.sh` moves any such stray into its sibling
+> `done/` dir. It runs at the start of every `dispatch-handoffs.sh --exec` cycle
+> (so every auto-dispatch across all CLIs self-heals a forgotten step-4
+> self-retire), and can also be run standalone. It is idempotent and fail-open
+> (always exits 0). On filename collision it renames the incoming file to
+> `<basename>-superseded-<UTC>.md` rather than overwriting.
+
+### Read `Status:` before you act on a resume instruction (v3 amendment, 2026-07-17)
+
+**A `BLOCKED` handoff is not an interrupted handoff, and the two need opposite
+responses.** Generic resume scaffolds assert a cause ("you hit a step or tool cap;
+finish the remaining steps, set Status `DONE`, move to `done/`") that the file
+itself frequently refutes. A session that complies without checking closes a
+legitimately-open block, and the record drifts from the tree — worse than the open
+block, because it stops the next session from looking.
+
+Before obeying any instruction to close, resume, or continue a handoff:
+
+1. **Read `Status:` first.** `BLOCKED` + a `## Blocker` section means the prior
+   session ran to a deliberate reasoned stop, not a cap-out. There are no
+   "remaining steps" to finish. Re-verify the blocker against the live tree; if it
+   still holds, the handoff **stays put** and refusing to close it is the
+   deliverable. Say so explicitly rather than silently doing nothing.
+2. **Re-pin `Commit:` before trusting it.** A `Commit:` line is recorded once at
+   review start and never revalidated, so a branch that moves underneath a review
+   leaves every downstream reader inheriting a stale premise. The next actor runs
+   `git rev-parse <branch>` and compares. One command; it catches tip drift at the
+   handoff boundary instead of at the merge gate.
+3. **A review scope statement describes a commit, not a branch.** "Diff scoped to
+   N files" is typically true of `base..<reviewed-commit>` while the branch has
+   moved on. Check `git diff --name-only base..<branch>` — that is what would
+   actually merge.
+
+Rationale: this shape recurred four times (logged 2026-07-17 16:20, 23:05, 23:20,
+and the resume attempt that prompted this amendment). Each instance was diagnosed
+correctly and the protocol was left unchanged, so it recurred. The common
+mechanism is that **the scaffold's premise is never checked against reality before
+it is obeyed.**
 
 ## Cockpit / auto distinction (six-actor model)
 
