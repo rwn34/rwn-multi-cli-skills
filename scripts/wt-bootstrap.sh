@@ -40,6 +40,7 @@ wt-bootstrap.sh — set up executor git worktrees for a project (idempotent).
 
 Usage:
   bash scripts/wt-bootstrap.sh <project-dir> [executor...]
+  bash scripts/wt-bootstrap.sh --remove <project-dir> [executor...]
 
 Arguments:
   <project-dir>  Path to the PRIMARY checkout (holds the real .git + canonical .ai/).
@@ -55,13 +56,20 @@ What it does, per executor:
   3. Add ".ai" to the worktree's .git/info/exclude so the junction is never
      committed.
 
+With --remove:
+  Safely remove one or more executor worktrees. The canonical .ai/ junction is
+  unmounted BEFORE the worktree is removed, so git cannot follow the junction
+  and delete shared coordination-plane state (2026-07-16 deletion incident).
+
 Safety:
   - Never destroys existing work. If a worktree path exists but is NOT a git
     worktree, the script aborts with a message.
+  - With --remove, refuses to act if the worktree's .ai/ is still a junction.
   - Sourcing this file has no side effects.
 
 Options:
   --help, -h     Show this help and exit.
+  --remove       Remove the named executor worktrees safely.
 EOF
 }
 
@@ -91,6 +99,8 @@ ensure_handoff_queues() {
 # ---------- arg parsing ----------
 PROJECT_ARG=""
 EXECUTORS=""
+REMOVE_MODE=false
+
 for arg in "$@"; do
   case "$arg" in
     --help|-h) usage; exit 0 ;;
@@ -100,6 +110,7 @@ done
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage; exit 0 ;;
+    --remove)  REMOVE_MODE=true ;;
     --*)       die "Unknown flag: $1 (see --help)" ;;
     *)
       if [ -z "$PROJECT_ARG" ]; then
@@ -220,6 +231,92 @@ cmd_islink() {
     | grep -i "$name" || true
 }
 
+# Return 0 if <path>/.ai is a junction/symlink to the canonical plane.
+# Used before destructive operations to ensure we don't follow the junction.
+ai_is_mounted() {
+  local wt_path="$1" link="$1/.ai"
+  if [ -L "$link" ]; then
+    return 0
+  fi
+  if is_windows && [ -d "$link" ] && [ -n "$(cmd_islink "$link")" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Unmount <worktree>/.ai if it is a junction/symlink. Returns 0 if unmounted
+# or was not mounted; dies if a real directory with content exists where the
+# junction should be (split-brain guard).
+umount_ai() {
+  local wt_path="$1" link="$1/.ai"
+  if [ -L "$link" ]; then
+    rm -f "$link"
+    log "unmount $link (symlink)"
+    return 0
+  fi
+  if is_windows && [ -d "$link" ] && [ -n "$(cmd_islink "$link")" ]; then
+    cmd //c rmdir "$(winpath "$link")" >/dev/null 2>&1 \
+      || die "could not unmount junction $link"
+    log "unmount $link (junction)"
+    return 0
+  fi
+  if [ -e "$link" ]; then
+    # A real .ai directory where the junction was. This is the degraded/split-brain
+    # case: do NOT silently delete it — it may contain live coordination-plane state.
+    dirty_ai="$(git -C "$wt_path" status --porcelain -- .ai 2>/dev/null || true)"
+    if [ -n "$dirty_ai" ]; then
+      die "DEGRADED .ai at $link: real directory with content, refusing to unmount. Inspect:
+$dirty_ai"
+    fi
+    rm -rf "$link"
+    log "removed degraded empty .ai dir at $link"
+  fi
+  return 0
+}
+
+# Remove a single executor worktree safely: unmount .ai/, then git worktree remove.
+remove_worktree() {
+  local executor="$1" wt_path="$2" branch="$3"
+
+  if [ ! -e "$wt_path" ]; then
+    log "skip   $executor — worktree does not exist ($wt_path)"
+    return 0
+  fi
+
+  if [ ! -d "$wt_path" ] || ! git -C "$wt_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    die "Path exists but is not a git worktree: $wt_path (refusing to remove it)"
+  fi
+
+  # CRITICAL: unmount .ai/ BEFORE any git removal, so git cannot follow the
+  # junction into the canonical coordination plane (2026-07-16 deletion incident).
+  if ai_is_mounted "$wt_path"; then
+    umount_ai "$wt_path"
+  else
+    log "note   $executor — .ai/ was not mounted at $wt_path"
+  fi
+
+  # Confirm .ai/ is gone or is a normal empty directory before removal.
+  if [ -e "$wt_path/.ai" ]; then
+    die ".ai/ still exists at $wt_path after unmount attempt; aborting removal"
+  fi
+
+  # Remove the worktree registration. Use --force only after the junction is gone.
+  git -C "$PROJECT_DIR" worktree remove --force "$wt_path" \
+    || die "git worktree remove failed for $wt_path"
+  log "remove $executor — worktree removed ($wt_path)"
+
+  # Clean up the init branch if it still exists and is fully merged to HEAD.
+  # This prevents accumulation of stale exec/<executor>/init branches.
+  if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$branch"; then
+    if git -C "$PROJECT_DIR" merge-base --is-ancestor "$branch" HEAD 2>/dev/null; then
+      git -C "$PROJECT_DIR" branch -d "$branch" >/dev/null 2>&1 \
+        && log "prune  $executor — deleted merged branch $branch"
+    else
+      warn "$executor — branch $branch is not merged; left intact"
+    fi
+  fi
+}
+
 # Reverse-write guard (2026-07-13): mark the stable subset of .ai/ as
 # skip-worktree inside this worktree so a git checkout/reset/run in the
 # worktree cannot silently rewrite the canonical primary .ai/ through the
@@ -260,6 +357,29 @@ set_identity() {
   git -C "$wt" config --worktree user.name "$identity"
   git -C "$wt" config --worktree user.email "$identity@users.noreply.github.com"
 }
+
+# ---------- remove mode ----------
+if [ "$REMOVE_MODE" = true ]; then
+  REMOVED=""
+  SKIPPED=""
+  for executor in $EXECUTORS; do
+    wt_path="$WT_CONTAINER/$executor"
+    branch="exec/$executor/init"
+    if [ -e "$wt_path" ]; then
+      remove_worktree "$executor" "$wt_path" "$branch"
+      REMOVED="${REMOVED:+$REMOVED }$executor"
+    else
+      log "skip   $executor — worktree does not exist ($wt_path)"
+      SKIPPED="${SKIPPED:+$SKIPPED }$executor"
+    fi
+  done
+  echo
+  log "Summary:"
+  log "  removed: ${REMOVED:-(none)}"
+  log "  skipped: ${SKIPPED:-(none)}"
+  log "Done."
+  exit 0
+fi
 
 # ---------- bootstrap each executor ----------
 mkdir -p "$WT_CONTAINER"
