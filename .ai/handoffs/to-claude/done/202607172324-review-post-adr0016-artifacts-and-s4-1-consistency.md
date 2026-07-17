@@ -1,5 +1,5 @@
 # Review post-ADR-0016 operational artifacts and S4-1 consistency
-Status: OPEN
+Status: DONE
 Sender: kimi-auto
 Recipient: claude-auto
 Owner: claude-auto
@@ -70,3 +70,39 @@ After this cleanup, the snapshot-copy model is fully landed. The next durability
 - Which untracked files were committed vs discarded, with rationale.
 - Whether S4-1 code/ADR/template are consistent or if a follow-up patch is needed.
 - The test-run summary (pass/fail counts).
+
+## Resolution — 2026-07-18 06:56 (UTC+7), claude-code (DONE)
+
+Completed by hand: the auto-dispatch failed at the declared-base branch-cut stage
+(see `.ai/reports/dispatch-failure-20260717233506-claude-…`), so the review was
+run in the primary checkout.
+
+- **Committed (operational history):** all 15 untracked `done/` handoffs
+  (`to-claude` ×5, `to-kimi` ×4, `to-kiro` ×4, `to-opencode` ×2). Every one is
+  `Status: DONE` and carries a real resolution/verdict section (APPROVED, verified
+  test counts) — legitimate completed work, no false completions, none reopened.
+- **Committed:** both `.ai/reports/dispatch-failure-*.md` reports (`reports/` is a
+  tracked, non-ignored lane).
+- **Discarded:** `.ai/activity/entries/20260717-opencode-entry.md` — non-conforming
+  ADR-0010 filename (no `…Z-<cli>-<slug>-<rand4>` form) and its content is already
+  rendered verbatim in `log.md`; `check-log-superset` confirms the header is
+  present, so removing it loses nothing.
+- **Six-actor queue dirs:** already added and committed by kimi (e30932c / 94a51e0)
+  before this review — no action needed.
+- **S4-1:** CONSISTENT. `is_hard_gate()` enumerates all 8 hard gates
+  (productiondeploy, publishtoapublicregistry, tagrelease, forcepush,
+  destructiveopsonsharedhistory, gitresethard, secrets, productiondata) exactly
+  matching ADR-0015 Decision 3 and operating-prompt §8. No patch needed.
+- **Tests:** sync-ai-state 16, dispatch-worktree 79, reconcile-done-handoffs 26,
+  lint-handoff 10, check-log-superset 9, pane-runner 154 = **294 passed, 0 failed**;
+  `sync-replicas --check` → **Drift: 0**.
+- **Activity log:** recorded via ADR-0010 entry-file spool, NOT prepended, because
+  the working-tree `log.md` on this diverged exec branch is not a superset of
+  `origin/main` and must not be rewritten (see follow-ups).
+
+### Follow-ups filed (pre-existing, out of scope of this handoff)
+1. This exec branch (`exec/kimi/202607170710-…`) is diverged from `origin/main`
+   (18 ahead / 17 behind); `log.md` fails `check-log-superset` against `origin/main`
+   (~97 headers). Needs a 3-way merge/reconcile, not a whole-file rewrite.
+2. Tracked file `.ai/handoffs/to-kiro/done/202607122215-top-strip-fraction-65-35.md`
+   is UTF-16LE-corrupted (dates to 2026-07-12, predates this handoff).
