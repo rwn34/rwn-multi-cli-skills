@@ -26,7 +26,12 @@ name: release
 # release-engineer and is held until real-project validation.
 
 on:
-  workflow_dispatch:  # Manual trigger only — deliberate, gated release
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.0.40)'
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
