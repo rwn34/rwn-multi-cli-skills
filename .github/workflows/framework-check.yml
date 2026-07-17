@@ -34,3 +34,10 @@ jobs:
       # copy-pasteable fix (`bash .ai/tools/sync-replicas.sh`) to stderr.
       - name: SSOT drift check
         run: bash .ai/tools/sync-replicas.sh --check
+
+      # Landed-blob check: compares the committed blobs of SSOT sources and
+      # replicas, independent of the working tree. Catches the stale-source
+      # laundering pattern that working-tree drift checks missed (ADR-0015
+      # follow-up, 2026-07-17).
+      - name: Landed SSOT blob consistency check
+        run: bash .ai/tools/check-landed-ssot.sh
