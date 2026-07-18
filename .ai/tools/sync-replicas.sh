@@ -56,8 +56,17 @@
 
 set -u
 
-: "${SYNC_MD:=.ai/sync.md}"
-DEST_ROOT="."
+# Derive the repo root from $0 by pure string manipulation. Do NOT use cd,
+# git rev-parse --show-toplevel, or pwd -P: in the worktree-per-CLI layout
+# .ai/ is a junction back to the primary checkout and those would resolve to
+# the wrong tree. $0 is the path used to invoke this script; stripping the
+# known suffix leaves the repo root.
+ROOT="${0%.ai/tools/sync-replicas.sh}"
+ROOT="${ROOT%/}"
+[ -n "$ROOT" ] || ROOT="."
+
+: "${SYNC_MD:=$ROOT/.ai/sync.md}"
+DEST_ROOT="$ROOT"
 CHECK=0
 
 while [ $# -gt 0 ]; do
@@ -69,7 +78,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$CHECK" = 1 ] && [ "$DEST_ROOT" != "." ]; then
+if [ "$CHECK" = 1 ] && [ "$DEST_ROOT" != "$ROOT" ]; then
   echo "sync-replicas.sh: --check writes to its own temp tree; do not combine with --dest-root" >&2
   exit 2
 fi
@@ -178,10 +187,10 @@ guard_in_place_writes() {
         *" $gdir "*) ;;   # already vetted this ancestor for an earlier replica
         *)
           checked_dirs="$checked_dirs$gdir "
-          if [ -L "$gdir" ]; then
+          if [ -L "$ROOT/$gdir" ]; then
             fail "write target ancestor '$gdir' is a symlink — refusing to regenerate through it (reverse-write guard, ADR-0004)"
           fi
-          if is_windows_host && [ -d "$gdir" ] && [ -n "$(cmd_islink "$gdir")" ]; then
+          if is_windows_host && [ -d "$ROOT/$gdir" ] && [ -n "$(cmd_islink "$ROOT/$gdir")" ]; then
             fail "write target ancestor '$gdir' is a Windows junction/reparse point — refusing to regenerate through it (reverse-write guard, ADR-0004)"
           fi
           ;;
@@ -202,7 +211,7 @@ guard_skip_worktree_sources() {
   while IFS="$(printf '\t')" read -r gsrc _gdst; do
     [ -n "$gsrc" ] || continue
     local lsout flag
-    lsout="$(git ls-files -v "$gsrc" 2>/dev/null)" \
+    lsout="$(git -C "$ROOT" ls-files -v "$gsrc" 2>/dev/null)" \
       || fail "SSOT source '$gsrc': skip-worktree probe failed (git ls-files -v). Refusing to regenerate from an untrusted source (fail closed)."
     flag="$(printf '%s\n' "$lsout" | head -n1 | cut -c1)"
     case "$flag" in
@@ -226,7 +235,7 @@ generate() {
   # IFS=tab so paths keep any spaces; read src + dst from each manifest line.
   while IFS="$(printf '\t')" read -r src dst; do
     [ -n "$src" ] && [ -n "$dst" ] || continue
-    [ -f "$src" ] || fail "SSOT source missing: $src"
+    [ -f "$ROOT/$src" ] || fail "SSOT source missing: $src"
 
     out="$gen_root/$dst"
     mkdir -p "$(dirname "$out")" || fail "could not create $(dirname "$out")"
@@ -238,15 +247,15 @@ generate() {
         # a temp file: when regenerating IN PLACE ($out == $dst) a direct `> "$out"`
         # would TRUNCATE the file before extract_preamble reads it, wiping the
         # preamble. Build the full content first, then move it into place.
-        [ -f "$dst" ] || fail "preamble-carrying replica missing, cannot preserve preamble: $dst"
+        [ -f "$ROOT/$dst" ] || fail "preamble-carrying replica missing, cannot preserve preamble: $dst"
         buf="$(mktemp)" || fail "mktemp failed"
-        { extract_preamble "$dst"; cat "$src"; } | normalize_lf > "$buf" || { rm -f "$buf"; fail "write failed: $out"; }
+        { extract_preamble "$ROOT/$dst"; cat "$ROOT/$src"; } | normalize_lf > "$buf" || { rm -f "$buf"; fail "write failed: $out"; }
         mv "$buf" "$out" || { rm -f "$buf"; fail "write failed: $out"; }
         ;;
       *)
         # src (.ai/instructions/**) and out (a replica) are never the same path, so a
         # direct redirect is safe here.
-        normalize_lf < "$src" > "$out" || fail "write failed: $out"
+        normalize_lf < "$ROOT/$src" > "$out" || fail "write failed: $out"
         ;;
     esac
 
@@ -268,7 +277,7 @@ if [ "$CHECK" = 1 ]; then
 
   # Regenerate every replica into a temp tree, capturing the manifest (SRC<TAB>DST
   # per line). The generator reads the registry + sources + committed preambles
-  # from the CWD (repo root) and writes fresh replicas under $tmp/<dst>.
+  # from ROOT and writes fresh replicas under $tmp/<dst>.
   tmp="$(mktemp -d)" || cfail "mktemp failed"
   gen_err="$(mktemp)"
   manifest="$(generate "$tmp" 2>"$gen_err")" || {
@@ -285,12 +294,12 @@ if [ "$CHECK" = 1 ]; then
     [ -n "$src" ] && [ -n "$dst" ] || continue
     checked=$((checked + 1))
 
-    if [ ! -f "$src" ]; then
+    if [ ! -f "$ROOT/$src" ]; then
       echo "MISSING: $src"
       drift=$((drift + 1))
       continue
     fi
-    if [ ! -f "$dst" ]; then
+    if [ ! -f "$ROOT/$dst" ]; then
       echo "MISSING: $dst"
       drift=$((drift + 1))
       continue
@@ -301,7 +310,7 @@ if [ "$CHECK" = 1 ]; then
       continue
     fi
 
-    n=$(diff "$dst" "$tmp/$dst" | grep -c '^[<>]' || true)
+    n=$(diff "$ROOT/$dst" "$tmp/$dst" | grep -c '^[<>]' || true)
     if [ "$n" -ne 0 ]; then
       echo "DRIFT: $src -> $dst ($n lines differ)"
       drift=$((drift + 1))
@@ -327,11 +336,11 @@ EOF
 fi
 
 # ---- default: regenerate ------------------------------------------------------
-# In-place regeneration (DEST_ROOT == ".") is the mode that can reverse-write
+# In-place regeneration (DEST_ROOT == ROOT) is the mode that can reverse-write
 # through a junction — guard it before touching anything. An explicit
 # --dest-root is an output sink chosen by the caller (a mktemp dir in every
 # in-repo caller), so it is not guarded.
-if [ "$DEST_ROOT" = "." ]; then
+if [ "$DEST_ROOT" = "$ROOT" ]; then
   guard_in_place_writes
 fi
 

@@ -1,13 +1,15 @@
 # Handoff: port cwd-independence onto current sync-replicas.sh
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: kimi-auto
 Created: 2026-07-18 15:30 (UTC+7)
+Resolved: 2026-07-18 22:05 (UTC+7)
 Auto: yes
 Risk: B
-Next: kimi-auto
+Next: -
 Observed-in: main@5999b82
+Evidence: bash .ai/tests/test-sync-cwd-independence.sh → 16 passed, 0 failed. sync-replicas.sh now derives ROOT from $0, resolves SYNC_MD/sources/preamble reads against ROOT, and keeps --dest-root caller-relative.
 
 ## Goal
 
