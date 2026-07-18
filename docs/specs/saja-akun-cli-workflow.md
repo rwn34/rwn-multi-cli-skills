@@ -1,299 +1,232 @@
-# Cockpit / Auto Handoff Workflow
+# Saja-Project Cockpit / Auto Handoff Workflow
 
-**Status:** design pattern for the rwn-multi-cli-skills framework  
-**First adopter:** saja-akun (and the rest of the saja fleet)  
-**Replaces / extends:** protocol v3 in `.ai/handoffs/README.md`
+**Scope:** framework-level design for the six-actor model discovered in
+`saja-qr` and intended as the reusable pattern for all `saja-*` repos.
 
-This document fixes the ambiguity that a cockpit sees when it writes a handoff
-and wants to know whether `<recipient>-auto` picked it up, whether the handoff
-belongs to the auto pane or to the cockpit, and how a feature chains through
-multiple auto panes before returning to a cockpit for final state read.
+**Actors:**
 
-## 1. The six actors
+| Actor | Identity | Mode | Primary role |
+|-------|----------|------|--------------|
+| `claude-cockpit` | interactive Claude Code chat | cockpit | architecture, orchestration, final review, human relay |
+| `kimai-cockpit` | interactive Kimi CLI chat | cockpit | executor/tester, dispatcher to auto |
+| `claude-auto` | headless Claude pane-runner | auto | spec/plan design, final review |
+| `kimai-auto` | headless Kimi pane-runner | auto | backend + shell package implementation |
+| `kiro-auto` | headless Kiro pane-runner | auto | frontend implementation |
+| `opencode-auto` | headless OpenCode pane-runner | auto | deploy, GitHub ops |
 
-A project using this framework has six logical actors. Four of them are headless
-auto panes; two are interactive cockpits.
+> Note: the bash tooling uses `kimi` as the queue/cli name; `owner_for()` maps
+> `kimi`, `kimi-auto`, and `kimi-executor` to the auto identity `kimai-auto`.
+> Handoff files should use the canonical six-actor identity in `Sender:` /
+> `Recipient:` / `Owner:`.
 
-| Actor | Identity in handoffs / activity log | Role | Headless? |
-|---|---|---|---|
-| `claude-cockpit` | `claude-cockpit` | Architecture, orchestration, final review, human relay | no |
-| `kimai-cockpit` | `kimai-cockpit` | Executor/tester, dispatcher to auto, human relay | no |
-| `claude-auto` | `claude-auto` | Spec/plan design, final review | yes |
-| `kimai-auto` | `kimai-auto` | Backend + shell-package implementation | yes |
-| `kiro-auto` | `kiro-auto` | Frontend implementation | yes |
-| `opencode-auto` | `opencode-auto` | Deploy, GitHub ops | yes |
+## 1. Routing table — which task type goes to which actor
 
-The **cockpits** are the interactive chat sessions the owner talks to. They do
-not poll `open/` queues on their own; they read handoffs on explicit user
-instruction.
+| Task type | Primary actor | Why |
+|-----------|---------------|-----|
+| Architecture / ADR / big-picture design | `claude-cockpit` | owns cross-cutting decisions and SSOT |
+| Breaking a feature into staged handoffs | `claude-cockpit` or `claude-auto` | planning is spec work; cockpit does it when human steering matters |
+| Backend / shell package implementation | `kimai-auto` | executor/tester lane |
+| Frontend implementation | `kiro-auto` | frontend lane |
+| Code review (peer) | different actor than author (see §5) | author ≠ reviewer (ADR-0002) |
+| Final review | `claude-auto` or `claude-cockpit` | `claude-auto` for routine CI-green merges; cockpit for contentious or first-of-kind |
+| Deploy to staging | `opencode-auto` | Tier B, dry-run first |
+| Deploy to production | `opencode-auto` **after** explicit owner gate | Tier C, owner authorizes, orchestrator relays |
+| GitHub ops (PR open/merge, branch delete, release chore) | `opencode-auto` | Tier B once CI green |
+| Worktree/dispatcher/framework hygiene | `kimai-auto` or `opencode-auto` | who touches `.ai/tools/` / `scripts/` / `.github/` |
+| Human-relayed Risk-C actions | `claude-cockpit` or `kimai-cockpit` | cockpit records authorization and relays |
 
-The **auto panes** run `tools/4ai-panes/pane-runner.ps1` and poll their own
-`to-<cli>/open/` and `to-<cli>/review/` queues every `PollSeconds`.
+## 2. Status-block conventions
 
-## 2. Routing table
+Use the protocol-v4 status block from `.ai/handoffs/template.md`. The
+six-actor model changes how three existing fields are interpreted:
 
-| Task type | From | To | Auto / Risk | Notes |
-|---|---|---|---|---|
-| Feature request, architecture decision, spec | owner / any cockpit | `claude-cockpit` or `claude-auto` | `Auto: no`, Risk C if irreversible, B otherwise | Cockpit-level thinking stays in a cockpit. |
-| Backend implementation | `claude-auto` (spec) | `kimai-auto` | `Auto: yes`, Risk B | Executor lane. |
-| Frontend implementation | `claude-auto` (spec) | `kiro-auto` | `Auto: yes`, Risk B | Executor lane; can run in parallel with kimai-auto. |
-| Peer review of backend | `kimai-auto` (on done) | `kiro-auto` via `ReviewBy: kiro` | `Auto: yes`, Risk B | Emitted to `to-kiro/review/`. |
-| Peer review of frontend | `kiro-auto` (on done) | `kimai-auto` via `ReviewBy: kimi` | `Auto: yes`, Risk B | Emitted to `to-kimi/review/`. |
-| Final review | peer reviewer | `claude-auto` via `FinalReview: claude` | `Auto: yes`, Risk B | Emitted to `to-claude/review/`. |
-| Deploy / GitHub ops | `claude-auto` (final review) | `opencode-auto` via `Deploy: yes` | `Auto: yes`, Risk B | Emitted to `to-opencode/open/`. |
-| Human-gated production deploy | `opencode-auto` | `claude-cockpit` or `kimai-cockpit` | `Auto: no`, Risk C | Explicit owner confirmation required. |
-| Urgent override / pane down | any cockpit | `<recipient>-cockpit` via `claim-handoff.sh` | `Auto: no`, Risk B/C | Cockpit claims an `Auto: yes` handoff atomically. |
+### 2.1 `Sender:` / `Recipient:` / `Owner:` include mode
 
-## 3. Status-block conventions
-
-A handoff status block now carries four routing fields. `Auto:` and `Risk:` are
-required; `Owner:` and `Next:` are optional but strongly recommended for
-visibility.
+Always use the six-actor identity:
 
 ```markdown
-Status: OPEN
-Sender: claude-cockpit
+Sender: kimai-cockpit
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-15 22:00 (UTC+7)
-Auto: yes
-Risk: B
-Next: kimai-auto
 ```
 
-### 3.1 `Auto:` — the ownership boundary (unchanged from protocol v3)
+`Owner:` is optional but recommended. It means "who currently owns this
+handoff" — useful when a handoff is passed between auto panes or back to a
+cockpit. When omitted, `Recipient:` is the owner.
 
-- `Auto: yes` + Risk A/B → owned by the **auto pane**. The dispatcher
-  (`dispatch-handoffs.sh`) and the pane-runner will pick it up headlessly.
-- `Auto: no` or Risk C → owned by a **cockpit**. It is never auto-dispatched.
+### 2.2 `Auto:` and `Risk:` decide the pane, not just the tier
 
-`Auto:` is the **single source of truth** for the mechanical dispatch decision.
-No new `Mode:` field is required; `Auto: yes` already means "mode = auto".
+- `Auto: yes` + `Risk: A/B` → dispatched to `<recipient>-auto` headless pane.
+- `Auto: no` or `Risk: C` (hard gate) → owned by a cockpit; never auto-dispatched.
+- `Auto: yes` + `Risk: C` + `Gate:` + `Gate-satisfied-by:` + non-hard-gate action
+  → may be relayed by the orchestrator cockpit to `<recipient>-auto` after the
+  gate is recorded. See principles.md §8 and ADR-0015 Decision 3.
 
-### 3.2 `Risk:` — autonomy tier (unchanged)
+### 2.3 `Mode:` is implicit in the identity
 
-- `Risk: A` — reversible routine (reports, tests, docs, small edits).
-- `Risk: B` — act-then-notify (multi-file refactors, config, PRs, deploy to
-  staging, peer review).
-- `Risk: C` — hard gate (production deploy, destructive ops, ADR changes,
-  secrets).
+Do not add a separate `Mode:` line. The mode is encoded in the identity suffix:
+`-cockpit` vs `-auto`. The dispatcher's `owner_for()` already maps every queue
+name to the correct auto identity; the handoff file reinforces the intended
+mode by naming the full identity.
 
-Risk C is **never** auto-dispatched, regardless of `Auto:`.
+### 2.4 Encoding the next actor
 
-### 3.3 `Owner:` — recommended visibility field
+Use the routing fields already present in the template:
 
-`Owner:` names the actor that currently owns the handoff. It is redundant with
-`to-<cli>/` + `Auto:`, but it removes ambiguity for humans reading the file:
+- `ReviewBy: <actor>` — executor emits a review handoff to `to-<actor>/review/`
+  on done.
+- `FinalReview: <actor>` — reviewer emits a final-review handoff to
+  `to-<actor>/review/`.
+- `Deploy: yes` — final reviewer emits a deploy handoff to `to-opencode/open/`.
+- `Next: <actor>` — general next-actor routing when the above fields do not fit.
 
-- `Owner: kimai-auto` means the kimai auto pane should pick it up.
-- `Owner: claude-cockpit` means a human or the claude cockpit must handle it.
+`Next:` is the catch-all for chains that do not map cleanly to
+review/final-review/deploy, e.g.:
 
-The dispatcher **ignores** `Owner:`; it uses `to-<cli>/` and `Auto:`.
+```markdown
+# Next: opencode-auto
+# Next: kimai-cockpit
+```
 
-### 3.4 `Sender:` / `Recipient:` — include mode
+When `Next:` points at a cockpit, the auto pane writes the next handoff with
+`Auto: no` so the dispatcher leaves it for the cockpit.
 
-Use the six-actor identities:
+## 3. Visibility model
 
-- `Sender: claude-cockpit`
-- `Recipient: kimai-auto`
-- `Sender: kimai-auto`
-- `Recipient: kiro-auto`
+A cockpit that dispatches a handoff needs to know:
 
-Do **not** use bare `kimi-cli` or `claude-code`; those names do not say whether
-the sender/recipient is the cockpit or the auto pane.
+1. **Was it picked up?** Look at the recipient's claim sidecar:
+   `.ai/.heartbeat-<owner>.json` and `.ai/.claim-<owner>.json` (see
+   `.ai/tools/claim-handoff.sh`). A fresh heartbeat + a claim whose `handoff`
+   field matches the dispatched filename means it was picked up.
+2. **What is progress?** Read the recipient's pane log if available, or poll
+   `.ai/activity/log.md` for an entry naming the handoff. The canonical command:
+   `grep -n "<handoff-filename>" .ai/activity/log.md`.
+3. **Did it finish?** Check `to-<recipient>/done/` for the retired handoff, or
+   `to-<recipient>/review/` if it emitted a review handoff.
 
-### 3.5 `Next:` — encode the next actor in a chain
-
-When an auto pane finishes and must hand off to another actor, the original
-handoff carries a `Next:` field. The pane-runner's `Emit-NextStageHandoff`
-reads `Next:` (in addition to the existing `ReviewBy:`, `FinalReview:`, and
-`Deploy:` fields) and emits the follow-up handoff to the correct queue.
-
-`Next:` is a general escape hatch for any chain that does not fit the
-review/final-review/deploy pattern.
-
-### 3.6 Why no `Mode:` field
-
-`Mode: auto|cockpit` would duplicate `Auto: yes/no`. Two fields with the same
-meaning create drift: a handoff could say `Auto: yes` and `Mode: cockpit`, and
-nobody would know which wins. Keep one mechanical field (`Auto:`) and one human
-visibility field (`Owner:`).
-
-## 4. How the dispatcher knows to send to `<recipient>-auto`
-
-The dispatcher does not need to know about cockpits. It only dispatches to auto
-panes. The rules are:
-
-1. Look in `to-<cli>/open/` and `to-<cli>/review/`.
-2. Select handoffs with `Status: OPEN` + `Auto: yes` + `Risk: A|B`.
-3. Skip handoffs with a live claim sidecar under `.ai/handoffs/.claims/`.
-4. Launch the recipient CLI headless in its own worktree.
-
-A cockpit never receives a dispatch. Cockpits read handoffs when:
-
-- The owner tells the cockpit to read a specific file.
-- `stop-reminder.sh` prints open counts at session end.
-- `fleet-health.sh` reports STALL/WEDGED and the cockpit decides to claim the
-  handoff.
-
-## 5. Visibility model
-
-A cockpit that writes a handoff can check progress with four canonical reads:
-
-| Question | Command / file |
-|---|---|
-| Was the handoff picked up by auto? | `bash .ai/tools/dispatch-handoffs.sh` (dry-run shows "WOULD DISPATCH" if still queued) |
-| Is the pane alive? | `bash .ai/tools/fleet-health.sh` |
-| Who holds the claim? | `.ai/handoffs/.claims/<cli>__<slug>.claim.json` |
-| Did the pane finish? | `ls .ai/handoffs/to-<cli>/done/<slug>.md` |
-| What is the pane's last state? | `.ai/.heartbeat-<cli>.json` |
-
-The **canonical progress check** for a cockpit is:
+`fleet-health.sh` is the cockpit's consolidated dashboard:
 
 ```bash
 bash .ai/tools/fleet-health.sh
-bash .ai/tools/dispatch-handoffs.sh
 ```
 
-`fleet-health.sh` prints one line per CLI:
+It reports STALL, WEDGED, missing queue dirs, junctioned `.ai/`, stale
+worktrees, and encoding problems.
 
+## 4. Multi-stage handoff chain — canonical lifecycle
+
+Example: a feature that needs planning → backend → frontend → review → deploy.
+
+```text
+claude-cockpit
+  └── writes to-claude-auto/open/202607181530-plan-feature.md
+      └── claude-auto plans, writes to-kimai-auto/open/202607181600-backend-feature.md
+          └── kimai-auto implements backend, writes to-kiro-auto/open/202607181700-frontend-feature.md
+              └── kiro-auto implements frontend, writes to-kimai-auto/review/202607181800-review-frontend.md
+                  └── kimai-auto reviews, writes to-claude-auto/review/202607181900-final-review-feature.md
+                      └── claude-auto final-reviews, writes to-opencode-auto/open/202607182000-deploy-staging-feature.md
+                          └── opencode-auto deploys to staging, writes to-kimai-cockpit/open/202607182100-validate-staging.md
+                              └── kimai-cockpit validates in chat, closes loop
 ```
-CLI       | heartbeat                      | queue | verdict
-----------+--------------------------------+-------+--------
-kimi      | ts 1m ago, pid 12345 live      | 1     | OK
-kiro      | missing                        | 1     | STALL — 1 qualifying handoff(s), nobody watching
-```
 
-- `OK` → pane is polling. If the handoff is still in `open/`, it is queued or
-  claimed by another consumer.
-- `STALL` → pane is down and has open work. The cockpit should investigate or
-  claim the handoff.
-- `WEDGED` → pane is alive but has not picked up an old unclaimed handoff.
+Rules for the chain:
 
-## 6. Multi-stage handoff chain
+1. **Plan from a spec actor.** `claude-auto` writes the plan unless the feature
+   is architectural or contentious, in which case `claude-cockpit` plans.
+2. **Implementation panes run in parallel when independent.** If backend and
+   frontend can be built against mocked contracts, dispatch both and add a
+   handoff dependency note in the target state.
+3. **Review is a precondition, not a sibling.** `ReviewBy:` must complete and
+   retire to `done/` before `FinalReview:` is dispatched. The dispatcher's
+   polling order is oldest-first, but a cockpit can enforce sequencing by not
+   creating the final-review handoff until the peer-review handoff is retired.
+4. **Final review gates deploy.** `FinalReview:` is either `claude-auto`
+   (routine) or `claude-cockpit` (first-of-kind or contentious).
+5. **Deploy is separate from merge.** Merge is Tier B; deploy to staging is Tier
+   B; deploy to production is Tier C with owner gate. Never let a merge auto-trigger
+   a deploy (principles.md §8 coupling rule).
+6. **Return to a cockpit at boundaries.** After staging deploy, return to a
+   cockpit (`kimai-cockpit` or `claude-cockpit`) for validation and the
+   production-deploy decision.
 
-Lifecycle for a feature that flows from cockpit → auto planning → parallel
-implementation → review → deploy → cockpit final read:
+## 5. Failure / retry / escalation
 
-1. **Cockpit dispatch.** `claude-cockpit` writes:
-   `.ai/handoffs/to-claude/open/202607152200-plan-checkout-flow.md`
-   - `Sender: claude-cockpit`, `Recipient: claude-auto`, `Owner: claude-auto`
-   - `Auto: yes`, `Risk: B`, `Next: kimai-auto,kiro-auto`
+| Situation | Outcome | Routed to |
+|-----------|---------|-----------|
+| Auto pane does not pick up within timeout | `fleet-health.sh` reports WEDGED/STALL | sender cockpit |
+| Claim sidecar stale (heartbeat dead) | `fleet-health.sh` reports STALL | sender cockpit; may kill pane (§8.1) |
+| Evidence-base mismatch (`Observed-in` diverges) | dispatch FAIL, handoff stays OPEN | sender, with "evidence-base mismatch" |
+| `HYPOTHESIS` premise disproven | recipient retires `NOT-A-BUG` with disproof | sender |
+| Recipient blocked after reasonable effort | `Status: BLOCKED`, file stays in `open/` | sender cockpit |
+| Self-addressed handoff (`Sender == Recipient`) | dispatch FAIL | sender |
+| Risk C without gate or with hard gate | dispatch HOLD | recipient cockpit for relay |
+| Dirty worktree | dispatch FAIL by default | sender cockpit decides cleanup |
+| Review finds defect | reviewer reopens as `BLOCKED` or emits fix handoff | original implementer |
 
-2. **Auto planning.** `claude-auto` picks it up, writes a spec/ADR, self-retires
-   to `to-claude/done/`, and emits two implementation handoffs:
-   - `.ai/handoffs/to-kimi/open/202607152300-implement-checkout-api.md`
-   - `.ai/handoffs/to-kiro/open/202607152300-implement-checkout-ui.md`
+**Retry rule:** the dispatcher retries a failed dispatch up to its configured
+limit, then quarantines. A cockpit must inspect quarantined handoffs in
+`.ai/handoffs/.quarantine/`; do not auto-retry indefinitely.
 
-3. **Parallel implementation.** `kimai-auto` and `kiro-auto` work in parallel.
-   Each self-retires to its own `done/`.
+**Escalation rule:** an executor blocked >2 times on identical state escalates
+to the sender rather than re-verifying a third time. The correct vocabulary is
+"evidence-base mismatch" or "verification-impossible", not `BLOCKED`.
 
-4. **Peer review.** `kimai-auto`'s handoff has `ReviewBy: kiro`, so on done it
-   emits `.ai/handoffs/to-kiro/review/202607160100-review-checkout-api.md`.
-   `kiro-auto` does the same for `kimai`.
+## 6. Cleanup rules for stale claim sidecars
 
-5. **Final review.** Each review handoff has `FinalReview: claude`, so on
-   approval it emits `.ai/handoffs/to-claude/review/202607160200-final-review-checkout.md`.
+A claim sidecar (`.ai/.claim-<actor>.json`) is stale when:
 
-6. **Deploy.** `claude-auto` final-reviews and, because the original handoff had
-   `Deploy: yes`, emits `.ai/handoffs/to-opencode/open/202607160300-deploy-checkout.md`.
+1. Its heartbeat file (`.ai/.heartbeat-<actor>.json`) is dead or missing, OR
+2. The handoff it claims is no longer in `open/` or `review/` (retired or
+   superseded), OR
+3. The claim age exceeds the fleet timeout without a progress log entry.
 
-7. **Back to cockpit.** `opencode-auto` deploys and self-retires. The original
-   cockpit (`claude-cockpit`) reads `to-opencode/done/` and the activity log to
-   confirm the chain is complete.
+A cockpit may remove a stale sidecar when all three are true. A running auto
+pane must release its claim via `release-handoff.sh` before exit; a cockpit
+should never remove a live claim.
 
-## 7. Failure, retry, and escalation
+## 7. Activity-log identity
 
-### 7.1 Auto does not pick up a handoff
-
-- `fleet-health.sh` flags `STALL` (pane down) or `WEDGED` (pane alive but not
-  picking up).
-- A `dispatch-failure-<UTC>-<cli>-<slug>.md` report is written if the headless
-  dispatch exits non-zero.
-- The originating cockpit is notified via the fleet Telegram notification if
-  configured.
-- Escalation: the cockpit runs `bash .ai/tools/claim-handoff.sh <path>` to take
-  ownership, flips `Auto: no`, and either does the work or diagnoses the pane.
-
-### 7.2 Stale claim sidecar
-
-A claim sidecar (`.ai/handoffs/.claims/<cli>__<slug>.claim.json`) is stale when:
-
-- Same host + pid is dead, **or**
-- `claimed_at` is older than 15 minutes.
-
-Stale claims are reclaimed automatically by:
-- `pane-runner.ps1` on its next poll (`Test-HandoffClaimed`).
-- `dispatch-handoffs.sh` before dispatch.
-- `claim-handoff.sh` when a cockpit wants to take the handoff.
-
-A cockpit may remove a stale claim only by claiming the handoff itself (which
-replaces the sidecar atomically). A cockpit must **never** delete a claim
-sidecar by hand — that bypasses the audit trail.
-
-### 7.3 Handoff is BLOCKED
-
-The recipient leaves the handoff in `open/`, sets `Status: BLOCKED`, and appends
-a `## Blocker` section with verbatim errors.
-
-- The owner cockpit (the one named in `Owner:` or `Recipient:`) reads the
-  blocker and decides:
-  - Fix the blocker and move the handoff back to `OPEN`.
-  - Re-route to another actor with a new handoff.
-  - Claim it and do it manually.
-
-### 7.4 Pane outage
-
-If an auto pane is persistently down:
-
-1. `fleet-health.sh` reports `STALL`.
-2. The owner or cockpit claims the urgent handoff (`claim-handoff.sh`).
-3. The cockpit executes it.
-4. The cockpit prepends an activity-log entry explaining the override.
-5. The cockpit may restart the pane via `restart-pane.ps1` or the Windows
-   Terminal UI.
-
-## 8. Activity-log identity
-
-Activity-log entry headers use the six-actor identity:
+Use the six-actor identity in the activity log:
 
 ```markdown
-## 2026-07-15 22:00 (UTC+7) — kimai-auto
-- Action: Implemented checkout API per handoff 202607152300-implement-checkout-api.md.
-- Files: src/routes/checkout.ts
-- Decisions: —
+## 2026-07-18 22:00 (UTC+7) — kimai-auto
+- Action: implemented backend per handoff 202607181600-backend-feature
+- Files: src/backend/...
+- Decisions: -
 ```
 
-For machine-readable sidecars (heartbeat, claim), the existing CLI-type field
-(`claude`, `kimi`, `kiro`, `opencode`) remains sufficient. Human-facing logs and
-handoffs should use the actor name.
+The existing `cli-name` field in the activity-log header is sufficient; the
+name itself becomes the full identity (`kimai-auto`, `claude-cockpit`, etc.).
+No new field is needed.
 
-## 9. Tooling changes required
+## 8. Tooling / SSOT changes required
 
-This pattern is mostly a convention change. The mechanical dispatch decision
-stays on `Auto:` + `Risk:` + `to-<cli>/`, so `dispatch-handoffs.sh` and
-`pane-runner.ps1` do not need to change.
+No tooling or SSOT changes are required. The current stack already supports
+this workflow:
 
-Recommended tooling updates:
+- `.ai/handoffs/template.md` has the six-actor `Sender:`/`Recipient:` identities
+  and the v4 evidence fields.
+- `.ai/tools/dispatch-handoffs.sh` routes `Auto: yes` + Risk A/B to the auto
+  pane and enforces `Observed-in`, `HYPOTHESIS`, and gate rules.
+- `.ai/tools/fleet-health.sh` gives the cockpit visibility.
+- `.ai/tools/reconcile-done-handoffs.sh` moves retired handoffs and handles
+  collision suffixes.
+- `.ai/instructions/operating-prompt/principles.md` §8 already distinguishes
+  cockpit (human gate/relay) from auto pane behavior via `Gate:` /
+  `Gate-satisfied-by:` / `Relay:` and the hard-gate list; no amendment is
+  needed for this workflow.
 
-1. `.ai/handoffs/template.md` — add `Owner:` and `Next:` optional fields; update
-   `Sender:` / `Recipient:` examples to use actor names.
-2. `.ai/handoffs/README.md` — document the cockpit/auto distinction and the
-   six-actor identity convention.
-3. `.ai/tools/claim-handoff.sh` and `.ai/tools/release-handoff.sh` — change
-   default `--owner` values from `claude-auto` / `kimi-cli` / `kiro-cli` /
-   `opencode` to `claude-cockpit` / `kimai-cockpit` / `kiro-cockpit` /
-   `opencode-cockpit`, because these scripts are cockpit-only.
-4. `.ai/instructions/operating-prompt/principles.md` §7 and §8 — note that the
-   `Auto:` boundary separates auto panes from cockpits, and that activity-log
-   identity uses the six-actor names.
+What is new is **convention and documentation**: this file, the example chain,
+the routing discipline in §1–§4, and the README cross-reference.
 
-No change is required to `dispatch-handoffs.sh`, `fleet-health.sh`, heartbeat
-sidecars, or the claim-lock mechanics.
+## 9. Open questions resolved
 
-## 10. Migration from four-actor to six-actor naming
-
-Existing handoffs and log entries use names like `kimi-cli` and `claude-code`.
-They are grandfathered. New handoffs and new log entries should use the six
-actor names. The dispatcher does not read `Sender:` / `Recipient:` / `Owner:`
-for routing, so mixed naming does not break the fleet.
+- **Should `Sender:`/`Recipient:` include mode?** Yes — use the full six-actor
+  identity (`kimai-cockpit`, `claude-auto`).
+- **How encode the intended next actor when an auto pane finishes?** Use
+  `ReviewBy:`, `FinalReview:`, `Deploy: yes`, or `Next:`.
+- **What is the cleanup rule for stale claim sidecars?** Remove only when
+  heartbeat is dead, claimed handoff is gone, and claim age exceeds timeout.
+- **Does activity-log identity become `kimai-cockpit` vs `kimai-auto`?** Yes,
+  use the full identity in the header; no new field is needed.

@@ -1,331 +1,407 @@
-# Example Handoff Chain: Checkout Flow
+# Example Handoff Chain — Feature with Backend, Frontend, and Staging Deploy
 
-This is a concrete, file-by-file walkthrough of a feature that flows through the
-six-actor cockpit/auto workflow. The project is `saja-akun`; the feature is
-"add email + password checkout flow."
+This is a concrete walkthrough of the cockpit/auto workflow defined in
+`docs/specs/saja-akun-cli-workflow.md`. It shows the exact status blocks and
+filenames for a sample feature.
 
-All filenames use the UTC timestamp convention (`YYYYMMDDHHMM-slug.md`).
+## Scenario
 
-## Stage 0 — Cockpit asks for architecture
+Add a new `/api/qr` endpoint and a QR-code top-bar widget in the `saja-qr`
+project. The feature flows through planning → backend → frontend → peer review
+→ final review → staging deploy → cockpit validation.
 
-`claude-cockpit` decides the feature needs a spec, so it writes:
+## Stage 1 — Architecture plan from the cockpit
 
-**File:** `.ai/handoffs/to-claude/open/202607152200-design-checkout-flow.md`
+`claude-cockpit` decides the feature is architectural enough that it should
+plan it itself, then hand off to `claude-auto` to turn the plan into a
+spec-shaped handoff chain.
+
+**File:** `.ai/handoffs/to-claude/open/202607181530-plan-qr-feature.md`
 
 ```markdown
-# Design checkout flow (email + password)
+# Plan QR feature endpoint and widget
 Status: OPEN
 Sender: claude-cockpit
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-15 22:00 (UTC+7)
+Created: 2026-07-18 22:30 (UTC+7)
 Auto: yes
-Risk: B
-Next: kimai-auto,kiro-auto
+Risk: A
+Observed-in: main@a1b2c3d
+Evidence: VERIFIED (grep -n "qr" docs/specs/api.md -> no existing QR routes)
 
 ## Goal
-Design the checkout flow for saja-akun: user enters email + password, backend
-validates and creates the account, frontend shows success/error states.
+Design the backend endpoint `/api/qr` and the frontend top-bar widget, then
+break the work into auto-dispatchable handoffs for kimai-auto and kiro-auto.
 
-## Deliverables
-1. ADR or spec in `docs/specs/checkout-flow.md`.
-2. API contract in `docs/api/checkout.md`.
-3. UI mock description in `docs/ui/checkout.md`.
+## Current state
+- No QR endpoint exists.
+- Top-bar component lives at `src/components/TopBar.tsx`.
+
+## Target state
+- `docs/specs/qr-feature.md` with API contract and component props.
+- Handoffs filed for backend implementation and frontend implementation.
+
+## Steps
+1. Write `docs/specs/qr-feature.md`.
+2. File `to-kimai-auto/open/202607181600-backend-qr-feature.md`.
+3. File `to-kiro-auto/open/202607181700-frontend-qr-feature.md`.
 
 ## Verification
-- [ ] Spec reviewed by claude-cockpit before implementation handoffs are emitted.
+- (a) `cat docs/specs/qr-feature.md` shows endpoint + props.
+- (b) Both handoff files exist in their queues.
 
-## Next step
-After spec is approved, emit implementation handoffs to `kimai-auto` (backend)
-and `kiro-auto` (frontend) in parallel.
+## Report back with
+- (a) path to the spec file
+- (b) filenames of the two follow-up handoffs
+
+## When complete
+Recipient self-retires to `to-claude/done/`.
 ```
 
-Why `Auto: yes`? The spec work is reversible, routine design work (Risk B) and
-can run headlessly in `claude-auto`.
+**Result:** `claude-auto` picks it up, writes the spec, and files the next two
+handoffs.
 
 ---
 
-## Stage 1 — Auto planner writes the spec
+## Stage 2 — Backend implementation
 
-`claude-auto` picks up the handoff, writes the spec, and self-retires.
-
-**File moved to:** `.ai/handoffs/to-claude/done/202607152200-design-checkout-flow.md`
+**File:** `.ai/handoffs/to-kimai/open/202607181600-backend-qr-feature.md`
 
 ```markdown
-# Design checkout flow (email + password)
-Status: DONE
-Sender: claude-cockpit
-Recipient: claude-auto
-Owner: claude-auto
-Created: 2026-07-15 22:00 (UTC+7)
-Completed: 2026-07-15 22:25 (UTC+7)
-Auto: yes
-Risk: B
-Next: kimai-auto,kiro-auto
-
-## Resolution
-Wrote `docs/specs/checkout-flow.md`, `docs/api/checkout.md`, and
-`docs/ui/checkout.md`. Spec approved by claude-auto internal review.
-
-## Touched
-- docs/specs/checkout-flow.md
-- docs/api/checkout.md
-- docs/ui/checkout.md
-```
-
-`claude-auto` also emits two implementation handoffs because the original
-handoff had `Next: kimai-auto,kiro-auto`.
-
----
-
-## Stage 2 — Parallel implementation
-
-### Backend handoff
-
-**File:** `.ai/handoffs/to-kimi/open/202607152300-implement-checkout-api.md`
-
-```markdown
-# Implement checkout API
+# Implement /api/qr endpoint
 Status: OPEN
 Sender: claude-auto
 Recipient: kimai-auto
 Owner: kimai-auto
-Created: 2026-07-15 23:00 (UTC+7)
+Created: 2026-07-18 23:00 (UTC+7)
 Auto: yes
-Risk: B
-ReviewBy: kiro
+Risk: A
+Observed-in: main@e4f5g6h
+Evidence: VERIFIED (cat docs/specs/qr-feature.md -> contract defined)
+ReviewBy: kiro-auto
 
 ## Goal
-Implement the backend API described in `docs/api/checkout.md`.
+Implement the backend endpoint described in `docs/specs/qr-feature.md`.
+
+## Current state
+Spec exists; no backend code.
+
+## Target state
+- `src/backend/routes/qr.ts` implements `/api/qr`.
+- Tests in `tests/unit/backend/qr.test.ts` pass.
 
 ## Steps
-1. Add `POST /api/checkout` route in `src/routes/checkout.ts`.
-2. Add zod schema in `src/schemas/checkout.ts`.
-3. Add service logic in `src/services/checkout.ts`.
-4. Write unit tests in `tests/unit/services/checkout.test.ts`.
+1. Create `src/backend/routes/qr.ts`.
+2. Add route registration in `src/backend/app.ts`.
+3. Write tests and run `npm test`.
 
 ## Verification
-- [ ] `npm run test:unit` passes.
-- [ ] `npm run typecheck` passes.
+- (a) `npm test -- tests/unit/backend/qr.test.ts` passes.
+- (b) `curl http://localhost:3000/api/qr` returns expected payload.
+
+## Report back with
+- (a) files touched
+- (b) test output pasted
+
+## When complete
+Recipient self-retires to `to-kimai/done/` and emits
+`to-kiro/review/202607181800-review-backend-qr.md`.
 ```
 
-### Frontend handoff
+**Result:** `kimai-auto` implements, tests, retires to `done/`, and emits a
+review handoff.
 
-**File:** `.ai/handoffs/to-kiro/open/202607152300-implement-checkout-ui.md`
+---
+
+## Stage 3 — Frontend implementation (parallel)
+
+**File:** `.ai/handoffs/to-kiro/open/202607181700-frontend-qr-feature.md`
 
 ```markdown
-# Implement checkout UI
+# Implement QR top-bar widget
 Status: OPEN
 Sender: claude-auto
 Recipient: kiro-auto
 Owner: kiro-auto
-Created: 2026-07-15 23:00 (UTC+7)
+Created: 2026-07-18 23:00 (UTC+7)
 Auto: yes
-Risk: B
-ReviewBy: kimi
+Risk: A
+Observed-in: main@e4f5g6h
+Evidence: VERIFIED (cat docs/specs/qr-feature.md -> widget spec defined)
+ReviewBy: kimai-auto
 
 ## Goal
-Implement the checkout UI described in `docs/ui/checkout.md`.
+Implement the QR widget in the top bar per `docs/specs/qr-feature.md`.
+
+## Current state
+Spec exists; no widget code.
+
+## Target state
+- `src/components/QrWidget.tsx` exists.
+- `src/components/TopBar.tsx` imports and renders it.
 
 ## Steps
-1. Add `CheckoutForm` component in `src/components/CheckoutForm.tsx`.
-2. Wire it to `POST /api/checkout`.
-3. Add unit tests in `tests/unit/components/CheckoutForm.test.tsx`.
+1. Create `src/components/QrWidget.tsx`.
+2. Update `src/components/TopBar.tsx`.
+3. Run frontend tests / lint.
 
 ## Verification
-- [ ] `npm run test:unit` passes.
-- [ ] `npm run lint` passes.
+- (a) `npm run lint` passes.
+- (b) `npm run test:unit -- QrWidget` passes.
+
+## Report back with
+- (a) files touched
+- (b) lint + test output pasted
+
+## When complete
+Recipient self-retires to `to-kiro/done/` and emits
+`to-kimai/review/202607181900-review-frontend-qr.md`.
 ```
 
-`kimai-auto` and `kiro-auto` pick these up in parallel.
+**Result:** `kiro-auto` implements, tests, retires, and emits a review handoff.
 
 ---
 
-## Stage 3 — Peer review
+## Stage 4 — Peer review
 
-`kimai-auto` finishes the backend and self-retires. Because its handoff had
-`ReviewBy: kiro`, it emits:
-
-**File:** `.ai/handoffs/to-kiro/review/202607160100-review-checkout-api.md`
+**File:** `.ai/handoffs/to-kiro/review/202607181800-review-backend-qr.md`
 
 ```markdown
-# Review: checkout API implementation
+# Review backend QR endpoint
 Status: OPEN
 Sender: kimai-auto
 Recipient: kiro-auto
 Owner: kiro-auto
-Created: 2026-07-16 01:00 (UTC+7)
+Created: 2026-07-18 23:30 (UTC+7)
 Auto: yes
-Risk: B
-FinalReview: claude
-ReviewOf: 202607152300-implement-checkout-api.md
+Risk: A
+Observed-in: exec/kimai/202607181600-backend-qr-feature@i7j8k9l
+Evidence: VERIFIED (git log --oneline exec/kimai/... | head -1 -> i7j8k9l)
+FinalReview: claude-auto
 
 ## Goal
-Review kimai-auto's backend implementation against `docs/api/checkout.md`.
+Review the backend implementation for contract compliance and edge cases.
+
+## Steps
+1. Read `src/backend/routes/qr.ts` and tests.
+2. Run tests.
+3. Approve or emit a fix handoff.
 
 ## Verification
-- [ ] Read the original handoff and touched files.
-- [ ] Run `npm run test:unit` and `npm run typecheck`.
-- [ ] If approved, emit final-review handoff to claude-auto.
+- (a) `npm test -- tests/unit/backend/qr.test.ts` passes on this worktree.
+
+## Report back with
+- (a) review verdict (APPROVED / CHANGES_REQUESTED)
+- (b) any fix handoff filename emitted
+
+## When complete
+Recipient self-retires to `to-kiro/done/`.
 ```
 
-Symmetrically, `kiro-auto` finishes the frontend and emits:
-
-**File:** `.ai/handoffs/to-kimi/review/202607160100-review-checkout-ui.md`
-
-```markdown
-# Review: checkout UI implementation
-Status: OPEN
-Sender: kiro-auto
-Recipient: kimai-auto
-Owner: kimai-auto
-Created: 2026-07-16 01:00 (UTC+7)
-Auto: yes
-Risk: B
-FinalReview: claude
-ReviewOf: 202607152300-implement-checkout-ui.md
-
-## Goal
-Review kiro-auto's frontend implementation against `docs/ui/checkout.md`.
-```
+**Result:** `kiro-auto` reviews backend, approves. The symmetric review of the
+frontend by `kimai-auto` also approves.
 
 ---
 
-## Stage 4 — Final review
+## Stage 5 — Final review
 
-`kiro-auto` approves the backend review handoff and, because it had
-`FinalReview: claude`, emits:
+`claude-auto` final-reviews both implementations once both peer reviews are
+retired.
 
-**File:** `.ai/handoffs/to-claude/review/202607160200-final-review-checkout-api.md`
+**File:** `.ai/handoffs/to-claude/review/202607182000-final-review-qr.md`
 
 ```markdown
-# Final review: checkout API
+# Final review QR feature
 Status: OPEN
-Sender: kiro-auto
+Sender: claude-auto
 Recipient: claude-auto
 Owner: claude-auto
-Created: 2026-07-16 02:00 (UTC+7)
+Created: 2026-07-19 00:00 (UTC+7)
 Auto: yes
 Risk: B
+Observed-in: main@e4f5g6h
+Evidence: VERIFIED (
+  gh pr view 42 --json state,mergeStateStatus -> "state":"OPEN","mergeStateStatus":"CLEAN"
+)
 Deploy: yes
-ReviewOf: 202607152300-implement-checkout-api.md
 
 ## Goal
-Final review of the checkout API before deploy.
+Final-review the QR feature PR and queue staging deploy.
+
+## Steps
+1. Review the combined diff.
+2. Ensure CI green.
+3. Merge the PR (Tier B, author ≠ final reviewer satisfied by peer reviews).
+4. Emit `to-opencode/open/202607182100-deploy-staging-qr.md`.
 
 ## Verification
-- [ ] Confirm peer review passed.
-- [ ] Confirm CI checks are green.
-- [ ] If approved, emit deploy handoff to opencode-auto.
+- (a) PR merged to `main`.
+- (b) Deploy handoff exists in `to-opencode/open/`.
+
+## Report back with
+- (a) merge commit SHA
+- (b) deploy handoff filename
+
+## When complete
+Recipient self-retires to `to-claude/done/`.
 ```
 
-`kimai-auto` does the same for the frontend, emitting:
-
-**File:** `.ai/handoffs/to-claude/review/202607160200-final-review-checkout-ui.md`
-
-`claude-auto` reviews both. It can merge them into one deploy handoff or emit
-two deploy handoffs. In this example it emits one combined deploy handoff.
+**Result:** `claude-auto` merges the PR and files the staging deploy handoff.
 
 ---
 
-## Stage 5 — Deploy
+## Stage 6 — Staging deploy
 
-`claude-auto` emits:
-
-**File:** `.ai/handoffs/to-opencode/open/202607160300-deploy-checkout-flow.md`
+**File:** `.ai/handoffs/to-opencode/open/202607182100-deploy-staging-qr.md`
 
 ```markdown
-# Deploy checkout flow
+# Deploy QR feature to staging
 Status: OPEN
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto
-Created: 2026-07-16 03:00 (UTC+7)
+Created: 2026-07-19 00:30 (UTC+7)
 Auto: yes
 Risk: B
+Observed-in: main@m7n8o9p
+Evidence: VERIFIED (gh run list --branch main --limit 1 --json conclusion -> "success")
+Gate: owner (staging deploy is Tier B; no hard gate, notify after)
+# No Gate-satisfied-by needed for staging; dry-run first, then deploy.
+Next: kimai-cockpit
 
 ## Goal
-Deploy the checkout flow to staging.
+Deploy the merged QR feature to the staging environment.
 
 ## Steps
-1. Run dry-run deploy.
-2. Verify tests pass.
-3. Deploy to staging.
-4. Verify staging health.
+1. Dry-run deploy: `bash infra/deploy.sh staging --dry-run`.
+2. If clean, deploy: `bash infra/deploy.sh staging`.
+3. Write `to-kimai/open/202607182200-validate-staging-qr.md` for cockpit validation.
 
 ## Verification
-- [ ] Staging URL returns 200.
-- [ ] Smoke test passes.
+- (a) Dry-run output pasted.
+- (b) Deploy command output pasted.
+- (c) Staging URL returns 200.
 
-## Next step
-If staging is green and production deploy is wanted, emit a Risk-C handoff to
-`claude-cockpit` or `kimai-cockpit` for owner confirmation.
+## Report back with
+- (a) deploy output
+- (b) validation handoff filename
+
+## When complete
+Recipient self-retires to `to-opencode/done/`.
 ```
 
-`opencode-auto` deploys to staging and self-retires to
-`.ai/handoffs/to-opencode/done/202607160300-deploy-checkout-flow.md`.
+**Result:** `opencode-auto` deploys to staging and files a validation handoff
+back to a cockpit.
 
 ---
 
-## Stage 6 — Back to cockpit for final state read
+## Stage 7 — Cockpit validation
 
-`claude-cockpit` checks the chain:
-
-```bash
-bash .ai/tools/fleet-health.sh
-bash .ai/tools/dispatch-handoffs.sh
-ls .ai/handoffs/to-*/done/20260716*
-head -40 .ai/activity/log.md
-```
-
-Seeing all handoffs in `done/` and a clean fleet health report, the cockpit
-reports to the owner: "Checkout flow implemented, reviewed, and deployed to
-staging."
-
-If production deploy is required, `claude-cockpit` writes:
-
-**File:** `.ai/handoffs/to-opencode/open/202607160400-deploy-checkout-prod.md`
+**File:** `.ai/handoffs/to-kimai/open/202607182200-validate-staging-qr.md`
 
 ```markdown
-# Deploy checkout flow to production
+# Validate QR feature on staging
 Status: OPEN
-Sender: claude-cockpit
-Recipient: opencode-auto
-Owner: opencode-cockpit
-Created: 2026-07-16 04:00 (UTC+7)
+Sender: opencode-auto
+Recipient: kimai-cockpit
+Owner: kimai-cockpit
+Created: 2026-07-19 01:00 (UTC+7)
 Auto: no
 Risk: C
+Observed-in: main@m7n8o9p
+Evidence: VERIFIED (curl https://staging.saja-qr.example/api/qr -> 200 OK)
 
 ## Goal
-Deploy the checkout flow to production after explicit owner confirmation.
+Validate the staging deployment and decide whether to request production deploy.
 
 ## Steps
-1. Confirm owner approval.
-2. Run dry-run deploy.
-3. Deploy to production.
-4. Verify production health.
+1. Open the staging app and verify the QR widget renders.
+2. Verify the `/api/qr` endpoint.
+3. If good, tell the owner to authorize production deploy.
+4. If not, file a fix handoff.
+
+## Verification
+- (a) Manual/exploratory test on staging.
+
+## Report back with
+- (a) validation result
+- (b) owner decision on production deploy
+
+## When complete
+Recipient self-retires to `to-kimai/done/`.
 ```
 
-`Auto: no` + `Risk: C` means this never auto-dispatches. The cockpit relays it
-to `opencode-auto` manually after the owner confirms.
+**Result:** `kimai-cockpit` validates, asks the owner. If the owner authorizes
+production deploy, `kimai-cockpit` files `to-opencode/open/202607190100-deploy-production-qr.md`
+with `Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)` and `Relay: kimai-cockpit`.
 
 ---
 
-## Summary of files created
+## Stage 8 — Production deploy (Tier C)
 
+**File:** `.ai/handoffs/to-opencode/open/202607190100-deploy-production-qr.md`
+
+```markdown
+# Deploy QR feature to production
+Status: OPEN
+Sender: kimai-cockpit
+Recipient: opencode-auto
+Owner: opencode-auto
+Created: 2026-07-19 01:20 (UTC+7)
+Auto: yes
+Risk: C
+Observed-in: main@m7n8o9p
+Evidence: VERIFIED (curl https://staging... -> 200 OK)
+Gate: owner
+Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)
+Relay: kimai-cockpit
+
+## Goal
+Deploy the validated QR feature to production.
+
+## Steps
+1. Dry-run: `bash infra/deploy.sh production --dry-run`.
+2. Paste dry-run output to the owner.
+3. On explicit per-deploy confirmation, deploy.
+
+## Verification
+- (a) Dry-run output pasted.
+- (b) Production deploy output pasted.
+- (c) Production health check passes.
+
+## Report back with
+- (a) deploy output
+- (b) production health-check result
+
+## When complete
+Recipient self-retires to `to-opencode/done/`.
 ```
-.ai/handoffs/
-├── to-claude/
-│   ├── done/202607152200-design-checkout-flow.md
-│   └── review/202607160200-final-review-checkout-api.md
-│   └── review/202607160200-final-review-checkout-ui.md
-├── to-kimi/
-│   ├── done/202607152300-implement-checkout-api.md
-│   └── review/202607160100-review-checkout-ui.md
-├── to-kiro/
-│   ├── done/202607152300-implement-checkout-ui.md
-│   └── review/202607160100-review-checkout-api.md
-└── to-opencode/
-    ├── done/202607160300-deploy-checkout-flow.md
-    └── open/202607160400-deploy-checkout-prod.md   # Risk C, waits for cockpit
+
+**Result:** `opencode-auto` deploys to production after the owner confirms.
+
+---
+
+## Summary of the chain
+
+```text
+claude-cockpit
+  → to-claude/open/202607181530-plan-qr-feature.md
+    → claude-auto (plan + file next handoffs)
+      → to-kimai/open/202607181600-backend-qr-feature.md
+        → kimai-auto (backend)
+          → to-kiro/review/202607181800-review-backend-qr.md
+            → kiro-auto (peer review backend)
+      → to-kiro/open/202607181700-frontend-qr-feature.md
+        → kiro-auto (frontend)
+          → to-kimai/review/202607181900-review-frontend-qr.md
+            → kimai-auto (peer review frontend)
+      → to-claude/review/202607182000-final-review-qr.md
+        → claude-auto (merge + deploy handoff)
+          → to-opencode/open/202607182100-deploy-staging-qr.md
+            → opencode-auto (staging deploy)
+              → to-kimai/open/202607182200-validate-staging-qr.md
+                → kimai-cockpit (validation + owner gate)
+                  → to-opencode/open/202607190100-deploy-production-qr.md
+                    → opencode-auto (production deploy)
 ```
