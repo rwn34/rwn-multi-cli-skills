@@ -2,16 +2,17 @@ name: framework-check
 
 # Self-test suite for the multi-CLI framework. Runs all four per-CLI hook
 # test matrices plus the SSOT drift checker. Intent: catch regressions in
-# hook behavior or replica drift before they land on master.
+# hook behavior or replica drift before they land on main.
 #
 # All steps are plain bash — no compile/cache needed. Linux-only (bash is
 # native on ubuntu-latest).
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   framework-check:
