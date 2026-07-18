@@ -103,6 +103,20 @@ promotion happened.
   encoding corruption before they cause silent data loss.
 - `test-fleet-health.sh`: 14-test harness covering OK/down-idle, STALL, WEDGED,
   missing queue dirs, junctioned `.ai/`, stale worktree, and encoding problems.
+- `scripts/sync-4ai-panes-install.ps1`: ancestor guard — a third, independent
+  provenance property on top of the existing primary-checkout + main-branch
+  guard. A local branch literally named `main` is not proof that `HEAD` is
+  reachable from `origin/main`; this closes that gap with
+  `git merge-base --is-ancestor HEAD origin/main` (best-effort `git fetch`
+  first, fails closed if `origin/main` is unresolvable or HEAD is not an
+  ancestor). Chose option (b) from the design brief — main-only by default
+  with an explicit, narrower opt-in escape hatch (`RWN_4AI_ALLOW_UNMERGED=1`,
+  separate from `-Force`/`SYNC_FORCE`) for deliberately dogfooding an
+  in-development pane-runner/launcher change before it merges. Refusal leaves
+  the previously deployed files completely untouched (no partial deploy).
+  `scripts/test-sync-4ai-panes-install.ps1` extended to 52 assertions (was 24),
+  including a live RED proof: an unpushed local `main` commit is refused and
+  a prior real deploy's files are verified byte-identical afterward.
 
 ### Changed
 
