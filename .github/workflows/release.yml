@@ -33,6 +33,10 @@ on:
   push:
     branches:
       - main
+    # Auto-cut releases are only possible when the version SSOT changes.
+    # Skip the workflow entirely for the common case of non-bump pushes.
+    paths:
+      - 'tools/multi-cli-install/package.json'
     tags:
       - 'v*'
 
