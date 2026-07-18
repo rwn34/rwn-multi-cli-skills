@@ -340,11 +340,12 @@ ensure_declared_base_branch() {
         return 1
     fi
 
-    # Best-effort fetch for a fresh base ref. Never fatal: a stale-but-present
-    # base is still a DECLARED one (better than ambient HEAD), and dispatch
-    # must not hard-fail just because the network is briefly unavailable.
-    if ! git -C "$wt_path" fetch origin >/dev/null 2>&1; then
-        echo "WARN: git fetch origin failed in $wt_path — using cached '$base'" >&2
+    # Best-effort fetch for a fresh base ref. Fetch from the primary checkout
+    # rather than the worktree: worktrees may inherit a relative local remote
+    # URL that does not resolve from the worktree path (common in sandbox
+    # tests), and the remote-tracking refs are shared anyway.
+    if ! git -C "$root" fetch origin >/dev/null 2>&1; then
+        echo "WARN: git fetch origin failed in $root — using cached '$base'" >&2
     fi
 
     # Resolve the base ref. If it can't be resolved at all (no network AND no

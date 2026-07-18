@@ -25,11 +25,9 @@ die()  { err "$*"; exit 1; }
 # Output is sorted by path.
 manifest_for() {
     local dir="$1"
-    ( cd "$dir" && find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null | \
-      while IFS= read -r -d '' f; do
+    ( cd "$dir" && while IFS= read -r -d '' f; do
         printf '%s  %s\n' "$(sha256sum "$f" | awk '{print $1}')" "${f#./}"
-      done | LC_ALL=C sort -k2
-    )
+    done < <(find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null) | LC_ALL=C sort -k2 )
 }
 
 # snapshot <canonical-ai> <worktree-ai>
@@ -41,17 +39,13 @@ cmd_snapshot() {
     rm -rf "$dst"
     mkdir -p "$dst"
 
-    # Copy all files, preserving directory structure.
-    ( cd "$src" && find . -mindepth 1 -print0 ) | \
-      while IFS= read -r -d '' rel; do
-        local src_file="$src/$rel" dst_file="$dst/$rel"
-        if [ -d "$src_file" ]; then
-            mkdir -p "$dst_file"
-        elif [ -f "$src_file" ]; then
-            mkdir -p "$(dirname "$dst_file")"
-            cp -a "$src_file" "$dst_file"
-        fi
-      done
+    # Copy all files in one stream. The per-file cp loop used earlier was
+    # pathologically slow on Windows Git-Bash (likely real-time protection
+    # scanning each tiny cp -a invocation) and could hang the dispatcher.
+    # .gitkeep files are omitted: they exist only to keep empty queue dirs in
+    # git, and the worktree snapshot does not need them (directories are still
+    # created; only the empty sentinel files are skipped).
+    tar -C "$src" -cf - --exclude='.gitkeep' . | tar -C "$dst" -xf -
 
     # Record manifest inside the snapshot so it travels with the worktree .ai/.
     manifest_for "$dst" > "$dst/$MANIFEST_NAME"

@@ -70,7 +70,10 @@ echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
 git -C "$PROJECT" branch -M master
-git -C "$PROJECT" remote add origin "$ORIGIN"
+# Use a relative path for the remote to avoid MSYS/Cygwin absolute-path
+# conversion issues in Git-for-Windows that can cause "could not read from
+# remote repository" / shared-library load errors in temp sandboxes.
+git -C "$PROJECT" remote add origin "../origin.git"
 git -C "$PROJECT" push --quiet -u origin master
 
 # Copy a working wt-bootstrap.sh into the sandbox so the dispatcher (which
@@ -272,7 +275,8 @@ echo "seed" > "$PROJECT_MAIN/seed.txt"
 git -C "$PROJECT_MAIN" add -A
 git -C "$PROJECT_MAIN" commit --quiet -m "seed"
 git -C "$PROJECT_MAIN" branch -M main
-git -C "$PROJECT_MAIN" remote add origin "$ORIGIN_MAIN"
+# Relative remote path avoids Git-for-Windows absolute-path conversion issues.
+git -C "$PROJECT_MAIN" remote add origin "../origin-main.git"
 git -C "$PROJECT_MAIN" push --quiet -u origin main
 
 mkdir -p "$PROJECT_MAIN/scripts" "$PROJECT_MAIN/.ai/tools"

@@ -1,3 +1,13 @@
+## 2026-07-18 16:55 (UTC+7) - kimi
+- Action: Fix sync-ai-state.sh snapshot hang and dispatcher worktree-fetch path so the full test-dispatch-worktree.sh suite passes on Windows Git-Bash.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
+- Decisions: Replaced per-file cp loop with tar --exclude='.gitkeep' (avoids AV scan hang); corrected manifest_for cwd via process substitution; changed ensure_declared_base_branch to fetch from $root so relative local remotes in worktrees resolve; kept test sandbox remotes relative. Full suite: 79 passed, 0 failed.
+
+## 2026-07-18 16:13 (UTC+7) - kimi
+- Action: Framework stabilization sweep — fix sync-ai-state.sh deletion overreach, harden fleet-health.sh worktree layout checks, enforce Observed-in in lint-handoff.sh, update handoff template and protocol v4 spec, document .ai/ durability contract, delete stale local master branch, push branch.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tools/fleet-health.sh, .ai/tools/lint-handoff.sh, .ai/handoffs/template.md, docs/specs/handoff-protocol-v4.md, .ai/known-limitations.md, .ai/activity/log.md
+- Decisions: Full test-dispatch-worktree.sh suite was blocked by Windows Git-Bash path/git flakiness in temp sandboxes; follow-up at 16:55 resolved it.
+
 ## 2026-07-18 13:50 (UTC+7) - kimi
 - Action: Recreated stale claude worktree, removed orphaned nested .wt/claude/* worktrees, synced pane scripts to .rwn-auto/.
 - Files: .ai/activity/log.md, C:/Users/rwn34/Code/.wt/rwn-multi-cli-skills/claude, C:/Users/rwn34/Code/.wt/rwn-multi-cli-skills/.wt/claude/*, C:/Users/rwn34/.rwn-auto/rwn-4AI-panes/*
