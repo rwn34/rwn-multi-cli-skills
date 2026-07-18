@@ -1,0 +1,9 @@
+﻿{
+    "installer_version":  "0.0.45",
+    "installed_at":  "2026-07-19T06:23:41Z",
+    "upgrade_history":  [
+
+                        ],
+    "installer_name":  "Selector.ps1 fallback",
+    "framework_version":  "0.0.45"
+}
