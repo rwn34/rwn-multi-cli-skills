@@ -50,7 +50,7 @@ assert_gate() {
 
 # assert_gate_ref <desc> <expected-exit> <base-ref> — like assert_gate but
 # against an explicit base ref (used to exercise the fail-closed guard on an
-# unresolvable base, e.g. the all-zero SHA a master push carries on a
+# unresolvable base, e.g. the all-zero SHA a main push carries on a
 # branch-create/force-push edge).
 assert_gate_ref() {
     desc="$1"; want="$2"; ref="$3"
@@ -122,7 +122,7 @@ setup_repo() {
     old="$1"; new="$2"; changelog="$3"; change="$4"
     R="$WORK/repo-$old-$new-$changelog-$change"
     mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools" "$R/docs"
-    git -C "$R" -c init.defaultBranch=master init -q
+    git -C "$R" -c init.defaultBranch=main init -q
     git -C "$R" config user.email test@test
     git -C "$R" config user.name test
     git -C "$R" config core.autocrlf false   # keep temp-repo output quiet on Windows
@@ -198,34 +198,34 @@ assert_gate "e2e no changed files PASS" 0
 
 # -----------------------------------------------------------------------------
 echo
-echo "== Part 3: master-push detective mode (ADR-0012) =="
-# Under ADR-0012 the gate no longer runs on PRs — it runs on `push: master`,
-# comparing the PREVIOUS master tip to the NEW one. Mechanically the script is
-# ref-agnostic (it diffs <base-ref>...HEAD), so a master-push run is the same
-# invocation with base = the previous master tip. These cases model the two
-# master commits as $BASE_SHA (old master) -> HEAD (new master).
+echo "== Part 3: main-push detective mode (ADR-0012) =="
+# Under ADR-0012 the gate no longer runs on PRs — it runs on `push: main`,
+# comparing the PREVIOUS main tip to the NEW one. Mechanically the script is
+# ref-agnostic (it diffs <base-ref>...HEAD), so a main-push run is the same
+# invocation with base = the previous main tip. These cases model the two
+# main commits as $BASE_SHA (old main) -> HEAD (new main).
 
-# A master push that bumped correctly PASSES.
+# A main push that bumped correctly PASSES.
 setup_repo 0.0.28 0.0.30 yes versioned
-assert_gate "master-push: content + correct bump PASS" 0
+assert_gate "main-push: content + correct bump PASS" 0
 
-# A master push that changed versioned content WITHOUT bumping FAILS (the whole
-# point of the detective check — a merge that forgot the bump turns master red).
+# A main push that changed versioned content WITHOUT bumping FAILS (the whole
+# point of the detective check — a merge that forgot the bump turns main red).
 setup_repo 0.0.28 0.0.28 no versioned
-assert_gate "master-push: content, no bump FAIL" 1
+assert_gate "main-push: content, no bump FAIL" 1
 
-# A downgrade landing on master FAILS (merge-order downgrade guard).
+# A downgrade landing on main FAILS (merge-order downgrade guard).
 setup_repo 0.0.30 0.0.28 yes versioned
-assert_gate "master-push: downgrade FAIL" 1
+assert_gate "main-push: downgrade FAIL" 1
 
-# The lexicographic-trap bump is still correct on the master-push path.
+# The lexicographic-trap bump is still correct on the main-push path.
 setup_repo 0.0.9 0.0.10 yes versioned
-assert_gate "master-push: 0.0.9 -> 0.0.10 lex-trap PASS" 0
+assert_gate "main-push: 0.0.9 -> 0.0.10 lex-trap PASS" 0
 
 # Fail CLOSED on an unresolvable base ref — the all-zero SHA github.event.before
 # carries on a branch-create/force-push edge is an env error, never a wave-through.
 setup_repo 0.0.28 0.0.30 yes versioned
-assert_gate_ref "master-push: unresolvable base ref FAIL CLOSED" 2 \
+assert_gate_ref "main-push: unresolvable base ref FAIL CLOSED" 2 \
     "0000000000000000000000000000000000000000"
 
 # -----------------------------------------------------------------------------
@@ -245,9 +245,9 @@ if [ -f "$GATES" ]; then
     else
         fail=$((fail + 1)); printf 'FAIL  gates.yml: version-bump step is not push-guarded\n'
     fi
-    # The step must pass the previous-master tip (github.event.before) as base.
+    # The step must pass the previous-main tip (github.event.before) as base.
     if grep -Eq "check-version-bump\.sh \"\\\$\{\{ github\.event\.before \}\}\"" "$GATES"; then
-        pass=$((pass + 1)); printf 'PASS  gates.yml: base ref is github.event.before (previous master tip)\n'
+        pass=$((pass + 1)); printf 'PASS  gates.yml: base ref is github.event.before (previous main tip)\n'
     else
         fail=$((fail + 1)); printf 'FAIL  gates.yml: version-bump step does not use github.event.before as base\n'
     fi
@@ -278,7 +278,7 @@ setup_repo_cl() {
     old="$1"; new="$2"; tag="$3"; content="$4"
     R="$WORK/repo-cl-$tag"
     mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools"
-    git -C "$R" -c init.defaultBranch=master init -q
+    git -C "$R" -c init.defaultBranch=main init -q
     git -C "$R" config user.email test@test
     git -C "$R" config user.name test
     git -C "$R" config core.autocrlf false

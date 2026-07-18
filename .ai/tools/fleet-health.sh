@@ -272,6 +272,72 @@ check_worktree_layout() {
   echo "$problems"
 }
 
+# Stable inode/device identifier for a directory. Used to detect whether a
+# worktree's .ai/ is the same physical directory as the canonical .ai/
+# (junction/symlink) or an independent snapshot copy.
+inode_id() {
+  stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null || echo ""
+}
+
+# S1-4 / ADR-0016: flag worktrees whose .ai/ is still a junction/symlink into
+# the canonical coordination plane. Snapshot-copy requires an independent dir.
+check_ai_junctions() {
+  local root="$1"
+  local canon_ai="$root/.ai"
+  local problems=0 actor wt_path canon_id wt_id
+  canon_id="$(inode_id "$canon_ai")"
+  [ -n "$canon_id" ] || return 0
+  for actor in $HANDOFF_ACTORS; do
+    wt_path="$(dirname "$root")/.wt/$(basename "$root")/$actor"
+    [ -d "$wt_path/.ai" ] || continue
+    wt_id="$(inode_id "$wt_path/.ai")"
+    [ -n "$wt_id" ] || continue
+    if [ "$wt_id" = "$canon_id" ]; then
+      echo "FRAMEWORK: $wt_path/.ai/ is still a junction/symlink into canonical .ai/ — remove before next dispatch: bash scripts/wt-bootstrap.sh --remove \"$root\" $actor"
+      problems=$((problems + 1))
+    fi
+  done
+  echo "$problems"
+}
+
+# S2-5: flag worktrees whose HEAD is behind the default remote branch. A stale
+# base combined with a junctioned .ai/ caused a near-deletion of canonical .ai/.
+check_worktree_freshness() {
+  local root="$1"
+  local problems=0 actor wt_path base
+  base="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
+  [ -n "$base" ] || base="origin/main"
+  git -C "$root" rev-parse --verify --quiet "$base" >/dev/null 2>&1 || return 0
+  for actor in $HANDOFF_ACTORS; do
+    wt_path="$(dirname "$root")/.wt/$(basename "$root")/$actor"
+    [ -d "$wt_path" ] || continue
+    git -C "$wt_path" rev-parse --verify --quiet HEAD >/dev/null 2>&1 || continue
+    if git -C "$wt_path" merge-base --is-ancestor HEAD "$base" 2>/dev/null && \
+       ! git -C "$wt_path" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
+      echo "FRAMEWORK: stale worktree: $wt_path HEAD is behind $base — refresh before next dispatch"
+      problems=$((problems + 1))
+    fi
+  done
+  echo "$problems"
+}
+
+# S3-1: cheap encoding assertion for shared-state files. Bad encoding makes
+# grep-based history lookups silently lie and git treat the file as binary.
+# fleet-health is detection-only; it does not repair (dispatch-handoffs.sh does).
+check_shared_encoding() {
+  local root="$1"
+  local problems=0 f out
+  for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
+    [ -f "$f" ] || continue
+    out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
+    if [ -n "$out" ]; then
+      echo "FRAMEWORK: encoding problem: $f — $out (repair: bash .ai/tools/normalize-encoding.sh \"$f\")"
+      problems=$((problems + 1))
+    fi
+  done
+  echo "$problems"
+}
+
 # --- main -------------------------------------------------------------------
 # Returns the number of non-OK panes (STALL/WEDGED) plus framework queue-dir
 # problems. Never dies on a bad record: every parser above defaults to the
@@ -290,6 +356,21 @@ main() {
   wt_report="$(check_worktree_layout "$root")"
   wt_problems="$(printf '%s\n' "$wt_report" | tail -1)"
   wt_report="$(printf '%s\n' "$wt_report" | sed '$d')"
+
+  local junction_report="" junction_problems=0
+  junction_report="$(check_ai_junctions "$root")"
+  junction_problems="$(printf '%s\n' "$junction_report" | tail -1)"
+  junction_report="$(printf '%s\n' "$junction_report" | sed '$d')"
+
+  local freshness_report="" freshness_problems=0
+  freshness_report="$(check_worktree_freshness "$root")"
+  freshness_problems="$(printf '%s\n' "$freshness_report" | tail -1)"
+  freshness_report="$(printf '%s\n' "$freshness_report" | sed '$d')"
+
+  local encoding_report="" encoding_problems=0
+  encoding_report="$(check_shared_encoding "$root")"
+  encoding_problems="$(printf '%s\n' "$encoding_report" | tail -1)"
+  encoding_report="$(printf '%s\n' "$encoding_report" | sed '$d')"
 
   echo "fleet-health — $(cd "$root" 2>/dev/null && pwd)"
   echo "window: heartbeat/claim stale > ${STALE_MINUTES}m (mirrors pane-runner.ps1); quarantine retry after ${QUARANTINE_STALE_MINUTES}m"
@@ -342,15 +423,25 @@ main() {
   if [ -n "$wt_report" ]; then
     printf '%s\n' "$wt_report"
   fi
+  if [ -n "$junction_report" ]; then
+    printf '%s\n' "$junction_report"
+  fi
+  if [ -n "$freshness_report" ]; then
+    printf '%s\n' "$freshness_report"
+  fi
+  if [ -n "$encoding_report" ]; then
+    printf '%s\n' "$encoding_report"
+  fi
   if [ "$queue_problems" -gt 0 ]; then
     echo "$queue_problems queue dir(s) missing. Run the fix command above."
   fi
-  if [ "$bad" -gt 0 ] || [ "$queue_problems" -gt 0 ] || [ "$wt_problems" -gt 0 ]; then
-    echo "$((bad + queue_problems + wt_problems)) pane(s)/queue dir(s)/worktree(s) need attention (STALL/WEDGED/missing queue dir/orphaned worktree). Detection only — restarts stay with the owner/claude."
+  local total_problems=$((bad + queue_problems + wt_problems + junction_problems + freshness_problems + encoding_problems))
+  if [ "$total_problems" -gt 0 ]; then
+    echo "$total_problems pane(s)/queue dir(s)/worktree(s) need attention (STALL/WEDGED/missing queue dir/orphaned worktree/junctioned .ai/ stale worktree/encoding). Detection only — restarts stay with the owner/claude."
   else
     echo "all panes OK or down-idle."
   fi
-  return $((bad + queue_problems + wt_problems))
+  return "$total_problems"
 }
 
 out="$(main "$ROOT" 2>&1)"; rc=$?
@@ -360,7 +451,7 @@ printf '%s\n' "$out"
 # verdict in its output means the checker itself broke (set -u abort, missing
 # util) — that must never gate the fleet.  Queue-dir problems are real health
 # findings, not internal errors.
-if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED|FRAMEWORK:|orphaned|drifted worktree|missing worktree directory'; then
+if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED|FRAMEWORK:|orphaned|drifted worktree|missing worktree directory|junction|stale worktree|encoding problem'; then
   echo "fleet-health: internal error (exit $rc) — failing open" >&2
   exit 0
 fi

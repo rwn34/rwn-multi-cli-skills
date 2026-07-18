@@ -26,7 +26,7 @@ WT_BOOTSTRAP="$REPO_ROOT/scripts/wt-bootstrap.sh"
 [ -f "$WT_BOOTSTRAP" ] || { echo "FAIL: cannot find wt-bootstrap.sh at $WT_BOOTSTRAP"; exit 1; }
 
 # TODO: remove this workaround once kiro's PR #97 (removing the skip-worktree
-# reverse-write guard from wt-bootstrap.sh) lands on master. The guard makes
+# reverse-write guard from wt-bootstrap.sh) lands on main. The guard makes
 # `git restore --staged -- .ai` fail in a fresh sandbox, so we copy the live
 # bootstrap into the sandbox and strip the guard function + call site.
 pass=0
@@ -69,12 +69,12 @@ echo "keep" > "$PROJECT/.ai/.gitkeep"
 echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
-git -C "$PROJECT" branch -M master
+git -C "$PROJECT" branch -M main
 # Use a relative path for the remote to avoid MSYS/Cygwin absolute-path
 # conversion issues in Git-for-Windows that can cause "could not read from
 # remote repository" / shared-library load errors in temp sandboxes.
 git -C "$PROJECT" remote add origin "../origin.git"
-git -C "$PROJECT" push --quiet -u origin master
+git -C "$PROJECT" push --quiet -u origin main
 
 # Copy a working wt-bootstrap.sh into the sandbox so the dispatcher (which
 # resolves it from $root/scripts/wt-bootstrap.sh) picks up the sandbox version.
@@ -194,20 +194,20 @@ rm -f "$WORK/.wt/project/opencode"   # clear the induced failure for later tests
 rm -f "$PROJECT/.ai/handoffs/to-opencode/open/202607110003-t3.md"  # don't let it dispatch in later tests
 
 # ======================================================================
-# 4. Branch is cut from the DECLARED base (origin/master), not ambient HEAD.
+# 4. Branch is cut from the DECLARED base (origin/main), not ambient HEAD.
 # ======================================================================
 # Put a decoy commit on a decoy branch and check it out in the PRIMARY
 # checkout, simulating "whatever HEAD happens to be" at dispatch time.
 # `git add decoy.txt` explicitly (NOT `-A`) -- `.ai/handoffs/**` is untracked
 # scratch state for this test harness and must never be staged/committed; doing
-# so would make master checkout later DELETE those files (they'd only exist on
+# so would make main checkout later DELETE those files (they'd only exist on
 # the decoy branch), which is a self-inflicted test bug, not a dispatcher one.
 git -C "$PROJECT" checkout --quiet -b decoy/should-not-be-base
 echo "decoy content" > "$PROJECT/decoy.txt"
 git -C "$PROJECT" add decoy.txt
-git -C "$PROJECT" commit --quiet -m "decoy commit not on master"
+git -C "$PROJECT" commit --quiet -m "decoy commit not on main"
 DECOY_SHA="$(git -C "$PROJECT" rev-parse HEAD)"
-git -C "$PROJECT" checkout --quiet master
+git -C "$PROJECT" checkout --quiet main
 
 mk_handoff kimi 202607110004-t4
 run_dispatcher --only kimi >/dev/null 2>&1
@@ -215,9 +215,9 @@ run_dispatcher --only kimi >/dev/null 2>&1
 wt_kimi="$WORK/.wt/project/kimi"
 if [ -d "$wt_kimi" ]; then
     branch_head="$(git -C "$wt_kimi" rev-parse "exec/kimi/202607110004-t4" 2>/dev/null)"
-    master_head="$(git -C "$PROJECT" rev-parse origin/master 2>/dev/null)"
+    main_head="$(git -C "$PROJECT" rev-parse origin/main 2>/dev/null)"
     check "test4: exec/kimi/<slug> branch exists" "$([ -n "$branch_head" ] && echo 0 || echo 1)"
-    check "test4: exec/kimi/<slug> was cut from origin/master, not the decoy branch" "$([ "$branch_head" = "$master_head" ] && echo 0 || echo 1)"
+    check "test4: exec/kimi/<slug> was cut from origin/main, not the decoy branch" "$([ "$branch_head" = "$main_head" ] && echo 0 || echo 1)"
     check "test4: decoy commit is NOT an ancestor of the dispatched branch" "$(git -C "$wt_kimi" merge-base --is-ancestor "$DECOY_SHA" "exec/kimi/202607110004-t4" 2>/dev/null; [ $? -ne 0 ] && echo 0 || echo 1)"
 else
     check "test4: kimi worktree exists" 1
@@ -226,16 +226,16 @@ fi
 # ==============================================================================
 # 4a. Annotated Base: line is parsed correctly — only the first token is used.
 # ==============================================================================
-mk_handoff kimi 202607110004-t4a "Base: origin/master (4df2cbf)"
+mk_handoff kimi 202607110004-t4a "Base: origin/main (4df2cbf)"
 out4a="$(run_dispatcher --only kimi 2>&1)"
 rc4a=$?
 check "test4a: dispatcher exits 0 with annotated Base:" "$([ "$rc4a" -eq 0 ] && echo 0 || echo 1)"
 wt_kimi4a="$WORK/.wt/project/kimi"
 if [ -d "$wt_kimi4a" ]; then
     branch_head4a="$(git -C "$wt_kimi4a" rev-parse "exec/kimi/202607110004-t4a" 2>/dev/null)"
-    master_head4a="$(git -C "$PROJECT" rev-parse origin/master 2>/dev/null)"
+    main_head4a="$(git -C "$PROJECT" rev-parse origin/main 2>/dev/null)"
     check "test4a: exec/kimi/<slug> branch exists" "$([ -n "$branch_head4a" ] && echo 0 || echo 1)"
-    check "test4a: branch cut from annotated base resolves to origin/master" "$([ "$branch_head4a" = "$master_head4a" ] && echo 0 || echo 1)"
+    check "test4a: branch cut from annotated base resolves to origin/main" "$([ "$branch_head4a" = "$main_head4a" ] && echo 0 || echo 1)"
 else
     check "test4a: kimi worktree exists" 1
 fi
@@ -259,9 +259,9 @@ check "test4b: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJEC
 rm -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md"
 
 # ==============================================================================
-# 4c. Repo whose default branch is `main` (no `origin/master`) resolves the
+# 4c. Repo whose default branch is `main` (no `origin/main`) resolves the
 #     declared base to `origin/main` and dispatches without error. Regression
-#     test for the hardcoded origin/master default-base bug.
+#     test for the hardcoded origin/main default-base bug.
 # ==============================================================================
 ORIGIN_MAIN="$WORK/origin-main.git"
 PROJECT_MAIN="$WORK/project-main"
@@ -312,7 +312,7 @@ if [ -d "$wt_kimi_main" ]; then
     branch_head_main="$(git -C "$wt_kimi_main" rev-parse --verify --quiet "exec/kimi/202607110004-t4c" 2>/dev/null)"
     origin_main_head="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet origin/main 2>/dev/null)"
     check "test4c: exec/kimi/<slug> branch exists" "$([ -n "$branch_head_main" ] && echo 0 || echo 1)"
-    check "test4c: branch was cut from origin/main, not origin/master" "$([ "$branch_head_main" = "$origin_main_head" ] && echo 0 || echo 1)"
+    check "test4c: branch was cut from origin/main (repo has no master ref)" "$([ "$branch_head_main" = "$origin_main_head" ] && echo 0 || echo 1)"
 else
     check "test4c: kimi worktree exists" 1
 fi
@@ -398,7 +398,7 @@ kiro_branch_after="$(git -C "$wt_kiro" branch --show-current 2>/dev/null)"
 kimi_branch_after="$(git -C "$wt_kimi" branch --show-current 2>/dev/null)"
 check "test6: kiro worktree ended on its own branch (exec/kiro/202607110006-t6)" "$([ "$kiro_branch_after" = "exec/kiro/202607110006-t6" ] && echo 0 || echo 1)"
 check "test6: kimi worktree ended on its own branch (exec/kimi/202607110006-t6)" "$([ "$kimi_branch_after" = "exec/kimi/202607110006-t6" ] && echo 0 || echo 1)"
-check "test6: primary checkout ($PROJECT) stayed on master throughout" "$([ "$(git -C "$PROJECT" branch --show-current)" = "master" ] && echo 0 || echo 1)"
+check "test6: primary checkout ($PROJECT) stayed on main throughout" "$([ "$(git -C "$PROJECT" branch --show-current)" = "main" ] && echo 0 || echo 1)"
 
 # ---- 6b: a DIRTY worktree survives a CONCURRENT neighbor's dispatch ----
 # Re-dirty the kimi worktree (uncommitted, off .ai/) and prove kiro's

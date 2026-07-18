@@ -6,7 +6,7 @@ name: release
 #      multi-cli-install Node package, packages the bash installers, and creates
 #      a GitHub Release for that tag.
 #
-#   2. A push to master — the auto-cut path. Reads .version from
+#   2. A push to main — the auto-cut path. Reads .version from
 #      tools/multi-cli-install/package.json (the version SSOT) and, if no
 #      Release for v<version> exists yet, creates + pushes the tag and then
 #      runs the SAME build+publish steps for it. This exists because the
@@ -106,7 +106,7 @@ jobs:
           #    reflects any run that finished after this run's checkout. This
           #    prevents a partial/duplicate re-publish (no half-uploaded assets,
           #    no duplicate release) on a re-pushed version or a retried run.
-          #    Clean skip is chosen over hard-fail because the master path fires
+          #    Clean skip is chosen over hard-fail because the main path fires
           #    on EVERY push — most carry no bump, so failing loudly would keep
           #    the workflow perpetually red on the normal case. Skip is also
           #    inherently idempotent and still recovers a partial failure (tag
@@ -117,7 +117,7 @@ jobs:
             exit 0
           fi
 
-          # 3. No release yet. On the master path, ensure the tag exists on
+          # 3. No release yet. On the main path, ensure the tag exists on
           #    origin before we publish (the tag-push path already has it).
           #    Check origin directly (not the local checkout) so we see a tag a
           #    concurrent/earlier run may have pushed after our checkout.
@@ -184,7 +184,7 @@ jobs:
         if: steps.decide.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          # Explicit tag: on the master-push path github.ref is a branch, so the
+          # Explicit tag: on the main-push path github.ref is a branch, so the
           # action cannot infer the tag and must be told the decided one.
           tag_name: ${{ steps.decide.outputs.tag }}
           generate_release_notes: true

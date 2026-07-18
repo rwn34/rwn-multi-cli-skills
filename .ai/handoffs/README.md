@@ -85,37 +85,43 @@ Do not rename — they are grandfathered. New handoffs use the timestamp format.
 Sorting `ls .ai/handoffs/to-<cli>/open/` still shows oldest-first with both
 formats present.
 
-## Protocol v3 (lifecycle of a single handoff) — 2026-07-09
+## Protocol v4 (lifecycle of a single handoff) — 2026-07-16
 
-Every handoff carries two routing fields in its status block:
-`Auto:` (default **yes**) and `Risk:` (**A**/**B**/**C** per the autonomy tiers
-in `.ai/instructions/operating-prompt/principles.md` §8). A missing `Risk:`
-line is treated as C — conservative by default.
+Every handoff carries routing fields in its status block:
+`Auto:` (default **yes**), `Risk:` (**A**/**B**/**C** per the autonomy tiers
+in `.ai/instructions/operating-prompt/principles.md` §8), and sender-side
+evidence fields introduced in v4. A missing `Risk:` line is treated as C —
+conservative by default.
 
 1. **Create** — sender writes `to-<recipient>/open/YYYYMMDDHHMM-<slug>.md`. Status
-   line inside the file reads `OPEN`. Set `Auto:` and `Risk:` honestly — a
-   Risk-C task labeled B to sneak past the gate is a delivery-integrity
-   violation.
-2. **Dispatch (auto, default for Risk A/B)** — run
+   line inside the file reads `OPEN`. Set `Auto:`, `Risk:`, `Evidence:`, and
+   `Observed-in:` honestly. A Risk-C task labeled B to sneak past the gate is a
+   delivery-integrity violation.
+2. **Lint (sender-side gate)** — before dispatch, `bash .ai/tools/lint-handoff.sh`
+   checks for protocol-v4 discipline errors: `Status: DONE` without evidence,
+   `Evidence: HYPOTHESIS` with a priority label or `Risk: C`, and file-level
+   claims missing `Observed-in:`. Run it locally before filing; CI also runs it.
+3. **Dispatch (auto, default for Risk A/B)** — run
    `bash .ai/tools/dispatch-handoffs.sh --exec` (dry-run without `--exec`): it
    launches the recipient CLI headless (one-shot) for every `Auto: yes` +
    Risk A/B handoff. Any idle CLI, a polling loop, or the user can trigger the
    dispatcher — it is safe to run repeatedly. Windows Terminal panes can't be
    driven programmatically, so this spawns fresh instances — see
    `.ai/research/4ai-panes-integration-notes.md`.
-2b. **Dispatch (manual — Risk C, or `Auto: no`)** — the user tells the recipient
-   CLI: "read `.ai/handoffs/to-<cli>/open/YYYYMMDDHHMM-<slug>.md` and execute
-   it." Risk-C handoffs are NEVER auto-dispatched, regardless of `Auto:`.
-3. **Review + execute** — recipient reads the handoff, asks clarifying questions if
+3b. **Dispatch (manual — Risk C, `Auto: no`, or hard-gate)** — the user tells the
+   recipient CLI: "read `.ai/handoffs/to-<cli>/open/YYYYMMDDHHMM-<slug>.md` and
+   execute it." Hard-gate Risk-C handoffs are NEVER auto-dispatched, regardless
+   of `Gate-satisfied-by:`.
+4. **Review + execute** — recipient reads the handoff, asks clarifying questions if
    needed, performs the steps, prepends an entry to `.ai/activity/log.md`.
-4. **Report + self-retire (v4)** — recipient reports back in chat with the "Report
+5. **Report + self-retire** — recipient reports back in chat with the "Report
    back with" section filled in, sets the handoff file's status to a terminal
    value inline (`DONE`, `IMPOSSIBLE`, or `NOT-A-BUG`), **and moves the file from
    `open/` to `done/` itself.** The recipient closing its own loop is now the
    standard — it keeps the `open/` queue an accurate picture of outstanding work
-   without waiting on a sender round-trip, and it matches the ADR-0008
-   auto-continuation directive that the self-driving pane-runner already follows.
-   - `Status: DONE` — work completed; include evidence.
+   without waiting on a sender round-trip.
+   - `Status: DONE` — work completed; include a non-empty `Evidence`/`Report`/
+     `Verification`/`Output` section.
    - `Status: IMPOSSIBLE` — sender's premise was disproven; include a `## Why`
      section with the disproof and evidence. Recipient moves to `done/`.
    - `Status: NOT-A-BUG` — reported behavior is correct or intended; include a
@@ -123,15 +129,17 @@ line is treated as C — conservative by default.
    - Exception: if the recipient is **blocked**, it leaves the file in `open/`,
      sets status `BLOCKED`, and appends a `## Blocker` section with the verbatim
      error — never a paraphrase.
-5. **Validate (post-hoc)** — sender reads the recipient's touched files and confirms
+6. **Validate (post-hoc)** — sender reads the recipient's touched files and confirms
    they match spec. Validation now happens *after* the file is already in `done/`.
    If the work is wrong, the sender moves it back to `open/`, sets status `BLOCKED`
    with notes, and (for Auto handoffs) it re-dispatches on the next poll.
 
-> **v2 → v3 change (2026-07-09):** in v2 the *sender* moved the file to `done/`
-> after validating. In v3 the *recipient* self-retires on completion and the
-> sender validates post-hoc. This removes the sender round-trip that left
-> correctly-completed handoffs lingering in `open/`. Applies to all four CLIs.
+> **v3 → v4 change (2026-07-16):** v4 adds `Observed-in:`, `Evidence:`, and
+> `Gate:`/`Gate-satisfied-by:`/`Relay:` to the status block, and a lint step to
+> catch sender-side evidence errors before they burn executor budget. The
+> recipient self-retire rule from v3 is unchanged. See
+> `docs/specs/handoff-protocol-v4.md` and `docs/architecture/0015-handoff-protocol-v4.md`
+> for the full rationale and ADR-0015 decisions.
 
 > **Auto-reconcile (belt-and-suspenders, gap C3):** if a recipient sets a
 > terminal status (`Status: DONE`, `Status: IMPOSSIBLE`, or
@@ -141,7 +149,8 @@ line is treated as C — conservative by default.
 > (so every auto-dispatch across all CLIs self-heals a forgotten step-4
 > self-retire), and can also be run standalone. It is idempotent and fail-open
 > (always exits 0). On filename collision it renames the incoming file to
-> `<basename>-superseded-<UTC>.md` rather than overwriting.
+> `<basename>-superseded-<UTC>.md` rather than overwriting. Terminal handoffs
+> that fail the v4 lint are left in place so the recipient can fix them.
 
 ### Read `Status:` before you act on a resume instruction (v3 amendment, 2026-07-17)
 
@@ -175,6 +184,34 @@ correctly and the protocol was left unchanged, so it recurred. The common
 mechanism is that **the scaffold's premise is never checked against reality before
 it is obeyed.**
 
+## Status-block fields (v4)
+
+Status-block parsing is key-based and case-insensitive; extra header lines
+(`Owner:`, `Reopened:`, `Rescoped:`, `Gate:`, …) and a `## Blocker` above the
+sender block are valid. See `docs/specs/handoff-protocol-v4.md` for the full
+spec and `docs/architecture/0015-handoff-protocol-v4.md` for the ADR.
+
+- `Observed-in: <branch>@<sha>` — required when the handoff asserts file-level
+  facts. The `<branch>` part is advisory; the `<sha>` part is authoritative. The
+  dispatcher resolves abbreviated SHAs and accepts the observed commit if it is
+  the dispatch base or an ancestor of it. Divergence produces a first-class
+  `evidence-base mismatch` dispatch failure, routed back to the sender.
+- `Evidence: VERIFIED | HYPOTHESIS` — epistemic status. Absent or `VERIFIED`
+  dispatches under normal Risk rules. `HYPOTHESIS` at `Risk: A/B` dispatches a
+  verify-first pass; the recipient upgrades to `VERIFIED` or retires as
+  `NOT-A-BUG`/`BLOCKED`. `HYPOTHESIS` is capped at `Risk: A/B` and may not carry
+  a priority label.
+- `Gate: <what>` — for `Risk: C` handoffs, names the action that needs
+  authorization. Hard gates (production deploy, publish to a public registry,
+  tag/release cut, force-push / destructive ops on shared history,
+  `git reset --hard` on shared state, secrets, production data) always HOLD for a
+  cockpit, even with `Gate-satisfied-by:` present.
+- `Gate-satisfied-by: <who> @ <when>` — records who authorized a non-hard gate.
+  Once present, the orchestrator may relay the launch and the dispatcher may
+  auto-dispatch a non-hard-gate `Risk: C` handoff.
+- `Relay: <actor>` — optional; clarifies who physically launches the action when
+  it differs from the `Recipient`. If omitted, the recipient is the relay.
+
 ## Cockpit / auto distinction (six-actor model)
 
 A project using this framework has six logical actors, not four CLI binaries:
@@ -200,10 +237,10 @@ In handoff status blocks:
 - `Auto:` remains the single mechanical ownership boundary:
   - `Auto: yes` + Risk A/B → owned by the auto pane.
   - `Auto: no` or Risk C → owned by a cockpit.
-- `Owner:` is optional but recommended for human readability; the dispatcher
-  ignores it.
-- `Next:` is an optional general routing field for chains that do not fit the
-  review/final-review/deploy pattern.
+- `Evidence:`, `Observed-in:`, `Gate:`/`Gate-satisfied-by:`/`Relay:` are required
+  or forbidden based on the rules above.
+- `Owner:` and `Next:` are optional but recommended for human readability; the
+  dispatcher ignores them.
 
 Full routing table, visibility model, and multi-stage chain examples:
 `docs/specs/saja-akun-cli-workflow.md`.

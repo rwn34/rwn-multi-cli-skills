@@ -50,6 +50,15 @@ promotion happened.
 - `test-fleet-supervisor.ps1`: 33-test Pester-free harness covering liveness
   (fresh/stale/missing), false-positive guard, down+handoffs, down+empty-queue,
   alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall.
+- ADR-0016: `.ai/` durability contract — dispatcher commits canonical `.ai/`
+  after every executor sync-back, so handoff retirements, activity-log appends,
+  reports, and steering changes are durable in git history instead of existing
+  only in the working tree.
+- `fleet-health.sh` worktree-hygiene checks: detect junctioned/symlinked `.ai/`
+  (ADR-0016 violation), stale worktrees behind `origin/main`, and shared-state
+  encoding corruption before they cause silent data loss.
+- `test-fleet-health.sh`: 14-test harness covering OK/down-idle, STALL, WEDGED,
+  missing queue dirs, junctioned `.ai/`, stale worktree, and encoding problems.
 
 ### Changed
 
@@ -92,7 +101,7 @@ promotion happened.
 ### Fixed
 
 - `pane-runner.ps1` now refuses to start if its worktree branch is behind
-  `origin/master`. A stale branch combined with a junctioned `.ai/` was the
+  `origin/main`. A stale branch combined with a junctioned `.ai/` was the
   reverse-write weapon that caused the 2026-07-13 primary `.ai/` clobber; the
   guard exits cleanly (supervisor does not respawn) and prints the rebase/recreate
   fix steps.
@@ -103,6 +112,13 @@ promotion happened.
   carrying `claude-code`) — and the ADR-0005 pre-commit gate trusts that
   identity, so a mislabeled commit could inherit another CLI's territory
   exception. The re-pin is idempotent and repairs drifted trees.
+- Remaining `master`→`main` references in live operational docs/scripts:
+  `.github/workflows/release.yml` comments, `.ai/known-limitations.md`,
+  `tools/4ai-panes/run-pane-supervised.ps1` drift-reminder message, and
+  `CHANGELOG.md`'s own stale `origin/master` reference.
+- `reconcile-done-handoffs.sh` now runs `lint-handoff.sh` before moving a
+  terminal-status handoff to `done/`; a handoff that fails lint (e.g.
+  `Status: DONE` with no evidence) stays in `open/` instead of being retired.
 - [TODO: bug fixes]
 
 ### Security
