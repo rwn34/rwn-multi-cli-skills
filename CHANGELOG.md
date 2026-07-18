@@ -24,12 +24,6 @@ promotion happened.
 
 ### Changed
 
-- [TODO]
-
-## [0.0.45] - 2026-07-18
-
-### Changed
-
 - `sync-replicas.sh` / `check-ssot-drift.sh` are now cwd-independent: the repo
   root is derived from `$0` by pure string manipulation (no `cd`, no
   `git rev-parse --show-toplevel`, no junction-following `pwd -P`). Registry,
@@ -37,6 +31,11 @@ promotion happened.
   drift checker by absolute path from a different directory measures the script's
   own tree, not the caller's CWD. `--dest-root` remains caller-relative. Closes
   the false-pass path reported in PR #72.
+
+## [0.0.45] - 2026-07-18
+
+### Changed
+
 - Narrowed the shell scope of three agents from "any shell command" to an
   enumerated command set matching the job each one already claims to do:
   `refactorer` (test runners), `security-auditor` (security scanners),
