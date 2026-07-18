@@ -13,6 +13,9 @@ set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 GATE="$HERE/check-version-bump.sh"
+INSTALL_TEMPLATE="$HERE/install-template.sh"
+SYNC_ASSETS="$HERE/../tools/multi-cli-install/scripts/sync-assets.ts"
+COPY_FRAMEWORK="$HERE/../tools/multi-cli-install/src/installer/copy-framework.ts"
 [ -f "$GATE" ] || { echo "FAIL: cannot find gate at $GATE"; exit 1; }
 
 pass=0
@@ -118,6 +121,10 @@ trap 'rm -rf "$WORK"' EXIT
 # rewrites package.json to <new-ver>, optionally adds the '## [<new-ver>]'
 # CHANGELOG heading, and changes either versioned content (.ai/tools/*),
 # denylisted content (docs/*), or nothing (empty commit).
+#
+# When changelog=yes, the version heading gets a '- release' bullet; the BASE
+# Unreleased section also contains '- release' so the promoted-bullets check
+# (Hole 2) sees a valid promotion.
 setup_repo() {
     old="$1"; new="$2"; changelog="$3"; change="$4"
     R="$WORK/repo-$old-$new-$changelog-$change"
@@ -128,7 +135,7 @@ setup_repo() {
     git -C "$R" config core.autocrlf false   # keep temp-repo output quiet on Windows
 
     printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
-    printf '# Changelog\n\n## [Unreleased]\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$old" > "$R/CHANGELOG.md"
+    printf '# Changelog\n\n## [Unreleased]\n\n- release\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$old" > "$R/CHANGELOG.md"
     echo "base tool" > "$R/.ai/tools/tool.sh"
     echo "base doc"  > "$R/docs/doc.md"
     git -C "$R" add -A && git -C "$R" commit -qm base
@@ -261,21 +268,24 @@ else
     printf 'SKIP  gates.yml not found at %s (workflow-wiring checks skipped)\n' "$GATES"
 fi
 
+# -----------------------------------------------------------------------------
 echo
 echo "== Part 5: CHANGELOG section substance (the gap ADR-0012 opened) =="
-# ADR-0012 made the release-engineer MANUALLY promote the '## [Unreleased]'
-# bullets into a '## [x.y.z]' heading at merge. Asserting only that the heading
-# EXISTS let an EMPTY or PLACEHOLDER-ONLY section ship a version documented by
-# nothing. These cases pin the substance check. (They do NOT — and cannot —
-# test that the bullets describe the PR that bumped the version: that is the
-# WRONG-CONTENT hole, still open by design. See the gate's header comment.)
+# ADR-0012 made the release-engineer MANUALLY promote the accumulated
+# '## [Unreleased]' bullets into a '## [x.y.z]' heading at merge. Asserting only
+# that the heading EXISTS let an EMPTY or PLACEHOLDER-ONLY section ship a version
+# documented by nothing. These cases pin the substance check.
+#
+# Because the gate now also proves bullets came from Unreleased (Part 6), the
+# PASS cases below supply BASE Unreleased bullets that match the promoted
+# bullets. FAIL cases fail on substance before the Unreleased check is reached.
 
-# setup_repo_cl <old-ver> <new-ver> <tag> <head-changelog-content>
+# setup_repo_cl <old-ver> <new-ver> <tag> <head-changelog-content> [base-unreleased-bullets]
 # Like setup_repo, but HEAD's CHANGELOG.md is supplied verbatim. Always changes
 # versioned content and always bumps, so the version ordering is satisfied and
 # ONLY the section's substance decides the verdict.
 setup_repo_cl() {
-    old="$1"; new="$2"; tag="$3"; content="$4"
+    old="$1"; new="$2"; tag="$3"; content="$4"; base_unreleased="${5:-}"
     R="$WORK/repo-cl-$tag"
     mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools"
     git -C "$R" -c init.defaultBranch=main init -q
@@ -284,7 +294,7 @@ setup_repo_cl() {
     git -C "$R" config core.autocrlf false
 
     printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
-    printf '# Changelog\n\n## [Unreleased]\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$old" > "$R/CHANGELOG.md"
+    printf '# Changelog\n\n## [Unreleased]\n\n%s\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$base_unreleased" "$old" > "$R/CHANGELOG.md"
     echo "base tool" > "$R/.ai/tools/tool.sh"
     git -C "$R" add -A && git -C "$R" commit -qm base
     BASE_SHA="$(git -C "$R" rev-parse HEAD)"
@@ -311,7 +321,7 @@ setup_repo_cl 0.0.30 0.0.31 real '# Changelog
 ### Fixed
 
 - base
-'
+' '- The substantive-section check on the version gate.'
 assert_gate "substance: real bullets PASS" 0
 
 # EMPTY section — heading promoted, bullets forgotten. This is the hole.
@@ -435,11 +445,14 @@ setup_repo_cl 0.0.30 0.0.31 noise '# Changelog
 ### Fixed
 
 - base
-'
+' '- Substantive-section check on the version gate — an empty or placeholder
+- [TODO: bug fixes]'
 assert_gate "substance: bullets + comment + wrap + trailing blank PASS" 0
 
 # A bullet that MENTIONS a keyword mid-sentence is a real note, not a placeholder.
 setup_repo_cl 0.0.30 0.0.31 mentions '# Changelog
+
+## [Unreleased]
 
 ## [0.0.31] - 2026-01-02
 
@@ -452,18 +465,20 @@ setup_repo_cl 0.0.30 0.0.31 mentions '# Changelog
 ### Fixed
 
 - base
-'
+' '- Dropped the TODO scaffolding from the onboarding template.'
 assert_gate "substance: bullet mentioning TODO mid-sentence PASS" 0
 
 # The section is the LAST in the file: EOF terminates it, not a '## ' heading.
 setup_repo_cl 0.0.30 0.0.31 eof '# Changelog
+
+## [Unreleased]
 
 ## [0.0.31] - 2026-01-02
 
 ### Added
 
 - Real note, last section in the file.
-'
+' '- Real note, last section in the file.'
 assert_gate "substance: section terminated by EOF PASS" 0
 
 # THE UNRELEASED EXEMPTION: '## [Unreleased]' is empty (the normal steady state
@@ -485,7 +500,7 @@ setup_repo_cl 0.0.30 0.0.31 unreleased_empty '# Changelog
 ### Fixed
 
 - base
-'
+' '- Real note; Unreleased above is intentionally empty post-promotion.'
 assert_gate "substance: EMPTY [Unreleased] does not fail (exempt by construction)" 0
 
 # Same, with Unreleased holding only the TODO scaffold — also never examined.
@@ -508,7 +523,7 @@ setup_repo_cl 0.0.30 0.0.31 unreleased_todo '# Changelog
 ### Fixed
 
 - base
-'
+' '- Real note; the TODO scaffold in Unreleased above is not this gate'"'"'s business.'
 assert_gate "substance: TODO-scaffolded [Unreleased] does not fail (exempt)" 0
 
 # Fail CLOSED on a section that cannot be parsed: the heading-exists grep is the
@@ -518,6 +533,77 @@ assert_false "section_is_substantive: missing heading fails closed" \
     section_is_substantive "9.9.9" "$R/CHANGELOG.md"
 assert_true  "section_is_substantive: real section is substantive" \
     section_is_substantive "0.0.31" "$R/CHANGELOG.md"
+
+# -----------------------------------------------------------------------------
+echo
+echo "== Part 6: promoted bullets came from Unreleased (closes wrong-content hole) =="
+# Under ADR-0012 the release-engineer promotes '## [Unreleased]' bullets into
+# '## [x.y.z]' at merge. The gate has both master tips, so it diffs Unreleased
+# across BASE...HEAD and asserts the new versioned bullets came from the
+# bullets that disappeared. These cases pin that mechanical check.
+
+# setup_repo_promotion <old> <new> <tag> <base-unreleased-bullets> <version-bullets> [head-unreleased-bullets]
+setup_repo_promotion() {
+    old="$1"; new="$2"; tag="$3"; base_bullets="$4"; version_bullets="$5"; head_bullets="${6:-}"
+    R="$WORK/repo-promo-$tag"
+    mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools"
+    git -C "$R" -c init.defaultBranch=master init -q
+    git -C "$R" config user.email test@test
+    git -C "$R" config user.name test
+    git -C "$R" config core.autocrlf false
+
+    printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
+    printf '# Changelog\n\n## [Unreleased]\n\n%s\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$base_bullets" "$old" > "$R/CHANGELOG.md"
+    echo "base tool" > "$R/.ai/tools/tool.sh"
+    git -C "$R" add -A && git -C "$R" commit -qm base
+    BASE_SHA="$(git -C "$R" rev-parse HEAD)"
+
+    printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$new" > "$R/tools/multi-cli-install/package.json"
+    echo "changed" >> "$R/.ai/tools/tool.sh"
+    printf '# Changelog\n\n## [Unreleased]\n\n%s\n\n## [%s] - 2026-01-02\n\n### Added\n\n%s\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$head_bullets" "$new" "$version_bullets" "$old" > "$R/CHANGELOG.md"
+    git -C "$R" add -A && git -C "$R" commit -qm head
+}
+
+# Bullets promoted unchanged from Unreleased -> PASS.
+setup_repo_promotion 0.0.30 0.0.31 promoted_good \
+    "- Real note from Unreleased." \
+    "- Real note from Unreleased." \
+    ""
+assert_gate "promotion: bullets promoted from Unreleased PASS" 0
+
+# Bullets invented under the version heading -> FAIL.
+setup_repo_promotion 0.0.30 0.0.31 promoted_wrong \
+    "- Real note from Unreleased." \
+    "- Different note not from Unreleased." \
+    ""
+assert_gate "promotion: bullets NOT from Unreleased FAIL" 1
+out="$(cd "$R" && bash "$GATE" "$BASE_SHA" 2>&1)"
+case "$out" in
+    *"bullets that were NOT"*) pass=$((pass + 1)); printf 'PASS  wrong-content message names promoted-from-Unreleased failure\n' ;;
+    *) fail=$((fail + 1)); printf 'FAIL  wrong-content message unclear; got: %s\n' "$out" ;;
+esac
+
+# PR that never added Unreleased bullets in the first place -> FAIL (honest limit).
+setup_repo_promotion 0.0.30 0.0.31 promoted_no_unreleased \
+    "" \
+    "- Some note." \
+    ""
+assert_gate "promotion: no Unreleased bullets to promote FAIL" 1
+
+# Release-engineer hand-edits during promotion -> FAIL (mechanical check).
+setup_repo_promotion 0.0.30 0.0.31 promoted_edited \
+    "- Real note from Unreleased." \
+    "- Edited real note from Unreleased." \
+    ""
+assert_gate "promotion: hand-edited bullets FAIL (honest limit)" 1
+
+# -----------------------------------------------------------------------------
+echo
+echo "== Part 7: versioned-path allowlist vs installer manifest (closes restatement hole) =="
+# This check runs against the live installer source files. The current tree
+# must be in sync.
+assert_true "manifest sync: live allowlist matches installer ship manifests" \
+    assert_versioned_manifest_sync "$INSTALL_TEMPLATE" "$SYNC_ASSETS" "$COPY_FRAMEWORK"
 
 echo
 echo "=============================================="

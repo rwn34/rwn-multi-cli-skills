@@ -106,6 +106,16 @@ promotion happened.
 
 ### Changed
 
+- `scripts/check-version-bump.sh` now keeps its versioned-path allowlist in
+  lockstep with the installer ship manifests (`scripts/install-template.sh`,
+  `tools/multi-cli-install/scripts/sync-assets.ts`,
+  `tools/multi-cli-install/src/installer/copy-framework.ts`). A shipped path
+  that is not allowlisted, or an allowlisted path that no installer ships, fails
+  the gate.
+- `scripts/check-version-bump.sh` now verifies that bullets under a new
+  `## [x.y.z]` CHANGELOG heading were promoted from the `## [Unreleased]`
+  bullets that disappeared in the same master push. Bullets invented at merge
+  time, or hand-edited during promotion, fail the gate.
 - **Activity log is now an entry-per-file spool (ADR-0010, Waves 1–2 of 3).**
   Each CLI writes its own new file in `.ai/activity/entries/` (UTC filename +
   random suffix); the whole-file prepend race — confirmed with real data loss on
