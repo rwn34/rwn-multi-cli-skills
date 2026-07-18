@@ -24,7 +24,7 @@ promotion happened.
 
 ### Changed
 
-- Reduced GitHub Actions minute usage: `gates` now runs the full suite only on pull requests and the version-bump detective on `push:main`; `framework-check` is reduced to the handoff lint that `gates` does not cover; `release` only triggers on `push:main` when `tools/multi-cli-install/package.json` changes.
+- [TODO]
 
 ### Deprecated
 
@@ -33,6 +33,12 @@ promotion happened.
 ### Removed
 
 - [TODO]
+
+## [0.0.42]
+
+### Changed
+
+- Reduced GitHub Actions minute usage: `gates` now runs the full suite only on pull requests and the version-bump detective on `push:main`; `framework-check` is reduced to the handoff lint that `gates` does not cover; `release` only triggers on `push:main` when `tools/multi-cli-install/package.json` changes.
 
 ### Fixed
 
