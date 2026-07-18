@@ -91,21 +91,23 @@ cmd_sync_back() {
         fi
     done < "$manifest_new"
 
-    # Files in old manifest but not new -> deletion. Only replay deletions inside
-    # handoffs/ (handoff retirement moves). Never delete reports, logs, etc.
+    # Files in old manifest but not new -> deletion. Only replay deletions of
+    # actual handoff files moving out of open/ or review/ (handoff retirement
+    # moves). Never delete .gitkeep files, done/ history, reports, logs, etc.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         local rel
         rel="${line#*  }"
         case "$rel" in
-            handoffs/*)
+            handoffs/to-*/open/*.md|handoffs/to-*/review/*.md)
                 if [ -e "$canon_ai/$rel" ]; then
                     rm -f "$canon_ai/$rel"
-                    log "sync-back removed: $rel (handoff move/deletion)"
+                    log "sync-back removed: $rel (handoff retirement)"
                 fi
                 ;;
             *)
-                # Non-handoff deletions are NOT propagated.
+                # All other deletions (including .gitkeep files, done/ history,
+                # reports, logs) are NOT propagated from the worktree snapshot.
                 ;;
         esac
     done < "$manifest_old"
