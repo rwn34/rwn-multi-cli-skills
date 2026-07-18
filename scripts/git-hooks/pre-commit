@@ -224,13 +224,27 @@ fail_closed() {
 #   * any other identity (human / unknown): NEVER silently mutate the commit.
 #     Regenerate into a throwaway tree, compare against what is staged, and REFUSE
 #     with a clear hint if any replica is missing/stale.
+#
+# If sync-replicas.sh aborts (e.g. an SSOT source carries skip-worktree because a
+# bootstrapped worktree's reverse-write guard is active), the abort MUST propagate
+# and the commit must fail loudly.  Stderr is captured and echoed so the committer
+# sees the exact source path and the fix (`git update-index --no-skip-worktree`).
 ssot_staged="$(git diff --cached --name-only -- .ai/instructions/ 2>/dev/null)"
 if [ -n "$ssot_staged" ]; then
     gen=".ai/tools/sync-replicas.sh"
     [ -r "$gen" ] || fail_closed "SSOT source staged but generator missing ($gen)"
 
     if [ "$committer" = "claude-code" ]; then
-        manifest="$(bash "$gen" 2>/dev/null)" || fail_closed "sync-replicas.sh failed regenerating replicas"
+        gen_out="$(mktemp)"; gen_err="$(mktemp)"
+        bash "$gen" >"$gen_out" 2>"$gen_err"; grc=$?
+        manifest="$(cat "$gen_out")"
+        rm -f "$gen_out"
+        if [ "$grc" -ne 0 ]; then
+            { echo "sync-replicas.sh refused to regenerate replicas:"; cat "$gen_err"; } >&2
+            rm -f "$gen_err"
+            fail_closed "SSOT source may be skip-worktree or another generator error (see above)"
+        fi
+        rm -f "$gen_err"
         while IFS="$(printf '\t')" read -r _src dst; do
             [ -n "$dst" ] || continue
             git add -- "$dst" 2>/dev/null || fail_closed "could not stage regenerated replica: $dst"
@@ -239,8 +253,16 @@ $manifest
 EOF
     else
         gtmp="$(mktemp -d)" || fail_closed "mktemp failed"
-        manifest="$(bash "$gen" --dest-root "$gtmp" 2>/dev/null)" \
-            || { rm -rf "$gtmp"; fail_closed "sync-replicas.sh failed regenerating replicas"; }
+        gen_out="$(mktemp)"; gen_err="$(mktemp)"
+        bash "$gen" --dest-root "$gtmp" >"$gen_out" 2>"$gen_err"; grc=$?
+        manifest="$(cat "$gen_out")"
+        rm -f "$gen_out"
+        if [ "$grc" -ne 0 ]; then
+            { echo "sync-replicas.sh refused to regenerate replicas:"; cat "$gen_err"; } >&2
+            rm -f "$gen_err"; rm -rf "$gtmp"
+            fail_closed "SSOT source may be skip-worktree or another generator error (see above)"
+        fi
+        rm -f "$gen_err"
         stale=""
         while IFS="$(printf '\t')" read -r _src dst; do
             [ -n "$dst" ] || continue
@@ -272,6 +294,39 @@ EOF
             exit 1
         fi
     fi
+fi
+
+# ---- Activity-log superset gate (ADR-0010, 2026-07-17) ----------------------
+# A commit staging .ai/activity/log.md must not DROP entries that already exist
+# in origin/main, the working tree, or any backup/KEEP file. The log is prepend-
+# order and timestamps are non-monotonic, so diff stats against main are blind
+# to uncommitted disk entries; the checker compares the SET of `^## ` headers.
+log_staged="$(git diff --cached --name-only -- .ai/activity/log.md 2>/dev/null)"
+if [ -n "$log_staged" ]; then
+    log_superset=".ai/tools/check-log-superset.sh"
+    [ -r "$log_superset" ] || fail_closed "activity log staged but superset checker missing ($log_superset)"
+
+    tmp_log="$(mktemp)" || fail_closed "mktemp failed"
+    if ! git show ":.ai/activity/log.md" > "$tmp_log" 2>/dev/null; then
+        rm -f "$tmp_log"
+        fail_closed "could not read staged .ai/activity/log.md"
+    fi
+    if ! bash "$log_superset" "$tmp_log" 2>&1; then
+        rm -f "$tmp_log"
+        {
+            echo "=============================================================================="
+            echo "COMMIT REJECTED — activity log would lose entries (ADR-0010)"
+            echo "=============================================================================="
+            echo "Staged .ai/activity/log.md is missing one or more entry headers that exist in"
+            echo "origin/main, the working tree, or a .ai/activity/log.md.bak / log.md.KEEP* file."
+            echo "Restore the missing entries, re-stage, and try again."
+            echo
+            echo "Owner override (in a pinch):  git commit --no-verify"
+            echo "=============================================================================="
+        } >&2
+        exit 1
+    fi
+    rm -f "$tmp_log"
 fi
 
 # Gather staged paths (NUL-delimited). Fail CLOSED if git cannot enumerate them.
