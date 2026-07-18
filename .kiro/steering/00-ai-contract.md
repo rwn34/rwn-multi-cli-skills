@@ -10,27 +10,66 @@ share state via `.ai/` so no CLI has to copy-paste another's output to stay cohe
 `.ai/instructions/` is canonical. Your `.kiro/steering/*.md` files are replicas. If they
 disagree, `.ai/instructions/` wins — see `.ai/sync.md` to regenerate.
 
-## Cross-CLI activity log — `.ai/activity/log.md`
+## Cross-CLI activity log — `.ai/activity/entries/` (spool; ADR-0010)
 
-**Read** at the start of non-trivial work. Newest entries are at the top — scan recent
-ones to see what other CLIs did here.
+The activity log is an **entry-per-file spool**, not a shared file you edit. Each
+substantive action gets its **own new file** — you never open, prepend to, or
+rewrite anyone else's entry, and you never rewrite your own prior entries.
 
-**Prepend** one entry after completing substantive work (file edits, running tests,
-non-obvious decisions, finishing a task):
+**Recent activity is already in your context — do not re-read it.** Your
+`agentSpawn` hook (`.kiro/hooks/activity-log-inject.sh`) injects the newest
+activity automatically at session start (`log.md`'s top 40 lines pre-freeze,
+the newest 8 `entries/` files post-freeze — see the Fallback note below for the
+exact switch). Re-reading it yourself wastes tokens on something already
+sitting in front of you.
+
+**Specific history** (a topic from before the injected window) →
+`grep -n "<topic>" .ai/activity/log.md` pre-freeze, or grep across
+`.ai/activity/entries/*.md` post-freeze. Never read either wholesale — `log.md`
+is 600KB+/2,100+ lines and almost entirely irrelevant to any one task.
+
+**Write one entry file** after completing substantive work (file edits, running
+tests, non-obvious decisions, finishing a task) — never edit or delete another
+entry:
+
+    .ai/activity/entries/<YYYYMMDDTHHMMSSZ>-kiro-cli-<slug>-<rand4>.md
+
+- `<YYYYMMDDTHHMMSSZ>` — **UTC**, second precision, ISO-8601 basic form (this is
+  the filename's sort key — it must be UTC even though the body heading below
+  stays local time).
+- `<slug>` — short kebab-case topic.
+- `<rand4>` — four random lowercase hex characters (distinguishes two concurrent
+  writers, e.g. an interactive and a headless Kiro session, at the same second).
+
+The file's **body** keeps the same heading + shape as before — only the storage
+location changed, not the content format:
 
     ## YYYY-MM-DD HH:MM — kiro-cli
     - Action: <one-line summary>
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">
 
-**Timestamp rule:** use your current local wall-clock time at the moment you prepend
-the entry — i.e. after the work is finished, not when you started. CLIs running in
-different timezones or with drifted clocks may produce timestamps that don't sort
-monotonically; **prepend order is the authoritative sequencing**, timestamps are
-annotations.
+**Timestamp rule (body heading):** use your current local wall-clock time at the
+moment you write the entry — i.e. after the work is finished, not when you
+started. This is unchanged from before; only the **filename** timestamp is UTC.
 
-Terse — one short paragraph max. One entry per substantive action, not per file edit.
-Never rewrite prior entries. Do not log trivial reads.
+**Ordering:** entries sort by filename (UTC timestamp), which is best-effort
+chronological — not causal, and not an authoritative "who-wrote-first" record
+the way the old shared-file prepend order was informally treated. On one
+machine with one clock this is reliable in practice.
+
+Terse — one short paragraph max per entry. One entry file per substantive
+action, not per file edit. Do not log trivial reads.
+
+**Fallback (transitional, until the freeze lands):** `.ai/activity/log.md` is
+still the live, authoritative file **as long as it exists** — read (bounded,
+never wholesale) and prepend to it exactly as before, even if
+`.ai/activity/entries/` already contains some files (other CLIs may be
+dogfooding the spool early; those entries are stale relative to `log.md` until
+the freeze). Only once `log.md` is gone (git-mv'd to archive — the freeze,
+Kimi's Wave 3) does `entries/` become authoritative and do you switch to
+writing entry files. Never write to `log.md` once it has been removed — that
+reintroduces the write race ADR-0010 exists to remove.
 
 ## Cross-CLI handoffs
 

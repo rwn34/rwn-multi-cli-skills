@@ -622,9 +622,22 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
         [ -d "$dir" ] || continue
         for f in "$dir"/*.md; do
             [ -f "$f" ] || continue
-            # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
             rel="${f#$root/}"
             slug=$(basename "$f" .md)
+
+            # Ghost-handoff refusal (belt-and-braces, handoff 202607131035): even
+            # though reconcile-done-handoffs.sh already ran at the top of this
+            # script and should have retired any open/+done/ duplicate, a ghost
+            # that survives reconcile (e.g. this script invoked standalone, or a
+            # race with a concurrent writer) must still never be DISPATCHED. Same
+            # rule as the reconcile guard: done/ wins.
+            dup_done="$to_dir/done/$(basename "$f")"
+            if [ -e "$dup_done" ]; then
+                echo "SKIP  [$cli] $rel — ghost: duplicate exists at ${dup_done#$root/} (done/ wins, refusing to dispatch)"
+                continue
+            fi
+
+            # Status block check: dispatch only OPEN handoffs explicitly marked Auto: yes
             auto_val="$(header_value "$f" Auto | tr '[:upper:]' '[:lower:]')"
             status_val="$(header_value "$f" Status | tr '[:upper:]' '[:lower:]')"
             risk_val="$(header_value "$f" Risk | tr '[:upper:]' '[:lower:]')"
