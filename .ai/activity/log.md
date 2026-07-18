@@ -1,3 +1,8 @@
+## 2026-07-18 13:50 (UTC+7) - kimi
+- Action: Recreated stale claude worktree, removed orphaned nested .wt/claude/* worktrees, synced pane scripts to .rwn-auto/.
+- Files: .ai/activity/log.md, C:/Users/rwn34/Code/.wt/rwn-multi-cli-skills/claude, C:/Users/rwn34/Code/.wt/rwn-multi-cli-skills/.wt/claude/*, C:/Users/rwn34/.rwn-auto/rwn-4AI-panes/*
+- Decisions: Used -Force on sync because primary checkout is on feature branch exec/kimi/202607170710-fix-dispatcher-dark-queue-cockpit; no open claude handoffs remained to dispatch.
+
 ## 2026-07-18 06:30 (UTC+7) — kimi-cli
 - Action: Retire three stale master→main migration handoffs as NOT-A-BUG (work already in HEAD), run reconcile-done-handoffs.sh to clear DONE-in-open items, add .gitkeep files for six-actor queue dirs, commit and push.
 - Files: .ai/handoffs/to-claude/open/202607162032-doc-master-main-migration.md, .ai/handoffs/to-kimi-executor/open/202607162030-master-main-file-changes.md, .ai/handoffs/to-kiro-executor/open/202607162031-pane-runner-ps1-master-main-migration.md, .ai/handoffs/to-{claude,kimi,kiro,opencode}/done/202607171720-update-activity-log-format-hyphen.md, .ai/handoffs/to-claude-cockpit/*/.gitkeep, .ai/handoffs/to-kimi-cockpit/*/.gitkeep, .ai/handoffs/to-kimi-executor/*/.gitkeep, .ai/handoffs/to-kiro-executor/*/.gitkeep

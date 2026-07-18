@@ -6,11 +6,11 @@ Owner: <same six-actor identity>  # optional but recommended: who currently owns
 Created: YYYY-MM-DD HH:MM (UTC+7)
 Auto: yes
 Risk: <A | B | C>
-# Observed-in: <branch>@<sha>  # optional: required when asserting file-level facts.
-#                                The recipient compares this base to its own tree;
-#                                a mismatch is "evidence-base mismatch", not BLOCKED.
-# Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
-#                                HYPOTHESIS claims are not auto-dispatched; verify first.
+Observed-in: <branch>@<sha>  # required when asserting file-level facts.
+                              # The recipient compares this base to its own tree;
+                              # a mismatch is "evidence-base mismatch", not BLOCKED.
+Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
+                              # HYPOTHESIS claims are not auto-dispatched; verify first.
 # Gate: <who must authorize>     # Risk-C only: who must approve an irreversible action.
 # Gate-satisfied-by: <actor> @ <timestamp>  # Risk-C only: once set, the orchestrator may relay.
 # Relay: <orchestrator | human>  # Risk-C only: who launches after the gate is satisfied (default: human).

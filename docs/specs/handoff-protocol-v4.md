@@ -121,6 +121,8 @@ Deploy v2.3.1 to production after CI is green.
     `Output` section.
   - `Evidence: HYPOTHESIS` must not carry a priority label.
   - `Evidence: HYPOTHESIS` must not be paired with `Risk: C`.
+  - `Observed-in:` is required when the handoff body asserts file-level facts
+    (heuristic: mentions a repo path, git command, line number, or commit SHA).
 - `.ai/handoffs/template.md` contains the new optional fields and comments.
 
 ## Migration

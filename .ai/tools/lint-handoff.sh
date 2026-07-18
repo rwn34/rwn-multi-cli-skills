@@ -45,6 +45,24 @@ has_priority_label() {
          END {exit found ? 0 : 1}' "$1" 2>/dev/null
 }
 
+# Return 0 if the body appears to assert file-level facts: mentions an existing
+# repo path, a line number, git output, lockfile content, etc.  This is a cheap
+# heuristic — false positives are acceptable because Observed-in is cheap to add.
+looks_like_file_claim() {
+    awk 'BEGIN{IGNORECASE=1; found=0}
+         /^##[[:space:]]+/{insec=1; next}
+         insec && /(^|[[:space:]])(src\/|lib\/|docs\/|\.ai\/|\.claude\/|\.kimi\/|\.kiro\/|\.opencode\/|infra\/|scripts\/|tools\/|tests\/|package\.json|package-lock\.json|\.gitignore|\.env|lockfile|tsconfig|webpack|Dockerfile|Makefile)[^[:space:]]*/ {found=1}
+         insec && /(^|[[:space:]])git[[:space:]]/ {found=1}
+         insec && /line[[:space:]]+[0-9]+/ {found=1}
+         insec && /@[0-9a-f]{7,40}/ {found=1}
+         END {exit found ? 0 : 1}' "$1" 2>/dev/null
+}
+
+# Return 0 if the status block has a non-empty Observed-in line.
+has_observed_in() {
+    [ -n "$(header_value "$1" Observed-in)" ]
+}
+
 for dir in "$handoffs_dir"/to-*/open "$handoffs_dir"/to-*/review; do
     [ -d "$dir" ] || continue
     for f in "$dir"/*.md; do
@@ -77,6 +95,11 @@ for dir in "$handoffs_dir"/to-*/open "$handoffs_dir"/to-*/review; do
 
         if [ "$evidence" = "hypothesis" ] && [ "$risk" = "c" ]; then
             echo "ERROR: $rel — Evidence: HYPOTHESIS is not allowed with Risk: C"
+            errors=$((errors+1))
+        fi
+
+        if [ "$status" = "open" ] && looks_like_file_claim "$f" && ! has_observed_in "$f"; then
+            echo "ERROR: $rel — asserts file-level facts but missing Observed-in: <branch>@<sha>"
             errors=$((errors+1))
         fi
     done
