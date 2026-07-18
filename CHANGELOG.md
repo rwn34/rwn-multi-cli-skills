@@ -24,15 +24,20 @@ promotion happened.
 
 ### Changed
 
-- [TODO]
-
-### Deprecated
-
-- [TODO]
-
-### Removed
-
-- [TODO]
+- Narrowed the shell scope of three agents from "any shell command" to an
+  enumerated command set matching the job each one already claims to do:
+  `refactorer` (test runners), `security-auditor` (security scanners),
+  `data-migrator` (migration tools). **No agent lost `Bash`.** The command sets
+  are now fixed in the agent-catalog SSOT
+  (`.ai/instructions/agent-catalog/principles.md`, "Per-agent shell command
+  sets") so every CLI restricts the same list. Implements
+  `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli) §3–§4.
+- Enforcement strength is stated honestly and is **not uniform**: Kiro is
+  hard-enforced (`toolsSettings.execute_bash.allowedCommands`); Claude and Kimi
+  are **soft / prompt-level only**, because no per-command scoping exists in
+  `.claude/agents/*.md` frontmatter or Kimi's agent config. The three Claude
+  agent prompts carry an explicit `ENFORCEMENT: SOFT` block saying so. Nothing
+  here implies parity between the two.
 
 ## [0.0.44]
 
@@ -460,6 +465,7 @@ promotion happened.
   a protocol violation, not a convenience. This mirrors ADR-0011's
   `infra-engineer` fallback-logging rule and for the same reason: an activity log
   filling with unexplained subagent use is the tell that the reflex has returned.
+>>>>>>> origin/main
 - **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
   present.** `scripts/check-version-bump.sh` previously proved only that a
   `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
@@ -476,6 +482,34 @@ promotion happened.
   describing a different PR than the one that bumped the version still pass, and
   a human still reads the entry at release.
 
+<<<<<<< HEAD
+### Security
+
+- Documented two residuals this change explicitly does **not** close
+  (`.ai/known-limitations.md`): (1) a restricted-but-not-removed `Bash` is still
+  evadable via `eval` / `sh -c` / `$(...)` / base64 — accepted, not closed, since
+  closing it would duplicate PR #53's fail-closed logic in a second surface;
+  (2) Kimi and Kiro subagents do not inherit hooks at all, so for them exposure
+  reduction is the ONLY control — a platform limitation no allowlist can fix.
+
+### Deprecated
+
+- [TODO: features marked for removal]
+
+### Removed
+
+- [TODO: features removed this release]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+=======
+>>>>>>> origin/main
 ## [0.0.31] - 2026-07-12
 
 ### Added

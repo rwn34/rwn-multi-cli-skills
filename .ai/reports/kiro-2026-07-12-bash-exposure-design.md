@@ -200,3 +200,20 @@ a cross-cutting policy surface. Before implementation:
 3. **Tier B** (config change), but it touches three CLIs' own territories — so
    implementation is a three-way split: Kiro edits its own `.kiro/agents/*.json`;
    Claude and Kimi each edit their own.
+
+---
+
+## Implementation note (claude-code, 2026-07-12)
+
+Resolving §6's two open items, recorded here so the decision is not re-litigated:
+
+1. **`refactorer`'s command set** (flagged unenumerated in §6.1) was chosen by
+   claude-code: `pytest`, `jest`, `vitest`, `go test`, `cargo test`, `npm test`,
+   `npm run test`, `yarn test`, `pnpm test`.
+2. **§6.2 answered YES** — the Claude/Kimi prompt-only version is stated explicitly in
+   those agents' files, labelled `ENFORCEMENT: SOFT`, precisely to prevent the overclaim
+   §6.2 warns about.
+
+Command sets are recorded in `.ai/instructions/agent-catalog/principles.md`
+("Per-agent shell command sets"); residuals §5.1 and §5.3 are recorded in
+`.ai/known-limitations.md`.

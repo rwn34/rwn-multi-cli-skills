@@ -83,6 +83,57 @@ will stop a bad write — they won't.
 
 ---
 
+## Bash exposure reduction — two residuals it does NOT close (2026-07-12)
+
+**Status:** Open, accepted. Recorded alongside the per-agent shell-command
+restriction (`refactorer`, `security-auditor`, `data-migrator` — see
+`.ai/instructions/agent-catalog/principles.md`, "Per-agent shell command sets").
+Design: `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli).
+
+That change narrows three agents from "any shell command" to "the commands their
+job needs". **Zero agents lost Bash.** It is a real but modest reduction in
+*default* blast radius. It is explicitly NOT a fix for either of the following.
+
+### Residual 1 — a restricted Bash is still an evadable Bash (ACCEPTED, NOT CLOSED)
+
+A command-NAME allowlist does not survive an adversarial model. Restricting
+`refactorer` to `pytest` does not stop `eval`, `sh -c`, `$(...)`, base64-decoded
+commands, or variable-built paths; nor does it stop an allowlisted command being
+piped into a non-allowlisted one (`semgrep --json | tee .kimi/evil.md` — the
+scanner is permitted, the `tee` is the violation). Kiro's `allowedCommands` is a
+name allowlist and adds no fail-closed handling for wrapper constructs.
+
+**Why we are not closing it:** closing it means re-deriving PR #53's `pretool-bash.sh`
+§2.3 fail-closed logic inside a *second* enforcement point, keyed on command names
+instead of paths. That is the "two surfaces, one rule, nothing keeping them in
+lockstep" trap this framework has hit repeatedly. The adversarial case stays with
+the guard (Claude) and with prompt-level SAFETY RULES. **Read the restriction as
+"take the cheap, real, no-new-surface win" — NOT as "Bash evasion is solved."**
+
+### Residual 2 — Kimi and Kiro subagents do not inherit hooks AT ALL
+
+For Claude subagents, the restriction is a *complement* to the guard: hooks
+inherit, so `pretool-bash.sh` is still behind it. **For Kimi and Kiro subagents
+there is nothing behind it.** Kiro subagent hooks never fire (see "Kiro CLI —
+subagent hook inheritance broken" above, upstream bug #7671); Kimi's PreToolUse
+guards do not fire for file-write tools at all and `kimi -p` runs zero hooks (see
+"Enforcement reality" above).
+
+So for Kimi/Kiro subagents, **exposure reduction is not a defense-in-depth layer —
+it is the ONLY control**, backed only by prompt-level rules and the ADR-0005 git
+pre-commit backstop. This is a **platform limitation that no allowlist can fix.**
+Kiro's `toolsSettings.execute_bash.allowedCommands` is hard-enforced at the tool
+layer (not the hook layer), so it does survive the subagent gap — but it is still
+only a command-name allowlist, i.e. Residual 1 applies on top.
+
+**What NOT to do because of this:**
+- Do not describe the three restricted agents as "sandboxed" or "locked down".
+  They are *narrowed*, and only softly so on Claude and Kimi.
+- Do not assume a Claude/Kimi agent's prose command list is enforced. It is not —
+  only Kiro's is mechanical. See the enforcement matrix in the agent catalog.
+
+---
+
 ## Crush — no hook layer (CLOSED by OpenCode swap, 2026-07-09)
 
 **Status:** CLOSED 2026-07-09. Crush is replaced by OpenCode as the 4th CLI
