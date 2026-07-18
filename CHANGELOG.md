@@ -34,6 +34,12 @@ promotion happened.
 
 - [TODO]
 
+## [0.0.43]
+
+### Added
+
+- Added `docs/specs/saja-akun-cli-workflow.md` and `docs/guides/example-handoff-chain.md` documenting the six-actor cockpit/auto handoff workflow, routing table, multi-stage chains, and escalation rules. Updated `.ai/handoffs/README.md` to cross-reference the new docs.
+
 ## [0.0.42]
 
 ### Changed
