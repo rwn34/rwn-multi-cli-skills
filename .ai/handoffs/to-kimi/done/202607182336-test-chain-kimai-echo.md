@@ -1,5 +1,5 @@
 # Test chain — kimai-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kimai-auto
 Owner: kimai-auto
@@ -36,3 +36,8 @@ If not all exist, self-retire this return handoff to `.ai/handoffs/to-claude/don
 
 ## Report back with
 - Paths of the marker file and the return handoff created.
+
+## Verification
+- Marker file written: `.ai/reports/test-chain-kimai.md`
+- Return handoff created: `.ai/handoffs/to-claude/open/202607182336-test-chain-kimai-return.md`
+- Original handoff self-retired to `.ai/handoffs/to-kimi/done/`
