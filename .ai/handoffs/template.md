@@ -1,22 +1,42 @@
 # <Task title — one short clear line>
 Status: OPEN
-Sender: <claude-code | kimi-cli | kiro-cli | opencode>
-Recipient: <claude-code | kimi-cli | kiro-cli | opencode>
-Created: YYYY-MM-DD HH:MM
+Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
+Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
+Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
+Created: YYYY-MM-DD HH:MM (UTC+7)
 Auto: yes
 Risk: <A | B | C>
+Observed-in: <branch>@<sha>  # required when asserting file-level facts.
+                              # The recipient compares this base to its own tree;
+                              # a mismatch is "evidence-base mismatch", not BLOCKED.
+Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
+                              # HYPOTHESIS claims are not auto-dispatched; verify first.
+# Gate: <who must authorize>     # Risk-C only: who must approve an irreversible action.
+# Gate-satisfied-by: <actor> @ <timestamp>  # Risk-C only: once set, the orchestrator may relay.
+# Relay: <orchestrator | human>  # Risk-C only: who launches after the gate is satisfied (default: human).
+# ReviewBy: <cli>       # optional: executor emits review handoff to to-<cli>/review/ on done
+# FinalReview: <cli>    # optional: reviewer emits final-review handoff to to-<cli>/review/
+# Deploy: yes           # optional: final reviewer emits deploy handoff to to-opencode/open/
+# Next: <actor>         # optional: general next-actor routing when ReviewBy/FinalReview/Deploy do not fit
 
-<!-- Protocol v3 (2026-07-09; supersedes v2 2026-07-08):
+<!-- Protocol v4 (2026-07-16; supersedes v3 2026-07-09):
      Recipient self-retires the handoff to done/ on completion; sender validates
-     post-hoc. See README.md "Protocol v3" for the full lifecycle.
+     post-hoc. See docs/specs/handoff-protocol-v4.md for the full lifecycle.
      Auto: yes  = eligible for headless dispatch via .ai/tools/dispatch-handoffs.sh.
                   DEFAULT is yes — the human is a gate, not a relay.
+                  Auto: yes + Risk A/B is owned by the auto pane.
+                  Auto: no  is owned by a cockpit.
      Risk:      = autonomy tier per operating-prompt §8.
                   A = reversible routine (edits on a branch, tests, reports, replicas)
                   B = act-then-notify class (refactors, deps, config, PRs)
                   C = irreversible/gated (deploy, publish, merge to main, destructive,
-                      ADR changes, secrets) — NEVER auto-dispatched, human relays.
-     The dispatcher only launches Auto: yes + Risk A/B. Missing Risk = treated as C.
+                      ADR changes, secrets) — auto-dispatched ONLY when
+                      Gate-satisfied-by: records an explicit authorization.
+                  Missing Risk = treated as C.
+     Evidence:  = VERIFIED (default) or HYPOTHESIS. HYPOTHESIS holds auto-dispatch.
+     Observed-in: = <branch>@<sha>; required when asserting file-level facts.
+     Sender/Recipient/Owner use the six-actor identity (claude-cockpit,
+     kimai-cockpit, claude-auto, kimai-auto, kiro-auto, opencode-auto).
 -->
 
 <!--
@@ -57,10 +77,10 @@ conventions. Delete this section if not applicable.>
 if the surrounding system changes. 1-2 sentences.>
 
 ## Activity log template
-    ## YYYY-MM-DD HH:MM — <recipient-cli>
+    ## YYYY-MM-DD HH:MM (UTC+7) - <six-actor identity, e.g. kimai-auto>
     - Action: <summary — include the handoff filename, e.g. "per handoff 202607081200-slug">
-    - Files: <paths touched, or "—">
-    - Decisions: <non-obvious choices, or "—">
+    - Files: <paths touched, or "-">
+    - Decisions: <non-obvious choices, or "-">
 
 ## Report back with
 - (a) <concrete item the sender will use to validate, e.g. "config file path(s) touched">

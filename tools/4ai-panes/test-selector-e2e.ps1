@@ -493,11 +493,20 @@ function Test-Badges {
     Assert-That ($b -eq '[- none]') 'non-existent dir badges [- none] without throwing' "got '$b'"
 
     # The handoff badge is UNCHANGED for the source repo: [v SRC] + [H:n].
+    # B7: with open handoffs and NO heartbeat sidecar, the badge also carries
+    # the stall: marker (a queue nobody is watching — fleet-health.sh's STALL).
     New-Item -ItemType Directory -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open') -Force | Out-Null
     'x' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\a.md')
     'y' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\b.md')
     $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
-    Assert-That ($b -eq '[v SRC] [H:2]') 'source repo still gets the [H:n] handoff badge' "got '$b'"
+    Assert-That ($b -eq '[v SRC] [H:2 stall:kimi]') 'source repo gets [H:n] + stall: when the heartbeat is missing' "got '$b'"
+
+    # B7 positive case: a FRESH heartbeat sidecar clears the stall marker.
+    $hb = Join-Path $fwSrc '.ai\.heartbeat-kimi.json'
+    '{"cli":"kimi","pid":1,"host":"x","ts":"now","handoff":"idle"}' | Set-Content -Path $hb
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC] [H:2]') 'fresh heartbeat sidecar -> no stall: marker' "got '$b'"
+    Remove-Item -Path $hb -Force
 
     # Legend: documents the new badge and fits the narrowest box (<= 70 chars).
     $legend = & ([scriptblock]::Create((Get-SelectorAssignmentText -Ast (Get-SelectorAst) -VarName 'badgeLegend') + "`r`n" + '$badgeLegend'))
@@ -701,8 +710,8 @@ function Test-DelayKnobs {
     Write-Log "  $tabAssign"
     Assert-That ($paneAssign -match 'RWN_4AI_PANE_DELAY_MS' -and $paneAssign -match '250') `
         '$paneDelayMs reads RWN_4AI_PANE_DELAY_MS, default 250' "got: $paneAssign"
-    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '1200') `
-        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 1200' "got: $tabAssign"
+    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '4000') `
+        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 4000' "got: $tabAssign"
 
     $prevPane = $env:RWN_4AI_PANE_DELAY_MS
     $prevTab  = $env:RWN_4AI_TAB_DELAY_MS
@@ -710,7 +719,7 @@ function Test-DelayKnobs {
         Remove-Item Env:RWN_4AI_PANE_DELAY_MS -ErrorAction SilentlyContinue
         Remove-Item Env:RWN_4AI_TAB_DELAY_MS -ErrorAction SilentlyContinue
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: default 250 when unset'
-        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 1200) -eq 1200) 'tab delay: default 1200 when unset'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 4000) -eq 4000) 'tab delay: default 4000 when unset'
 
         $env:RWN_4AI_PANE_DELAY_MS = '500'
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 500) 'pane delay: honored when set to 500'
@@ -793,9 +802,93 @@ Write-Log "Sandbox:  $sandboxRoot"
 $repoBefore    = Get-RepoFingerprint
 $rwnAutoBefore = Get-DirFingerprint $rwnAutoDir
 
+# ---------------------------------------------------------------------------
+# Find-Bash must pin GIT Bash and REJECT WSL bash (2026-07-12 fleet outage).
+#
+# Selector.ps1 and pane-runner.ps1 both shell out to bash. Both used to trust
+# `Get-Command bash` first. In the launcher's real environment (vbs -> powershell,
+# persisted Machine+User PATH) C:\WINDOWS\system32 comes FIRST and Git contributes
+# only ...\Git\cmd — git.exe, but NO bash.exe. So `bash` resolved to the WSL
+# launcher C:\Windows\System32\bash.exe, which re-parses its arguments as a shell
+# string and eats the backslashes of any Windows path handed to it:
+#   C:\Users\...\wt-bootstrap.sh -> C:Users...wt-bootstrap.sh -> exit 127
+#
+# This test RECONSTRUCTS that exact PATH (the real repro, not a mock) and asserts
+# the hardened Find-Bash still lands on Git Bash. Then it proves the resolved bash
+# really does execute a BACKSLASH Windows path — the thing WSL bash cannot do, and
+# the reason path conversion was never the fix.
+# ---------------------------------------------------------------------------
+function Test-FindBashPinsGitBash {
+    Write-Log "===== Find-Bash pins Git Bash, rejects WSL ====="
+
+    $ast = Get-SelectorAst
+    $src = (Get-SelectorFunctionText -Ast $ast -Names @('Find-Bash'))['Find-Bash']
+
+    # Order guard (anti-rot): the well-known Git Bash probes must appear BEFORE
+    # any Get-Command bash fallback. This ordering IS the fix.
+    $idxProbe = $src.IndexOf('Program Files\Git\bin\bash.exe')
+    $idxOnPath = $src.IndexOf('Get-Command bash')
+    Assert-That ($idxProbe -ge 0) 'Find-Bash probes a well-known Git Bash path' 'no Git Bash probe found'
+    Assert-That ($idxOnPath -lt 0 -or $idxProbe -lt $idxOnPath) `
+        'Find-Bash probes Git Bash BEFORE falling back to Get-Command bash' `
+        'Get-Command bash is still consulted first -- this is the outage'
+    Assert-That ($src -match '(?i)System32' -and $src -match '(?i)WindowsApps') `
+        'Find-Bash explicitly rejects System32 (WSL) and WindowsApps (Store) launchers' `
+        'the WSL/Store rejection is missing'
+
+    . ([scriptblock]::Create($src))
+
+    # THE REAL REPRO: the pane PATH, rebuilt from the persisted environment.
+    $prevPath = $env:PATH
+    try {
+        $env:PATH = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
+                    [Environment]::GetEnvironmentVariable('Path','User')
+
+        $naive = (Get-Command bash -ErrorAction SilentlyContinue)
+        if ($naive) {
+            Write-Log "  (Get-Command bash).Source under the pane PATH = $($naive.Source)"
+        }
+
+        $resolved = Find-Bash
+        Write-Log "  Find-Bash resolved = $resolved"
+
+        Assert-That ($null -ne $resolved) 'Find-Bash resolves a bash under the real pane PATH' 'returned $null'
+        Assert-That ($resolved -notmatch '(?i)\\System32\\') `
+            'Find-Bash does NOT return WSL bash (System32) under the pane PATH' `
+            "returned the WSL launcher: $resolved"
+        Assert-That ($resolved -notmatch '(?i)WindowsApps') `
+            'Find-Bash does NOT return a WindowsApps Store alias' "returned: $resolved"
+
+        # REAL, non-stubbed invocation: the resolved bash must execute a script
+        # addressed by a BACKSLASH Windows path. WSL bash fails this (it is how the
+        # fleet died); Git Bash passes it unconverted.
+        if ($resolved) {
+            $shPath = Join-Path $sandboxRoot 'backslash-probe.sh'
+            "echo GITBASH_OK" | Set-Content -Path $shPath -Encoding ascii
+            $winPath = $shPath -replace '/', '\'
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $out = & $resolved $winPath 2>&1 | Out-String
+                $code = $LASTEXITCODE
+            } finally { $ErrorActionPreference = $prevEAP }
+            Write-Log "  real invocation: `"$resolved`" `"$winPath`" -> exit=$code out=$($out.Trim())"
+            Assert-That ($code -eq 0 -and $out -match 'GITBASH_OK') `
+                'resolved bash EXECUTES a backslash Windows path (exit 0) -- no conversion needed' `
+                "exit=$code out=$out"
+            Assert-That ($out -notmatch 'No such file or directory') `
+                'resolved bash did not eat the backslashes (no WSL "No such file" failure)' `
+                "output: $out"
+        }
+    } finally {
+        $env:PATH = $prevPath
+    }
+}
+
 $script:abortReason = $null
 try {
     Assert-EnvOverrideContract
+    Test-FindBashPinsGitBash
     Test-InstallerPath
     Test-FallbackCopyPath
     Test-Badges

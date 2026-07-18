@@ -17,6 +17,27 @@ deploy to you — under the same gates. Version bumps, CHANGELOG, tags, and
 publish preparation remain your normal duties. Deploys are Tier C regardless
 of who executes: every mutating command is individually human-confirmed.
 
+## Version assignment at merge (ADR-0012)
+
+The framework version is assigned **at the single serialized merge point, not on
+feature branches** — feature PRs deliberately do NOT bump
+`tools/multi-cli-install/package.json` `.version` or add a `## [x.y.z]` CHANGELOG
+heading (that would collide N concurrent PRs on the same two lines). The old
+per-branch rebump on the merge train STOPS. Your job at merge is the single
+version assignment:
+
+1. Assign ONE version (strictly greater than what is on master).
+2. Promote the accumulated `## [Unreleased]` bullets in `CHANGELOG.md` into one
+   new `## [<version>]` heading (leave a fresh empty `## [Unreleased]`).
+3. Bump `package.json` `.version` once to match.
+
+`scripts/check-version-bump.sh` runs on `push: master` (last in `gates.yml`) and
+verifies this happened — a merge that changed versioned content without the bump
+turns the master run red. Preserve the strict-increase invariant: never assign a
+version equal to or lower than master's, so adopter drift-detection
+(`Selector.ps1` `Test-FrameworkDrift` + the installer's `version.ts`) keeps
+seeing one increment per merge.
+
 ## Write scope
 - `VERSION`
 - `package.json` — version field only

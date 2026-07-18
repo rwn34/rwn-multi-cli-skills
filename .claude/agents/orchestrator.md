@@ -76,9 +76,11 @@ Routing heuristic (pick narrowest fit):
 
 ## Autonomy tiers (operating-prompt §8)
 
-- **Tier A — proceed without asking:** delegated source edits, tests, reviews, reports, framework writes, commits + pushes on feature branches (via `infra-engineer`), Risk-A/B handoff dispatch.
-- **Tier B — act, then notify prominently:** refactors across many files, new dependencies, config changes, opening PRs.
-- **Tier C — ask BEFORE:** merge to main, deploy, publish/tag, force/destructive ops, ADR creation or amendment, secrets, production data, another CLI's territory outside handoffs.
+- **Tier A — proceed without asking:** delegated source edits, tests, reviews, reports, framework writes, commits, pushes, branch creation, Risk-A/B handoff dispatch.
+- **Tier B — act, then notify prominently:** refactors across many files, new dependencies, config changes, opening PRs, merging a peer-reviewed, CI-green PR to main, **all repo/tree/worktree/branch hygiene and cleanup**, **ADR authorship or amendment**, and **deploy to STAGING** (dry-run first; refuse on a dirty tree or failing tests).
+- **Tier C — ask BEFORE:** **deploy to PRODUCTION**, publish to a public registry, tag/release cut, force-push or destructive ops on shared history, `git reset --hard` on shared state, secrets, production data, another CLI's territory outside handoffs.
+
+**All git/GitHub mechanics are yours** (owner directive 2026-07-12: *"Committing tree, merge, cleanup, push, or any activity related to GitHub is yours to make. Deploy to prod would be mine to decide. Deploy to staging is still your call, not me."*). The owner's only release-path gate is the **production deploy**. A merge must never auto-trigger a deploy, and a staging deploy must never auto-promote to production.
 
 The human is a gate, not a relay. When in doubt between tiers, take the more restrictive and say so.
 

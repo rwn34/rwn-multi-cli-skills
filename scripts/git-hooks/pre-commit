@@ -77,23 +77,39 @@ _territory_violation() {
     case "$committer" in
         claude-code)
             case "$p" in
-                # SSOT replica-steering exception (ADR-0005 amendment 2026-07-10):
-                # claude-code MAY commit a .kimi/steering/ or .kiro/steering/ path
-                # ONLY when that exact path is a replica listed in .ai/sync.md.
-                # Hand-authored non-replicas (e.g. 00-ai-contract.md) stay blocked.
-                .kimi/steering/*|.kiro/steering/*)
-                    _is_sync_replica "$p" && return 1
+                # SSOT replica exception (ADR-0005 amendment 2026-07-10, WIDENED
+                # 2026-07-12): claude-code MAY commit ANY path under another CLI's
+                # dir ONLY when that exact path is a replica registered in
+                # .ai/sync.md. Originally steering-only; widened to the full replica
+                # set so the two non-steering replicas
+                # (.kimi/resource/karpathy-guidelines-examples.md,
+                # .kiro/skills/karpathy-guidelines/SKILL.md) land in the same atomic
+                # SSOT commit. Hand-authored non-replicas (00-ai-contract.md, hooks,
+                # agents) stay blocked. The lookup uses the ORIGINAL-case path ($2),
+                # not the lowercased $p, so an uppercase SKILL.md matches the registry
+                # verbatim and any case-variant fails CLOSED (blocked).
+                .kimi/*|.kiro/*)
+                    _is_sync_replica "$2" && return 1
                     return 0 ;;
-                .kimi/*|.kiro/*) return 0 ;;
             esac ;;
         kimi-cli)
             case "$p" in .claude/*|.kiro/*|.opencode/*|opencode.json) return 0 ;; esac ;;
         kiro-cli)
             case "$p" in .claude/*|.kimi/*|.opencode/*|opencode.json) return 0 ;; esac ;;
         opencode)
-            # OpenCode's lane is a whitelist: activity log, reports, handoffs ONLY.
+            # OpenCode's lane is a whitelist — it must stay in lockstep with
+            # WRITABLE_LANE in .opencode/plugin/framework-guard.js (the write-time
+            # half of the same rule; this is the commit-time half).
+            #
+            # .ai/activity/entries/* added 2026-07-12 (ADR-0010 blocker): the
+            # activity log becomes an entry-per-file spool. Additive — log.md stays
+            # committable, because the migration has not happened yet. Without this,
+            # OpenCode's very first spool entry would be REJECTED at commit.
+            # Deliberately NOT added: .ai/activity/archive/* — archival is a `git mv`
+            # run by Claude/the owner, not OpenCode's job. Add it when someone needs it.
             case "$p" in
-                .ai/activity/log.md|.ai/reports/*|.ai/handoffs/*) return 1 ;;
+                .ai/activity/log.md|.ai/activity/entries/*) return 1 ;;
+                .ai/reports/*|.ai/handoffs/*|.github/*)     return 1 ;;
                 *) return 0 ;;
             esac ;;
         *)
@@ -195,6 +211,123 @@ fail_closed() {
     echo "pre-commit (ADR-0005): $1 — refusing to fail open. Fix or use 'git commit --no-verify'." >&2
     exit 1
 }
+
+# ---- SSOT auto-sync (ADR-0005 second amendment, 2026-07-12) -----------------
+# A staged change to an SSOT source (.ai/instructions/**) must land ATOMICALLY
+# with its regenerated replicas, or the drift gate (.ai/tools/check-ssot-drift.sh)
+# goes red in CI and throttles the Tier-B auto-merge. sync-replicas.sh is the ONE
+# generator; the drift checker calls the same code, so they cannot disagree.
+#
+#   * committer claude-code (the fleet git operator): regenerate IN PLACE and
+#     stage the replicas into THIS commit — the autonomy the owner approved. The
+#     widened territory exception (above) lets those replica paths through.
+#   * any other identity (human / unknown): NEVER silently mutate the commit.
+#     Regenerate into a throwaway tree, compare against what is staged, and REFUSE
+#     with a clear hint if any replica is missing/stale.
+#
+# If sync-replicas.sh aborts (e.g. an SSOT source carries skip-worktree because a
+# bootstrapped worktree's reverse-write guard is active), the abort MUST propagate
+# and the commit must fail loudly.  Stderr is captured and echoed so the committer
+# sees the exact source path and the fix (`git update-index --no-skip-worktree`).
+ssot_staged="$(git diff --cached --name-only -- .ai/instructions/ 2>/dev/null)"
+if [ -n "$ssot_staged" ]; then
+    gen=".ai/tools/sync-replicas.sh"
+    [ -r "$gen" ] || fail_closed "SSOT source staged but generator missing ($gen)"
+
+    if [ "$committer" = "claude-code" ]; then
+        gen_out="$(mktemp)"; gen_err="$(mktemp)"
+        bash "$gen" >"$gen_out" 2>"$gen_err"; grc=$?
+        manifest="$(cat "$gen_out")"
+        rm -f "$gen_out"
+        if [ "$grc" -ne 0 ]; then
+            { echo "sync-replicas.sh refused to regenerate replicas:"; cat "$gen_err"; } >&2
+            rm -f "$gen_err"
+            fail_closed "SSOT source may be skip-worktree or another generator error (see above)"
+        fi
+        rm -f "$gen_err"
+        while IFS="$(printf '\t')" read -r _src dst; do
+            [ -n "$dst" ] || continue
+            git add -- "$dst" 2>/dev/null || fail_closed "could not stage regenerated replica: $dst"
+        done <<EOF
+$manifest
+EOF
+    else
+        gtmp="$(mktemp -d)" || fail_closed "mktemp failed"
+        gen_out="$(mktemp)"; gen_err="$(mktemp)"
+        bash "$gen" --dest-root "$gtmp" >"$gen_out" 2>"$gen_err"; grc=$?
+        manifest="$(cat "$gen_out")"
+        rm -f "$gen_out"
+        if [ "$grc" -ne 0 ]; then
+            { echo "sync-replicas.sh refused to regenerate replicas:"; cat "$gen_err"; } >&2
+            rm -f "$gen_err"; rm -rf "$gtmp"
+            fail_closed "SSOT source may be skip-worktree or another generator error (see above)"
+        fi
+        rm -f "$gen_err"
+        stale=""
+        while IFS="$(printf '\t')" read -r _src dst; do
+            [ -n "$dst" ] || continue
+            # Compare the STAGED (index) content against the freshly generated one.
+            if ! git show ":$dst" 2>/dev/null | diff -q - "$gtmp/$dst" >/dev/null 2>&1; then
+                stale="${stale}  - ${dst}
+"
+            fi
+        done <<EOF
+$manifest
+EOF
+        rm -rf "$gtmp"
+        if [ -n "$stale" ]; then
+            {
+                echo "=============================================================================="
+                echo "COMMIT REJECTED — SSOT changed without matching replicas (ADR-0005)"
+                echo "=============================================================================="
+                echo "Committer (git config user.name): ${committer_raw:-<unset>}  →  policy identity: '$committer'"
+                echo
+                echo "You staged a change under .ai/instructions/ (the SSOT), but these CLI-native"
+                echo "replicas are missing or stale in the commit:"
+                printf '%s' "$stale"
+                echo "SSOT changed; run 'bash .ai/tools/sync-replicas.sh' and re-stage the replicas,"
+                echo "or commit as claude-code (the fleet operator auto-stages them)."
+                echo
+                echo "Owner override (in a pinch):  git commit --no-verify"
+                echo "=============================================================================="
+            } >&2
+            exit 1
+        fi
+    fi
+fi
+
+# ---- Activity-log superset gate (ADR-0010, 2026-07-17) ----------------------
+# A commit staging .ai/activity/log.md must not DROP entries that already exist
+# in origin/main, the working tree, or any backup/KEEP file. The log is prepend-
+# order and timestamps are non-monotonic, so diff stats against main are blind
+# to uncommitted disk entries; the checker compares the SET of `^## ` headers.
+log_staged="$(git diff --cached --name-only -- .ai/activity/log.md 2>/dev/null)"
+if [ -n "$log_staged" ]; then
+    log_superset=".ai/tools/check-log-superset.sh"
+    [ -r "$log_superset" ] || fail_closed "activity log staged but superset checker missing ($log_superset)"
+
+    tmp_log="$(mktemp)" || fail_closed "mktemp failed"
+    if ! git show ":.ai/activity/log.md" > "$tmp_log" 2>/dev/null; then
+        rm -f "$tmp_log"
+        fail_closed "could not read staged .ai/activity/log.md"
+    fi
+    if ! bash "$log_superset" "$tmp_log" 2>&1; then
+        rm -f "$tmp_log"
+        {
+            echo "=============================================================================="
+            echo "COMMIT REJECTED — activity log would lose entries (ADR-0010)"
+            echo "=============================================================================="
+            echo "Staged .ai/activity/log.md is missing one or more entry headers that exist in"
+            echo "origin/main, the working tree, or a .ai/activity/log.md.bak / log.md.KEEP* file."
+            echo "Restore the missing entries, re-stage, and try again."
+            echo
+            echo "Owner override (in a pinch):  git commit --no-verify"
+            echo "=============================================================================="
+        } >&2
+        exit 1
+    fi
+    rm -f "$tmp_log"
+fi
 
 # Gather staged paths (NUL-delimited). Fail CLOSED if git cannot enumerate them.
 tmp_all="$(mktemp)" || fail_closed "mktemp failed"

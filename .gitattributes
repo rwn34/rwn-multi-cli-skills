@@ -13,7 +13,10 @@
 *.ps1 text eol=crlf
 
 # Explicit text (defensive — should already be covered by auto)
-*.md text
+# *.md pinned to eol=lf: the SSOT replicas (.claude/skills, .kimi/steering,
+# .kimi/resource, .kiro/steering, .kiro/skills) are byte-diffed against generator
+# output by check-ssot-drift.sh — a CRLF checkout would show phantom drift.
+*.md text eol=lf
 *.yml text
 *.yaml text
 *.json text

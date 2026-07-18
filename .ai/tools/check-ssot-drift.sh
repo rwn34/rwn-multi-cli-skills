@@ -1,96 +1,17 @@
 #!/bin/bash
-# check-ssot-drift.sh — verify CLI-native replicas match .ai/instructions/ sources.
-# Exit 0 if all synced, 1 if any drift. Run from repo root.
+# check-ssot-drift.sh — COMPATIBILITY SHIM (2026-07-13).
 #
-# SSOT map lives in .ai/sync.md (authoritative pair list — keep this script in
-# step with it; the final "Checked:" count is the source of truth for totals).
+# The SSOT drift check now lives in the ONE generator, .ai/tools/sync-replicas.sh
+# (--check mode): same registry, same transform, same regenerate-and-diff — one
+# drift authority instead of two scripts that could disagree (ADR-0005 second
+# amendment). This shim keeps every existing caller (CI muscle memory, docs,
+# SSOT references) working with the IDENTICAL output contract and exit codes:
+#   DRIFT: <src> -> <dst> (N lines differ)   per drifted replica
+#   MISSING: <path>                          per absent file
+#   Checked: <N> replicas, Drift: <M>        final summary
+# Exit 0 iff Drift == 0.
 #
-# Preamble shapes (stripped before compare):
-#   Claude SKILL.md  — `---\n<frontmatter>\n---\n\n<!-- SSOT: ... -->\n\n<body>`
-#   Kiro  SKILL.md   — same shape, but with extra `<!-- Kiro ... -->` /
-#                      `<!-- Default-agent ... -->` comment lines BEFORE the
-#                      SSOT marker. Stripping through the SSOT line + one
-#                      blank line handles both uniformly.
-# For both, body that remains must equal source byte-for-byte.
-# Kimi steering + Claude EXAMPLES.md + Kimi resource = no preamble (direct copy).
+# New call sites should use the authoritative entry point directly:
+#   bash .ai/tools/sync-replicas.sh --check
 
-drift=0
-checked=0
-
-# Strip everything up to and including first `<!-- SSOT:` line + one blank line.
-strip_preamble() {
-  awk '
-    !started && /^<!-- SSOT:/ { skip_blank=1; next }
-    !started && skip_blank && /^$/ { started=1; next }
-    !started && skip_blank { started=1; print; next }
-    started { print }
-  ' "$1"
-}
-
-check_pair() {
-  local src="$1" dst="$2" strip="$3"
-  checked=$((checked + 1))
-
-  if [ ! -f "$src" ]; then
-    echo "MISSING: $src"
-    drift=$((drift + 1))
-    return
-  fi
-  if [ ! -f "$dst" ]; then
-    echo "MISSING: $dst"
-    drift=$((drift + 1))
-    return
-  fi
-
-  local tmp
-  tmp=$(mktemp)
-  if [ "$strip" = "yes" ]; then
-    strip_preamble "$dst" > "$tmp"
-  else
-    cat "$dst" > "$tmp"
-  fi
-
-  local n
-  n=$(diff "$src" "$tmp" | grep -c '^[<>]' || true)
-  if [ "$n" -ne 0 ]; then
-    echo "DRIFT: $src -> $dst ($n lines differ)"
-    drift=$((drift + 1))
-  fi
-  rm -f "$tmp"
-}
-
-# karpathy-guidelines / principles
-check_pair ".ai/instructions/karpathy-guidelines/principles.md" ".claude/skills/karpathy-guidelines/SKILL.md"   yes
-check_pair ".ai/instructions/karpathy-guidelines/principles.md" ".kimi/steering/karpathy-guidelines.md"          no
-check_pair ".ai/instructions/karpathy-guidelines/principles.md" ".kiro/steering/karpathy-guidelines.md"          no
-# karpathy-guidelines / examples
-check_pair ".ai/instructions/karpathy-guidelines/examples.md"   ".claude/skills/karpathy-guidelines/EXAMPLES.md" no
-check_pair ".ai/instructions/karpathy-guidelines/examples.md"   ".kimi/resource/karpathy-guidelines-examples.md" no
-check_pair ".ai/instructions/karpathy-guidelines/examples.md"   ".kiro/skills/karpathy-guidelines/SKILL.md"      yes
-# orchestrator-pattern / principles
-check_pair ".ai/instructions/orchestrator-pattern/principles.md" ".claude/skills/orchestrator-pattern/SKILL.md"  yes
-check_pair ".ai/instructions/orchestrator-pattern/principles.md" ".kimi/steering/orchestrator-pattern.md"        no
-check_pair ".ai/instructions/orchestrator-pattern/principles.md" ".kiro/steering/orchestrator-pattern.md"        no
-# agent-catalog / principles
-check_pair ".ai/instructions/agent-catalog/principles.md"       ".claude/skills/agent-catalog/SKILL.md"          yes
-check_pair ".ai/instructions/agent-catalog/principles.md"       ".kimi/steering/agent-catalog.md"                no
-check_pair ".ai/instructions/agent-catalog/principles.md"       ".kiro/steering/agent-catalog.md"                no
-# code-graphs / principles
-check_pair ".ai/instructions/code-graphs/principles.md"         ".claude/skills/code-graphs/SKILL.md"            yes
-check_pair ".ai/instructions/code-graphs/principles.md"         ".kimi/steering/code-graphs.md"                  no
-check_pair ".ai/instructions/code-graphs/principles.md"         ".kiro/steering/code-graphs.md"                  no
-# self-grep-verify / principles
-check_pair ".ai/instructions/self-grep-verify/principles.md"    ".claude/skills/self-grep-verify/SKILL.md"       yes
-check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kimi/steering/self-grep-verify.md"             no
-check_pair ".ai/instructions/self-grep-verify/principles.md"    ".kiro/steering/self-grep-verify.md"             no
-# operating-prompt / principles
-check_pair ".ai/instructions/operating-prompt/principles.md"    ".claude/skills/operating-prompt/SKILL.md"       yes
-check_pair ".ai/instructions/operating-prompt/principles.md"    ".kimi/steering/operating-prompt.md"             no
-check_pair ".ai/instructions/operating-prompt/principles.md"    ".kiro/steering/operating-prompt.md"             no
-# delivery-integrity / principles
-check_pair ".ai/instructions/delivery-integrity/principles.md"  ".claude/skills/delivery-integrity/SKILL.md"     yes
-check_pair ".ai/instructions/delivery-integrity/principles.md"  ".kimi/steering/delivery-integrity.md"           no
-check_pair ".ai/instructions/delivery-integrity/principles.md"  ".kiro/steering/delivery-integrity.md"           no
-
-echo "Checked: $checked replicas, Drift: $drift"
-[ "$drift" -eq 0 ] && exit 0 || exit 1
+exec bash "$(dirname "$0")/sync-replicas.sh" --check "$@"

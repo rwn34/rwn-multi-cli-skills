@@ -8,7 +8,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync, writeFileSync, rmSync, readdirSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const MARKER = '# ADDED BY @rwn34/multi-cli-install';
 
@@ -82,6 +82,29 @@ describe('copyFrameworkFiles', () => {
     expect(existsSync(join(target, 'CLAUDE.md'))).toBe(true);
     expect(existsSync(join(target, 'AGENTS.md'))).toBe(true);
     expect(existsSync(join(target, 'opencode.json'))).toBe(true);
+    // OpenCode's mechanical guard layer must ship — opencode.json alone leaves
+    // OpenCode unguarded in onboarded projects (ADR-0002 amendment 2026-07-09).
+    expect(existsSync(join(target, '.opencode', 'contract.md'))).toBe(true);
+    expect(existsSync(join(target, '.opencode', 'plugin', 'framework-guard.js'))).toBe(true);
+  });
+
+  it('installed OpenCode guard actually blocks out-of-lane writes', async () => {
+    // The 2026-07-12 defect was a file's presence assumed and never verified.
+    // This imports the guard OUT OF THE INSTALLED TARGET and exercises it.
+    const target = makeTempDir('copy-fw-guard');
+    copyFrameworkFiles(templateDir, target, false);
+
+    const guardPath = join(target, '.opencode', 'plugin', 'framework-guard.js');
+    expect(existsSync(guardPath)).toBe(true);
+    const { decide } = await import(pathToFileURL(guardPath).href);
+
+    // In-lane write: allowed.
+    expect(decide({ tool: 'write', args: { filePath: '.ai/reports/x.md' }, root: target }).allow).toBe(true);
+    // Out-of-lane writes: blocked.
+    expect(decide({ tool: 'write', args: { filePath: 'src/evil.txt' }, root: target }).allow).toBe(false);
+    expect(decide({ tool: 'write', args: { filePath: '.kimi/config.toml' }, root: target }).allow).toBe(false);
+    // Destructive command: blocked.
+    expect(decide({ tool: 'bash', args: { command: 'git push --force origin master' }, root: target }).allow).toBe(false);
   });
 
   it('returns list of copied paths', () => {
@@ -110,10 +133,10 @@ describe('sanitizeState', () => {
     copyFrameworkFiles(templateDir, target, false);
     sanitizeState(target, '0.0.1', false);
 
-    // Activity log should be clean header
-    const log = readFileSync(join(target, '.ai', 'activity', 'log.md'), 'utf-8');
-    expect(log).toContain('# Activity Log');
-    expect(log).not.toContain('## 2026');
+    // ADR-0010: activity log is an entry-per-file spool — no log.md (it becomes
+    // a generated view), and an empty entries/ spool holding only .gitkeep.
+    expect(existsSync(join(target, '.ai', 'activity', 'log.md'))).toBe(false);
+    expect(readdirSync(join(target, '.ai', 'activity', 'entries'))).toEqual(['.gitkeep']);
 
     // Handoff open/done dirs should be empty
     for (const cli of ['to-kiro', 'to-kimi', 'to-claude']) {

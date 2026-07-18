@@ -12,6 +12,29 @@ operator (ADR-0002 Stage 2, Crush replacement per owner decision 2026-07-09)
 Each CLI stays in its lane; role definitions and limitations live in the
 operating-prompt SSOT (`.ai/instructions/operating-prompt/principles.md` §4).
 
+## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13 (SSOT §15). Applies to **every** CLI. **This is a
+Windows 11 host and the shell is PowerShell.** There is no WSL. The fleet keeps
+making Linux assumptions and keeps paying for them — stop.
+
+- Fleet tooling is `.ps1` (`tools/4ai-panes/*.ps1` + `test-*.ps1`). In PowerShell,
+  use PowerShell idioms: `Get-FileHash` not `sha256sum`, `Test-Path` not `test -f`.
+- `bash` exists **only** via Git-for-Windows (MSYS) — a guest, not the host.
+  `.ai/tools/*.sh` and the hooks are bash, invoked explicitly (`bash foo.sh`);
+  the exec bit is not tracked (mode `100644`), so `./foo.sh` is not the convention.
+- **MSYS mangles colon-joined args**: `git show "<ref>:<path>"` gets garbled — use
+  `git ls-tree` + `git cat-file -p <blobsha>` instead.
+- The bash guard refuses unparseable constructs (e.g. a leading option before a
+  command). Write plain, boring commands; don't be clever with the shell.
+- No Linux userland: no `apt`, no guaranteed `/usr/bin`, `/tmp`, or GNU flags.
+- `.ai/` is a Windows **junction** (`mklink /J`), not a POSIX symlink, shared into
+  every worktree — it behaves differently under git. See
+  `docs/specs/junction-reverse-write-guard.md`.
+
+**Rule: match the tool to the host.** If you're guessing which shell will run your
+command, you're about to file another incident.
+
 ## Shared framework
 
 - `.ai/README.md` — full layout explanation
@@ -33,17 +56,77 @@ Each CLI reads its own contract from its native always-loaded path:
 A breadcrumb pointer exists at `.claude/00-ai-contract.md` so any CLI browsing
 `.claude/` can locate Claude's contract without knowing Claude's conventions.
 
+## OpenCode's lane (OpenCode only — other CLIs skip this section)
+
+**GitHub / repo-ops lane** (owner directive 2026-07-11, extended 2026-07-12;
+operating-prompt §8/§14): OpenCode owns GitHub and DevOps *operations* — opening
+PRs, **merging peer-reviewed CI-green PRs (Tier B)**, branch deletion,
+**repo/tree/worktree cleanup (Tier B)**, release chores, **CI config / workflow
+fixes**, tag/version consistency, repo housekeeping. **All git/GitHub mechanics
+are fleet-executed — the owner does not gate them.** Claude's budget is the
+smallest in the fleet, so it routes this work to OpenCode as handoffs in
+`.ai/handoffs/to-opencode/open/`. Guardrails are unchanged: no source-code edits,
+dry-run first for anything mutating a live environment.
+
+**Confirmed-stale CLI kills are fleet-executed (Tier B)** (owner directive
+2026-07-13; operating-prompt §8.1): killing a **confirmed-stale CLI child
+process** needs no owner ask — act, then notify. Guards: two independent
+staleness signals (one is not confirmation), kill the **CLI child only, never
+the pane-runner or supervisor**, any fleet member may kill any pane's stale
+child, log the evidence (PIDs, CPU/log timestamps, claim age) at kill time, and
+escalate instead of guessing when confirmation is ambiguous. No Tier-C floor is
+relaxed by this.
+
+**Deploy — the environment decides the gate** (ADR-0011 amendment 2026-07-12b):
+**staging deploy is Tier B** (OpenCode's call — dry-run first, refuse on a dirty
+tree or failing tests, then notify), **production deploy is Tier C** (owner-gated,
+per-deploy human confirmation on every mutating command, all four Stage-2
+conditions intact). A merge must never auto-trigger a deploy, and a staging deploy
+must never auto-promote to production. Full conditions: `.opencode/contract.md`.
+
+**OpenCode's writable lane** — enforced mechanically by
+`.opencode/plugin/framework-guard.js`; everything not listed is denied:
+
+<!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
+- `.ai/activity/log.md`
+- `.ai/activity/entries/**`
+- `.ai/reports/**`
+- `.ai/handoffs/**`
+- `.github/**`
+<!-- LANE:END -->
+
+`.ai/activity/entries/**` is permission plumbing for the ADR-0010 activity-log
+spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today.
+
+`.github/**` is the only source-adjacent path in the lane. Project source,
+`.claude/`, `.kimi/`, `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/`
+(ADRs), `infra/`, `scripts/` and secrets files are all blocked. Full contract:
+`.opencode/contract.md`.
+
 ## Activity log protocol (same for all CLIs)
 
-- **Read** `.ai/activity/log.md` at the start of non-trivial work. Newest entries on top.
+**Never read `.ai/activity/log.md` wholesale.** It is ~600 KB / 2,100+ lines
+(370+ entries) and grows ~5–10 KB/day; a full read costs ~125k tokens on almost
+entirely irrelevant history. Newest entries are at the **top**, so everything you
+actually need sits in the first few dozen lines.
+
+- **Recent activity** → if your CLI injects the top of the log into context each
+  turn (Claude Code's `UserPromptSubmit` hook does), it is **already in your
+  context before you ask** — use it, do not re-read. If your CLI has no inject
+  hook (OpenCode), read only a **bounded top window** (`head -40
+  .ai/activity/log.md`, or a `Read` with `limit`) — that bounded read *is* the
+  "read at the start of non-trivial work" step.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
+  read with `limit`/`offset`. Never the whole file, never `cat`.
+
 - **Prepend** one terse entry after substantive work. Format:
 
-        ## YYYY-MM-DD HH:MM — <cli-name>
+        ## YYYY-MM-DD HH:MM (UTC+7) - <cli-name>
         - Action: <one-line summary>
-        - Files: <paths, or "—">
-        - Decisions: <non-obvious choices, or "—">
+        - Files: <paths, or "-">
+        - Decisions: <non-obvious choices, or "-">
 
-**Timestamp rule:** the `HH:MM` is your current local wall-clock time at the moment
+**Timestamp rule:** the `HH:MM` is your current UTC+7 wall-clock time at the moment
 you prepend — i.e. finish time of the work, not start time. CLIs on different local
 clocks may produce timestamps that don't sort monotonically; prepend order is
 authoritative, timestamps are annotations.
@@ -58,7 +141,7 @@ paste-ready instruction file to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-s
 `.ai/handoffs/README.md` + `template.md` for the protocol and shape). Handoffs may
 be addressed to any CLI, including Claude. The `YYYYMMDDHHMM` filename prefix is
 **UTC** (`date -u +%Y%m%d%H%M`) even though your `Created:` line and activity-log
-entries use local wall-clock — do not put local time in the filename.
+entries use UTC+7 wall-clock — do not put local time in the filename.
 
 **Protocol v3 (2026-07-09):** every handoff carries `Auto:` (default `yes`) and
 `Risk:` (`A`/`B`/`C` per the autonomy tiers in the operating-prompt SSOT §8).
@@ -68,6 +151,8 @@ When you are the **recipient**, self-retire on completion: set the handoff Statu
 to `DONE` and move the file from `open/` to `done/` yourself — the sender
 validates post-hoc. If blocked, leave it in `open/` as `BLOCKED` with a verbatim
 `## Blocker`. Check your own inbox between tasks — poll, don't wait to be told.
+
+The `Auto:` tag is the ownership boundary: `Auto: yes` + Risk A/B belongs to the auto pane (a cockpit must not hand-take it), `Auto: no` / Risk C is cockpit-owned; a cockpit takes an `Auto: yes` handoff only by first running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` + claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
 
 ## Delivery integrity (what counts as "done")
 

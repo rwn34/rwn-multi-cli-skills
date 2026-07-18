@@ -46,13 +46,13 @@ This template solves each: shared `.ai/activity/log.md` for the audit trail; a `
 - **Delegation** — scoped 13-subagent roster per CLI with explicit write boundaries enforced at the tool layer.
 - **Description** — structured [handoff protocol](./.ai/handoffs/README.md) for cross-CLI work (paste-ready instruction files, not ad-hoc chat).
 - **Discernment** — [safety hooks](./.claude/hooks/) + [SSOT drift checker](./.ai/tools/check-ssot-drift.sh) + CI test suites as systematic quality gates.
-- **Diligence** — [append-only activity log](./.ai/activity/log.md) + [known-limitations doc](./.ai/known-limitations.md) for transparent, auditable collaboration.
+- **Diligence** — [entry-per-file activity spool](./.ai/activity/entries/) (one file per entry — concurrent writes can't clobber, ADR-0010) + [known-limitations doc](./.ai/known-limitations.md) for transparent, auditable collaboration.
 
 ## Prerequisites
 
 Before running any install path, verify these:
 
-- **Git installed.** `git --version` should print a version. Fresh installs of git default new repos to `main` (not `master`) since 2020 — keep that in mind for the Phase 6 follow-up below.
+- **Git installed.** `git --version` should print a version. Fresh installs of git default new repos to `main` since 2020 — keep that in mind for the Phase 6 follow-up below.
 - **Git user configured globally.** The installer makes a commit; without global identity, git aborts with `fatal: unable to auto-detect email address`. Run once:
   ```
   git config --global user.email "you@example.com"
@@ -73,7 +73,7 @@ Three install paths. The bash scripts (A, B) are battle-tested. The Node.js inst
   ```powershell
   & "C:\Program Files\Git\bin\bash.exe" "<script-path>" "<args>"
   ```
-- **Default branch is `main`, not `master`** on freshly-initialized repos. If a follow-up step says `git checkout master` and your branch is `main`, substitute.
+- **Default branch is `main`** on freshly-initialized repos. If a follow-up step says `git checkout main` and your branch is different, substitute.
 
 | Mode | Path | When |
 |---|---|---|
@@ -192,11 +192,11 @@ The bash path will stay canonical until the Node.js installer reaches v1.0.0 wit
 
 ### After install — merge the install branch
 
-The installer leaves you on the `ai-template-install` branch with one commit. Merge it into your default branch (modern git: `main`; older repos: `master`):
+The installer leaves you on the `ai-template-install` branch with one commit. Merge it into your default branch (`main`):
 
 ```bash
 # Pick whichever is your default branch
-git checkout main   # or: git checkout master
+git checkout main
 git merge --no-ff ai-template-install
 ```
 
@@ -509,7 +509,7 @@ The canonical usage rules live in [`.ai/instructions/code-graphs/principles.md`]
 │   │   ├── to-claude/{open,done}/    Work queued for Claude
 │   │   ├── to-kimi/{open,done}/      Work queued for Kimi
 │   │   └── to-kiro/{open,done}/      Work queued for Kiro
-│   ├── activity/log.md               Chronological audit log (newest first)
+│   ├── activity/entries/             Chronological audit spool — one file per entry (log.md is a generated view, ADR-0010)
 │   ├── reports/                      Audit / review / security reports
 │   ├── tools/                        Framework tooling (drift checker, etc.)
 │   ├── tests/                        Framework regression protocols
@@ -582,7 +582,7 @@ The canonical usage rules live in [`.ai/instructions/code-graphs/principles.md`]
 
 1. **Kiro runtime doesn't fire hooks for spawned subagents** (platform bug, upstream-pending). Mitigated by prompt-level SAFETY RULES in every Kiro subagent config — soft enforcement, empirically tested to refuse `evil.txt` writes, but not a hard guarantee under adversarial context.
 2. **Kimi hooks require manual install step** (paste snippet to `~/.kimi/config.toml`) — not auto-wired because it's user-scope config.
-3. **Concurrency is characterized but not tested.** Three CLIs writing to `.ai/activity/log.md` simultaneously has known race potential; a manual test protocol exists at [`.ai/tests/concurrency-test-protocol.md`](./.ai/tests/concurrency-test-protocol.md) but hasn't been run.
+3. **Concurrency at the coordination plane is partly convention-based.** The activity-log write race is closed structurally (ADR-0010, 2026-07-13): each entry is its own file in `.ai/activity/entries/`, so concurrent writers never share a write — demonstrated with 40/40 same-second writers surviving intact. Handoff-queue numbering and SSOT-replica regeneration remain convention-guarded; the manual protocol at [`.ai/tests/concurrency-test-protocol.md`](./.ai/tests/concurrency-test-protocol.md) covers the residual scenarios.
 4. **No RBAC** — any user running any CLI has full framework power. Solo / small team only.
 5. **No observability / metrics** — activity log is the only audit mechanism; editable by convention, not enforcement.
 6. **Handoff protocol is heavyweight for quick fixes** — 30-line change requires a file, a move, a log entry. Fine for real work; ceremony-heavy for typos.

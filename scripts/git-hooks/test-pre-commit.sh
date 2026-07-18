@@ -78,22 +78,107 @@ assert_allow "claude -> .claude"         _territory_violation claude-code ".clau
 assert_allow "kimi -> .kimi"             _territory_violation kimi-cli ".kimi/steering/x.md"
 assert_allow "kimi -> source"            _territory_violation kimi-cli "backend/main.rs"
 
-echo "== SSOT replica-steering exception (claude-code only, ADR-0005 2026-07-10) =="
-# sync.md replicas -> claude-code may fleet-commit them.
+echo "== OpenCode lane: activity-log entry spool (ADR-0010 blocker, 2026-07-12) =="
+# The commit-time half of the guard's WRITABLE_LANE. If these two disagree, OpenCode
+# can write an entry and then have the commit rejected — silently, with no error a
+# human sees. Keep in lockstep with .opencode/plugin/framework-guard.js.
+#
+# ALLOW: the spool.
+assert_allow "opencode -> spool entry"     _territory_violation opencode ".ai/activity/entries/20260712T101500Z-opencode-x-a1b2.md"
+assert_allow "opencode -> spool nested"    _territory_violation opencode ".ai/activity/entries/2026-07/x.md"
+# NO REGRESSION: the old path is still the live log and must still commit.
+assert_allow "opencode -> log.md (no regression)" _territory_violation opencode ".ai/activity/log.md"
+# ALLOW: .github/* — the commit-time half of the repo-ops lane the guard granted
+# in PR #45. The contract assigns OpenCode "CI config/workflow fixes" and "opening
+# PRs"; without this it could WRITE the workflow fix and then be REJECTED at commit.
+assert_allow "opencode -> .github workflow" _territory_violation opencode ".github/workflows/gates.yml"
+assert_allow "opencode -> .github nested"   _territory_violation opencode ".github/actions/setup/action.yml"
+#
+# DENY: the widening is ONE subtree, not `.ai/activity`, and not `.ai/`.
+assert_block "opencode -> activity sibling"  _territory_violation opencode ".ai/activity/other.md"
+assert_block "opencode -> activity archive"  _territory_violation opencode ".ai/activity/archive/2026-04.md"
+assert_block "opencode -> near-miss entriesfoo" _territory_violation opencode ".ai/activity/entriesfoo/x.md"
+assert_block "opencode -> bare 'entries'"    _territory_violation opencode ".ai/activity/entries"
+assert_block "opencode -> .ai/instructions"  _territory_violation opencode ".ai/instructions/operating-prompt/principles.md"
+assert_block "opencode -> .ai/sync.md"       _territory_violation opencode ".ai/sync.md"
+assert_block "opencode -> .ai root file"     _territory_violation opencode ".ai/known-limitations.md"
+# DENY: the widening must not leak into source or any other CLI's territory.
+assert_block "opencode -> src (post-widen)"  _territory_violation opencode "src/index.js"
+assert_block "opencode -> scripts/"          _territory_violation opencode "scripts/git-hooks/pre-commit"
+assert_block "opencode -> .claude (post-widen)" _territory_violation opencode ".claude/hooks/stop-reminder.sh"
+assert_block "opencode -> .kimi"             _territory_violation opencode ".kimi/steering/00-ai-contract.md"
+assert_block "opencode -> .kiro"             _territory_violation opencode ".kiro/agents/coder.json"
+assert_block "opencode -> .opencode (own)"   _territory_violation opencode ".opencode/plugin/framework-guard.js"
+assert_block "opencode -> docs/architecture" _territory_violation opencode "docs/architecture/0010-x.md"
+assert_block "opencode -> CLAUDE.md"         _territory_violation opencode "CLAUDE.md"
+# Secrets are caught by _is_sensitive (pass 1 runs it BEFORE the territory rule), so
+# the lane never licenses one even inside the spool. Assert the composition, not just
+# the parts — a lane entry that allowed a key would be the worst kind of leak.
+assert_block "secret inside the spool"       _is_sensitive ".ai/activity/entries/id_rsa"
+assert_block ".env inside the spool"         _is_sensitive ".ai/activity/entries/.env.prod"
+assert_block "key inside .github/"           _is_sensitive ".github/deploy.key"
+# Absolute / MSYS forms FAIL-CLOSED (blocked). git diff --cached only ever emits
+# repo-relative POSIX paths, so the hook body never sees these — asserted so that a
+# future refactor cannot turn an absolute path into a lane bypass.
+assert_block "opencode -> absolute spool (fail-closed)" _territory_violation opencode "/c/proj/.ai/activity/entries/x.md"
+assert_block "opencode -> C:\\ spool (fail-closed)"     _territory_violation opencode "c:/proj/.ai/activity/entries/x.md"
+
+# KNOWN ASYMMETRY, documented not fixed (2026-07-12). _territory_violation matches on
+# the LOWERCASED path (_lc). That is correct-and-fail-CLOSED for the four DENYLIST
+# branches (claude/kimi/kiro/unknown), but it makes OpenCode's WHITELIST branch
+# case-INSENSITIVE, i.e. fail-OPEN: on a case-sensitive filesystem `.AI/Activity/
+# Entries/x.md` is a DIFFERENT file yet still matches the lane. The guard
+# (framework-guard.js) is case-SENSITIVE and blocks the same path — the two layers
+# disagree.
+#
+# Not "fixed" here, deliberately: the leak CANNOT ESCALATE (asserted below — no case
+# variant reaches another CLI's territory, source, or a secret; the worst case is
+# OpenCode committing junk at a case-variant path inside its own lane). Tightening it
+# risks FALSE-BLOCKING a legitimate entry, which is the precise failure this change
+# exists to prevent — OpenCode going silent with no error a human sees. If someone
+# tightens it later, these assertions are the contract to preserve.
+assert_allow "KNOWN: hook lane is case-insensitive (fails open, in-lane only)" \
+    _territory_violation opencode ".AI/Activity/Entries/x.md"
+# ...but it must NEVER escalate out of the lane. These are the load-bearing ones.
+assert_block "case variant cannot reach .claude/" _territory_violation opencode ".CLAUDE/agents/x.md"
+assert_block "case variant cannot reach .kimi/"   _territory_violation opencode ".Kimi/steering/x.md"
+assert_block "case variant cannot reach .kiro/"   _territory_violation opencode ".KIRO/agents/x.json"
+assert_block "case variant cannot reach source"   _territory_violation opencode "SRC/index.js"
+assert_block "case variant cannot reach SSOT"     _territory_violation opencode ".AI/Instructions/x.md"
+assert_block "case variant cannot reach a secret" _is_sensitive ".AI/Activity/Entries/ID_RSA"
+
+echo "== SSOT replica exception (claude-code only, ADR-0005 2026-07-10, WIDENED 2026-07-12) =="
+# sync.md steering replicas -> claude-code may fleet-commit them (original exception).
 assert_allow "claude -> .kimi replica"   _territory_violation claude-code ".kimi/steering/operating-prompt.md"
 assert_allow "claude -> .kiro replica"   _territory_violation claude-code ".kiro/steering/agent-catalog.md"
 assert_allow "claude -> .kimi replica 2" _territory_violation claude-code ".kimi/steering/karpathy-guidelines.md"
+# WIDENING (2026-07-12): the exception now covers the full sync.md replica set, not
+# just steering. The two non-steering replicas must land in the same atomic commit.
+assert_allow "claude -> .kimi resource replica" \
+    _territory_violation claude-code ".kimi/resource/karpathy-guidelines-examples.md"
+# DELIBERATE INVERSION (was assert_block pre-2026-07-12): .kiro/skills/karpathy-
+# guidelines/SKILL.md is a REGISTERED replica in .ai/sync.md, so widening the
+# exception from steering-only to the whole replica set now ALLOWS claude-code to
+# fleet-commit it. This is the point of the change — it lets the Kiro skill replica
+# land atomically with its SSOT source instead of drifting until Kiro syncs.
+assert_allow "claude -> .kiro skill replica (INVERTED: now a registered replica)" \
+    _territory_violation claude-code ".kiro/skills/karpathy-guidelines/SKILL.md"
 # Hand-authored, NOT a sync.md replica -> stays blocked.
 assert_block "claude -> .kimi 00-contract" _territory_violation claude-code ".kimi/steering/00-ai-contract.md"
 assert_block "claude -> .kiro 00-contract" _territory_violation claude-code ".kiro/steering/00-ai-contract.md"
-# Non-steering path under another CLI's dir -> exception does not apply, blocked.
-assert_block "claude -> .kimi hooks"     _territory_violation claude-code ".kimi/hooks/foo.sh"
-assert_block "claude -> .kiro resource"  _territory_violation claude-code ".kiro/skills/x/SKILL.md"
+# Non-replica paths under another CLI's dir -> exception does NOT apply, blocked.
+# The widening is REPLICA-ONLY and fail-closed: an unregistered .kiro/skills path is
+# still blocked even though its parent dir now participates in the exception.
+assert_block "claude -> .kimi hooks (non-replica)"  _territory_violation claude-code ".kimi/hooks/foo.sh"
+assert_block "claude -> .kiro unregistered skill"   _territory_violation claude-code ".kiro/skills/x/SKILL.md"
+assert_block "claude -> .kimi unregistered resource" _territory_violation claude-code ".kimi/resource/not-a-replica.md"
 # Exception is claude-code ONLY: other committers still blocked on the same replica path.
 assert_block "kiro -> .kimi replica"     _territory_violation kiro-cli ".kimi/steering/operating-prompt.md"
 assert_block "kimi -> .kiro replica"     _territory_violation kimi-cli ".kiro/steering/agent-catalog.md"
+assert_block "kiro -> .kimi resource replica" _territory_violation kiro-cli ".kimi/resource/karpathy-guidelines-examples.md"
 # Fail-closed: if the registry is unreadable, even a real replica path is blocked.
 assert_block "claude replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kimi/steering/operating-prompt.md"'
+assert_block "claude skill replica, no registry" bash -c 'SYNC_MD=/nonexistent/sync.md; PRECOMMIT_LIB=1 . "'"$HERE"'/pre-commit"; _territory_violation claude-code ".kiro/skills/karpathy-guidelines/SKILL.md"'
 
 echo "== PowerShell .ps1 syntax gate =="
 # The gate is enforced only where a PowerShell host exists. On Linux CI there is
@@ -130,6 +215,367 @@ assert_block "unknown -> .kiro"          _territory_violation unknown ".kiro/x.m
 assert_block "unknown -> .opencode"      _territory_violation unknown ".opencode/x.md"
 assert_allow "unknown -> source ok"      _territory_violation unknown "src/main.ts"
 assert_allow "unknown -> .ai ok"         _territory_violation unknown ".ai/activity/log.md"
+
+# =============================================================================
+# Integration tests — the generator, the checker, and the live pre-commit hook
+# (ADR-0005 second amendment, 2026-07-12). These spin up throwaway git repos, so
+# they exercise the WHOLE path (regenerate → stage/refuse → commit), not just the
+# pure decision functions above. Skipped only if git/cp are unavailable.
+# =============================================================================
+REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+
+# pf <desc> <rc> — PASS iff rc==0 (a scenario computes rc: 0 good, non-0 bad).
+pf() {
+    if [ "$2" -eq 0 ]; then pass=$((pass + 1)); printf 'PASS  %s\n' "$1"
+    else fail=$((fail + 1)); printf 'FAIL  %s\n' "$1"; fi
+}
+
+# mkrepo — materialize a throwaway repo from the current worktree's framework
+# files, wired to the hook, with a synced initial commit. Echoes the repo path.
+#
+# Isolation note (handoff 202607131242): $REPO_ROOT/.ai can be a Windows
+# directory junction (ADR-0004 worktree topology) pointing at the ONE
+# canonical .ai/ shared by every CLI's worktree. A sandbox copy that ever
+# aliased that junction instead of copying it would let this test's marker
+# injections (below) write straight through into live fleet state — silently,
+# since nothing here reads the result back through the junction to notice.
+#
+# -RL forces dereference explicitly (never rely on an unstated cp default —
+# GNU coreutils dereferences a command-line-argument symlink/junction under
+# -R without -P, but that is a default, not a documented contract, and a
+# different cp (BusyBox, an older coreutils, a future flag-default change)
+# could silently regress it into a reparse-point copy). The inode/device
+# assertion below is the actual guard: it does not trust cp's behavior, it
+# VERIFIES the result and aborts the whole run — loudly, before any marker is
+# ever written — if the sandbox and canonical .ai ever turn out to be the same
+# file on disk.
+mkrepo() {
+    d="$(mktemp -d)"
+    cp -RL "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
+           "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
+    cp "$REPO_ROOT/.gitattributes" "$d/" 2>/dev/null
+    # GUARD: assert the sandbox .ai is NOT the same file as canonical .ai.
+    # Compare a real file's (device, inode) pair via `stat -c` rather than
+    # trusting any directory-level "is this a junction" check, since a
+    # dereferencing copy can still alias individual files under some cp/OS
+    # combinations even when the top-level entry itself is a plain directory.
+    _probe_rel=".ai/instructions/karpathy-guidelines/examples.md"
+    if [ -f "$REPO_ROOT/$_probe_rel" ] && [ -f "$d/$_probe_rel" ]; then
+        _canon_id="$(stat -c '%d:%i' "$REPO_ROOT/$_probe_rel" 2>/dev/null)"
+        _sand_id="$(stat -c '%d:%i' "$d/$_probe_rel" 2>/dev/null)"
+        if [ -n "$_canon_id" ] && [ "$_canon_id" = "$_sand_id" ]; then
+            echo "FATAL: sandbox .ai is not isolated from canonical .ai" >&2
+            echo "  $REPO_ROOT/$_probe_rel  ($_canon_id)" >&2
+            echo "  $d/$_probe_rel  ($_sand_id)" >&2
+            echo "  refusing to run marker-injection tests against live fleet state" >&2
+            rm -rf "$d"
+            exit 1
+        fi
+    fi
+
+    git -C "$d" init -q -b main 2>/dev/null
+    git -C "$d" config core.hooksPath scripts/git-hooks
+    git -C "$d" config user.email test@example.com
+    git -C "$d" config user.name claude-code
+    git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" commit -q -m init --no-verify >/dev/null 2>&1
+    # Make origin/main resolve for checks that compare against the landed blob.
+    git -C "$d" remote add origin "$d" >/dev/null 2>&1 || true
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    printf '%s' "$d"
+}
+
+if ! command -v git >/dev/null 2>&1 || ! command -v cp >/dev/null 2>&1; then
+    echo "== integration tests =="
+    echo "SKIP  no git/cp available — generator/checker/hook integration not run"
+else
+    echo "== generator: byte-identical + idempotent on a synced tree =="
+    d="$(mkrepo)"
+    gout="$(mktemp -d)"
+    gman="$(mktemp)"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh --dest-root "$gout" 2>/dev/null ) > "$gman"
+    # Every generated replica must equal the committed one (0 drift).
+    gdiffs=0
+    while IFS="$(printf '\t')" read -r _s dd; do
+        [ -n "$dd" ] || continue
+        diff -q "$d/$dd" "$gout/$dd" >/dev/null 2>&1 || gdiffs=$((gdiffs + 1))
+    done < "$gman"
+    pf "generator output byte-identical to committed replicas" "$gdiffs"
+    rm -f "$gman"
+    # Idempotent: running in place on a synced tree changes nothing.
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    idem="$(cd "$d" && git status --porcelain)"
+    pf "generator in place produces no changes (idempotent)" "$([ -z "$idem" ] && echo 0 || echo 1)"
+    rm -rf "$d" "$gout"
+
+    echo "== generator: fails closed on unreadable registry =="
+    d="$(mkrepo)"
+    ( cd "$d" && SYNC_MD=/nonexistent/sync.md bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "unreadable sync.md -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: regenerates + preserves SKILL.md frontmatter after SSOT edit =="
+    d="$(mkrepo)"
+    printf '\n<!-- integration drift marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    # The examples-derived replicas must now carry the marker...
+    grep -q "integration drift marker" "$d/.kiro/skills/karpathy-guidelines/SKILL.md"
+    pf "regenerated .kiro skill picked up the SSOT edit" "$?"
+    grep -q "integration drift marker" "$d/.kimi/resource/karpathy-guidelines-examples.md"
+    pf "regenerated .kimi resource picked up the SSOT edit" "$?"
+    # ...while the SKILL.md preamble (frontmatter + SSOT marker) survives intact.
+    fm=0
+    grep -q "^name: karpathy-guidelines-examples" "$d/.kiro/skills/karpathy-guidelines/SKILL.md" || fm=1
+    grep -q "^<!-- SSOT:" "$d/.kiro/skills/karpathy-guidelines/SKILL.md" || fm=1
+    pf "regenerated .kiro SKILL.md preserved its frontmatter + SSOT marker" "$fm"
+    rm -rf "$d"
+
+    echo "== checker == generator: red after SSOT edit, green after regenerate =="
+    d="$(mkrepo)"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green on synced tree" "$?"
+    printf '\n<!-- drift -->\n' >> "$d/.ai/instructions/operating-prompt/principles.md"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker RED after SSOT edit with no replica update" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green again after running the generator" "$?"
+    rm -rf "$d"
+
+    echo "== checker == generator: a deliberate generator change flips the verdict =="
+    # If the checker had its OWN copy of the transform, mutating the generator would
+    # NOT change its verdict. It does -> proof the checker consumes generator output.
+    d="$(mkrepo)"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker green before generator mutation" "$?"
+    # Make normalize_lf prepend a sentinel line to every replica it emits.
+    sed -i 's/normalize_lf() { tr -d/normalize_lf() { echo ZZDRIFT; tr -d/' \
+        "$d/.ai/tools/sync-replicas.sh"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "checker RED after a deliberate generator change (checker uses generator)" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== pre-commit: claude-code auto-stages replicas atomically =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    printf '\n<!-- atomic marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "ssot: edit examples" >/dev/null 2>&1 )
+    pf "claude-code commit of SSOT-only change SUCCEEDS" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "committed tree is synced (0 drift) after auto-stage" "$?"
+    # The WIDENED exception must have let the two non-steering replicas into the commit.
+    names="$(git -C "$d" show --name-only --format= HEAD)"
+    printf '%s' "$names" | grep -q ".kiro/skills/karpathy-guidelines/SKILL.md"
+    pf "widened exception: .kiro/skills replica landed in the commit" "$?"
+    printf '%s' "$names" | grep -q ".kimi/resource/karpathy-guidelines-examples.md"
+    pf "widened exception: .kimi/resource replica landed in the commit" "$?"
+    rm -rf "$d"
+
+    echo "== pre-commit: human/other identity is REFUSED with the hint =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name "Some Human"
+    printf '\n<!-- human marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    hout="$(cd "$d" && git commit -m "ssot: edit examples" 2>&1)"; hrc=$?
+    pf "human commit of SSOT-only change is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "sync-replicas.sh"
+    pf "refusal names the fix (run sync-replicas.sh / commit as claude-code)" "$?"
+    rm -rf "$d"
+
+    echo "== pre-commit: widening does NOT leak beyond registered replicas =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    mkdir -p "$d/.kimi/hooks"
+    printf '#!/bin/sh\necho x\n' > "$d/.kimi/hooks/x.sh"
+    ( cd "$d" && git add .kimi/hooks/x.sh >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "peer write" >/dev/null 2>&1 )
+    pf "claude-code commit of NON-replica peer write (.kimi/hooks) is BLOCKED" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== degradation: --no-verify commits stale, but check-ssot-drift still catches it =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    printf '\n<!-- bypass marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/examples.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/examples.md >/dev/null 2>&1 )
+    ( cd "$d" && git commit -q -m "ssot bypass" --no-verify >/dev/null 2>&1 )
+    pf "--no-verify lets the SSOT-only (stale) commit through" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "CI net (check-ssot-drift) goes RED on the bypassed stale tree" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== activity-log gate: dropping a main entry is BLOCKED =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # Stage a log missing the 09:00 entry.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    hout="$(cd "$d" && git commit -m "log: drop entry" 2>&1)"; hrc=$?
+    pf "commit dropping a main log entry is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "LOG-SUPERSET FAIL"
+    pf "refusal names the log-superset gate" "$?"
+    rm -rf "$d"
+
+    echo "== activity-log gate: PR #107 repro (superset of main, subset of disk) =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # PR #107 shape: staged candidate is a superset of main (so a naive
+    # additions-only diff against main reads green and git will commit it),
+    # but the working tree still contains an entry the staged candidate omits.
+    # The hook reads the STAGED content as the candidate and compares it against
+    # the working tree, so the commit is blocked.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    # Working tree now has an extra entry not present in the staged candidate.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 11:00 (UTC+7) — opencode
+- Action: uncommitted on disk only
+
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    hout="$(cd "$d" && git commit -m "log: additions-only blind gate" 2>&1)"; hrc=$?
+    pf "PR #107 additions-only blind commit is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "working tree"
+    pf "refusal identifies the working-tree source" "$?"
+    echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
+    d="$(mkrepo)"
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "sync-replicas refuses to run with skip-worktree SSOT source" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    srr_out="$(cd "$d" && bash .ai/tools/sync-replicas.sh 2>&1)"
+    printf '%s' "$srr_out" | grep -q "skip-worktree"
+    pf "refusal message names skip-worktree" "$?"
+    printf '%s' "$srr_out" | grep -q "git update-index --no-skip-worktree"
+    pf "refusal message names the fix" "$?"
+    rm -rf "$d"
+
+    echo "== regression: pre-commit auto-sync fails the commit when sync-replicas aborts =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Stage an SSOT change, then set skip-worktree so the generator refuses.
+    printf '\n<!-- skip-worktree marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/principles.md >/dev/null 2>&1 )
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    hout="$(cd "$d" && git commit -m "ssot: skip-worktree source" 2>&1)"; hrc=$?
+    pf "claude-code commit is REFUSED when sync-replicas aborts" \
+        "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "sync-replicas.sh refused"
+    pf "refusal surfaces the generator error" "$?"
+    rm -rf "$d"
+
+    echo "== regression: landed-blob check catches stale-source laundering that working-tree drift misses =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Working tree: edit source + dest consistently; index: only dest is updated.
+    # This reproduces the laundered commit: the stat claims a replica update but
+    # the SSOT source blob in the commit is stale.
+    printf '\n<!-- laundering marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    ( cd "$d" && git add .kimi/steering/karpathy-guidelines.md \
+                           .kiro/steering/karpathy-guidelines.md \
+                           .claude/skills/karpathy-guidelines/SKILL.md \
+                           .kiro/skills/karpathy-guidelines/SKILL.md \
+                           .kimi/resource/karpathy-guidelines-examples.md \
+                           .claude/skills/karpathy-guidelines/EXAMPLES.md >/dev/null 2>&1 )
+    # Leave the SSOT source UNSTAGED so the commit's source blob stays old.
+    ( cd "$d" && git commit -q -m "laundered replica update" --no-verify >/dev/null 2>&1 )
+    pf "laundered commit (dest updated, source not) lands with --no-verify" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "working-tree drift check is GREEN on the laundered tree" "$?"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "landed-blob check is RED on the laundered tree" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: skip-worktree probe failure fails closed =="
+    d="$(mkrepo)"
+    # Remove the git metadata so the probe cannot answer. With the bug, the
+    # generator treats the empty flag as "no bit" and proceeds; fixed, it aborts.
+    rm -rf "$d/.git"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "probe failure (no .git) -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: lowercase 's' (skip-worktree + assume-unchanged) fails closed =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    git -C "$d" update-index --skip-worktree "$src"
+    git -C "$d" update-index --assume-unchanged "$src"
+    flag="$(git -C "$d" ls-files -v "$src" | head -n1 | cut -c1)"
+    # git lowercases the tag when both bits are set. Only assert when this host
+    # reproduces that exact condition; otherwise the test is non-hermetic.
+    if [ "$flag" = "s" ]; then
+        ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+        pf "lowercase 's' skip-worktree -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    else
+        echo "SKIP  git version did not produce lowercase 's' for combined skip-worktree+assume-unchanged"
+    fi
+    rm -rf "$d"
+
+    echo "== check-landed-ssot: reads registry from REF, not disk =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    # Commit a source→replica drift at HEAD.
+    printf '\n<!-- landed registry drift marker -->\n' >> "$src"
+    git -C "$d" add "$src" >/dev/null 2>&1
+    git -C "$d" commit -q -m "drift source" --no-verify >/dev/null 2>&1
+    # Now hide the drifted pair from the on-disk registry. The old checker read
+    # the disk copy and would pass; the fixed checker reads the landed registry
+    # and must still see the mismatch.
+    awk '!/karpathy-guidelines\/examples\.md/' "$d/.ai/sync.md" > "$d/.ai/sync.md.tmp"
+    mv "$d/.ai/sync.md.tmp" "$d/.ai/sync.md"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "stale on-disk sync.md does not hide landed mismatch" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+fi
 
 echo
 echo "=============================================="
