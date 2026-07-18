@@ -33,7 +33,10 @@ entry point into a persistent, shared multi-agent workforce.
   headers use **UTC+7 wall-clock time** at the moment of writing, annotated
   `(UTC+7)` (e.g. `2026-07-16 19:31 (UTC+7)`). Handoff **filenames** remain
   UTC (`YYYYMMDDHHMM-slug.md`). Prepend order is the authoritative sequence;
-  timestamps are annotations.
+  timestamps are annotations. On this Windows + Git Bash/MSYS host the local
+  system clock is kept at UTC+7, so emit timestamps with plain
+  `date +'%Y-%m-%d %H:%M'`; do **not** use `TZ=Asia/Bangkok date`, which MSYS
+  treats as UTC and prints the wrong hour.
 - **Claude does not code or deploy.** Neither `claude-cockpit` nor
   `claude-auto` writes project source code, executes commands, or performs
   deploys unless the owner explicitly asks. Claude reads, plans, designs,

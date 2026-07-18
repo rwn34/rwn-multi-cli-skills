@@ -26,12 +26,13 @@
 # The exit fires only from the outer finally in Start-PaneRunner, which runs only
 # when -not $NoRun, so -NoRun dot-source (tests) never hits it.
 #
-# Worktree-per-CLI (ADR-0004 amendment, 2026-07-11 + parity fix 2026-07-12): a
-# pane-consumed handoff is executed in that CLI's OWN git worktree
+# Worktree-per-CLI (ADR-0004 amendment + ADR-0016 snapshot-copy, 2026-07-11/17):
+# a pane-consumed handoff is executed in that CLI's OWN git worktree
 # (<parent>/.wt/<project>/<cli>/), never in $ProjectDir (the primary checkout).
 # $ProjectDir remains the root for shared .ai/ state (handoff inbox, claims,
-# activity log — all junctioned identically into every worktree by
-# scripts/wt-bootstrap.sh), but the CLI CHILD PROCESS's cwd is the worktree.
+# activity log). The dispatcher copies a canonical .ai/ snapshot into the
+# worktree before each handoff and syncs changes back afterward; there is NO
+# junction into the worktree, eliminating the reverse-write hazard.
 # This closes the second half of the shared-HEAD race that
 # .ai/tools/dispatch-handoffs.sh already closed for the headless-dispatch path
 # (docs/architecture/0004-worktree-multi-project-topology.md, Amendment) — the
@@ -43,7 +44,7 @@
 #
 # Worktree creation delegates to scripts/wt-bootstrap.sh (bash) — the SAME
 # script .ai/tools/dispatch-handoffs.sh already calls — rather than
-# reimplementing junction/branch-container setup a third time in PowerShell.
+# reimplementing worktree/branch-container setup a third time in PowerShell.
 # The declared-base branch cut (Ensure-DeclaredBaseBranch below) IS a second,
 # native-PowerShell implementation of dispatch-handoffs.sh's
 # ensure_declared_base_branch(): that piece is plain git plumbing (fetch,
@@ -438,9 +439,10 @@ $script:GetDeclaredBase = { param([string]$HandoffPath) return (Get-DeclaredBase
 # HEAD now on the per-handoff branch, or left untouched with pre-existing
 # uncommitted work reported), $false on hard failure (no declared base
 # resolvable). Excludes .ai/** from the dirty-tree check for the same reason
-# dispatch-handoffs.sh does: .ai is a directory junction into the canonical
-# coordination plane, and `git status` reports newly-created files reached
-# through it as untracked even with the .git/info/exclude entry present.
+# dispatch-handoffs.sh does: .ai is a snapshot copy of the canonical
+# coordination plane into the worktree, populated before each dispatch and
+# synced back afterward. Its normal churn must not be treated as uncommitted
+# work.
 #
 # Overridable ($script:EnsureDeclaredBaseBranch) so tests can drive
 # Invoke-HandoffRun's declared-base-branch-failure path without a real git
@@ -493,21 +495,13 @@ function Ensure-DeclaredBaseBranchReal {
         }
 
         # Attach HEAD to exec/<cli>/<slug> WITHOUT touching the working tree.
-        # A plain `git checkout` (or `checkout -b`) ABORTS in every executor
-        # worktree the moment the junctioned .ai/ holds live coordination-plane
-        # state that differs from this worktree's (often stale) HEAD: git reads
-        # that as "local changes" and refuses to touch the files (2026-07-12/13
-        # fleet outage — every auto-dispatch WORKTREE_FAIL -> quarantine; see
-        # .ai/handoffs/to-kiro/open/202607122330-fix-ai-junction-branch-cut-landmine.md).
-        # The dirty-check above excludes .ai/ BY DESIGN, so checkout's refusal
-        # was the contradictory second half of one rule. symbolic-ref moves
+        # A plain `git checkout` (or `checkout -b`) would rewrite files in the
+        # worktree and can entangle concurrent dispatches. symbolic-ref moves
         # HEAD without rewriting a single file; the restore then converges
-        # worktree+index onto the branch tip for everything EXCEPT .ai/ — which
-        # is LIVE through the junction and must never be written by git in a
-        # worktree. The stable subset of .ai/ is further protected by the
-        # skip-worktree bit set by wt-bootstrap.sh, so git operations in the
-        # worktree cannot rewrite the canonical primary files even for tracked
-        # .ai paths. `git restore` with an explicit --source defaults to
+        # worktree+index onto the branch tip for everything EXCEPT .ai/. .ai/ is
+        # a snapshot copy populated by SnapshotAi and must not be touched by git
+        # — the snapshot is the authoritative coordination-plane state for this
+        # dispatch. `git restore` with an explicit --source defaults to
         # --no-overlay: files absent on the branch are removed from the worktree
         # too (verified empirically).
         git show-ref --verify --quiet "refs/heads/$branch" *> $null
@@ -529,10 +523,9 @@ function Ensure-DeclaredBaseBranchReal {
             return $false
         }
         # Sync the .ai/ INDEX entries to the branch tip without touching the
-        # worktree. The live junctioned .ai/ must stay live, but leaving the
-        # index stale would make `git status --porcelain -- .ai` report staged
-        # phantoms — which in turn makes wt-bootstrap.sh's DEGRADED guard
-        # falsely reject a clean real .ai/ directory (av4).
+        # worktree. The snapshot-copy .ai/ must stay as the live canonical copy,
+        # but leaving the index stale would make `git status --porcelain -- .ai`
+        # report staged phantoms.
         git restore --source=$branch --staged -- .ai *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  ERROR: could not sync the .ai/ index entries in $WtPath" -ForegroundColor Red
@@ -613,6 +606,12 @@ $script:InvokeCli = {
     # property of where the child runs, independent of the dispatch-guard env,
     # so it must be established before — and torn down after — everything else.
     Push-Location $Cwd
+    # S3-1 root cause: force UTF-8 locale for any bash/PowerShell subprocess the
+    # CLI spawns, so em-dashes and other non-ASCII chars are not written as cp1252.
+    $prevLC_ALL = $env:LC_ALL
+    $prevLANG = $env:LANG
+    $env:LC_ALL = 'C.UTF-8'
+    $env:LANG = 'C.UTF-8'
     try {
         # F3: tell the child (and its SessionStart hooks) that a dispatcher is
         # already driving this queue, so a nested dispatch-own-queue short-circuits
@@ -637,6 +636,8 @@ $script:InvokeCli = {
     } finally {
         Pop-Location
         $ErrorActionPreference = $prevEAP
+        $env:LC_ALL = $prevLC_ALL
+        $env:LANG = $prevLANG
     }
     return $LASTEXITCODE
 }
@@ -645,6 +646,54 @@ $script:InvokeCli = {
 $script:TestPidAlive = {
     param([int]$ProcessId)
     return ($null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue))
+}
+
+# Snapshot canonical .ai/ into the worktree as ordinary files. Overridable so
+# tests can avoid shelling out to bash; production delegates to
+# .ai/tools/sync-ai-state.sh snapshot (ADR-0016 snapshot-copy model).
+$script:SnapshotAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $bash = Resolve-GitBash
+    if (-not $bash) {
+        Write-Host "  ERROR: Git Bash not found; cannot snapshot .ai/" -ForegroundColor Red
+        return $false
+    }
+    $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+    if (-not (Test-Path $sync)) {
+        Write-Host "  ERROR: sync-ai-state.sh not found at $sync" -ForegroundColor Red
+        return $false
+    }
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $bash $sync snapshot "$ProjectDir/.ai" "$WtPath/.ai" 2>&1 | ForEach-Object { Write-Host "  [snapshot-ai] $_" -ForegroundColor DarkGray }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    return ($LASTEXITCODE -eq 0)
+}
+
+# Sync worktree .ai/ changes back to canonical and remove the worktree copy.
+# Fail-open: errors are logged but do not abort the runner.
+$script:SyncBackAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $bash = Resolve-GitBash
+    if (-not $bash) {
+        Write-Host "  WARN: Git Bash not found; cannot sync back .ai/" -ForegroundColor Yellow
+        return
+    }
+    $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+    if (-not (Test-Path $sync)) {
+        Write-Host "  WARN: sync-ai-state.sh not found at $sync; cannot sync back .ai/" -ForegroundColor Yellow
+        return
+    }
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $bash $sync sync-back "$WtPath" "$ProjectDir" 2>&1 | ForEach-Object { Write-Host "  [sync-back-ai] $_" -ForegroundColor DarkGray }
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
 }
 
 # -- Handoff inbox (IDLE poll - filesystem only) --
@@ -1201,55 +1250,71 @@ function Invoke-HandoffRun {
         return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
     }
 
-    # Declared-base branch cut: never leave the worktree on ambient HEAD.
-    $slug = Get-HandoffBasename -HandoffPath $HandoffPath
-    $base = & $script:GetDeclaredBase -HandoffPath $HandoffPath
-    if (-not $base) {
-        Write-Host "== FAIL [$CliName] $rel - could not resolve a declared base ==" -ForegroundColor Red
+    # Snapshot-copy the canonical .ai/ into the worktree (ADR-0016). The executor
+    # sees ordinary files, not a junction, eliminating the reverse-write hazard.
+    if (-not (& $script:SnapshotAi $ProjectDir $wtPath)) {
+        Write-Host "== FAIL [$CliName] $rel - could not snapshot canonical .ai/ into worktree ==" -ForegroundColor Red
         return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
     }
-    if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base)) {
-        Write-Host "== FAIL [$CliName] $rel - could not establish declared-base branch (base=$base) ==" -ForegroundColor Red
-        return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
-    }
-    Write-Host "-- worktree: $wtPath  branch: exec/$CliName/$slug (base: $base) --" -ForegroundColor DarkCyan
+    $snapshotOk = $true
 
-    $continues = 0
-    $invocations = 0
-    while ($true) {
-        $prompt = if ($continues -eq 0) { Get-InitialPrompt -RelPath $rel } else { Get-ContinuePrompt -RelPath $rel }
-        if ($continues -eq 0) {
-            Write-Host "== RUN  [$CliName] $rel ==" -ForegroundColor Cyan
-        } else {
-            Write-Host "== auto-continuing ($continues/$MaxContinues) [$CliName] $rel ==" -ForegroundColor Yellow
+    # Use try/finally so the worktree .ai/ copy is always synced back (or removed)
+    # before we return, even on early exits.
+    try {
+        # Declared-base branch cut: never leave the worktree on ambient HEAD.
+        $slug = Get-HandoffBasename -HandoffPath $HandoffPath
+        $base = & $script:GetDeclaredBase -HandoffPath $HandoffPath
+        if (-not $base) {
+            Write-Host "== FAIL [$CliName] $rel - could not resolve a declared base ==" -ForegroundColor Red
+            return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
         }
-        Write-Host "-- launching $CliName (streaming output below) --" -ForegroundColor DarkCyan
-        # Absorb the returned exit code (needed for heartbeat L2 outcome
-        # classification). The CLI's stdout/stderr is already streamed live to the
-        # pane inside $script:InvokeCli (Out-Host / Tee-Object). $wtPath (NOT
-        # $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
-        # Keep the fleet heartbeat fresh while the CLI blocks; long handoffs can
-        # exceed the supervisor's stale threshold and a stale heartbeat triggers a
-        # duplicate-pane relaunch.
-        $hbJob = Start-FleetHeartbeatJob -ProjectDir $ProjectDir -CliName $CliName -State 'running'
-        try {
-            $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
-        } finally {
-            Stop-FleetHeartbeatJob
+        if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base)) {
+            Write-Host "== FAIL [$CliName] $rel - could not establish declared-base branch (base=$base) ==" -ForegroundColor Red
+            return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
         }
-        $script:LastCliExitCode = [int](@($cliExit)[-1])
-        $invocations++
+        Write-Host "-- worktree: $wtPath  branch: exec/$CliName/$slug (base: $base) --" -ForegroundColor DarkCyan
 
-        if (Test-HandoffDone -HandoffPath $HandoffPath) {
-            Write-Host "== DONE [$CliName] $rel (moved to done/, $continues continue(s)) ==" -ForegroundColor Green
-            return @{ Result = 'DONE'; Continues = $continues; Invocations = $invocations }
-        }
+        $continues = 0
+        $invocations = 0
+        while ($true) {
+            $prompt = if ($continues -eq 0) { Get-InitialPrompt -RelPath $rel } else { Get-ContinuePrompt -RelPath $rel }
+            if ($continues -eq 0) {
+                Write-Host "== RUN  [$CliName] $rel ==" -ForegroundColor Cyan
+            } else {
+                Write-Host "== auto-continuing ($continues/$MaxContinues) [$CliName] $rel ==" -ForegroundColor Yellow
+            }
+            Write-Host "-- launching $CliName (streaming output below) --" -ForegroundColor DarkCyan
+            # Absorb the returned exit code (needed for heartbeat L2 outcome
+            # classification). The CLI's stdout/stderr is already streamed live to the
+            # pane inside $script:InvokeCli (Out-Host / Tee-Object). $wtPath (NOT
+            # $ProjectDir): the CLI runs in ITS OWN worktree — the fix.
+            # Keep the fleet heartbeat fresh while the CLI blocks; long handoffs can
+            # exceed the supervisor's stale threshold and a stale heartbeat triggers a
+            # duplicate-pane relaunch.
+            $hbJob = Start-FleetHeartbeatJob -ProjectDir $ProjectDir -CliName $CliName -State 'running'
+            try {
+                $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
+            } finally {
+                Stop-FleetHeartbeatJob
+            }
+            $script:LastCliExitCode = [int](@($cliExit)[-1])
+            $invocations++
 
-        if ($continues -ge $MaxContinues) {
-            Write-Host "== ALERT [$CliName] $rel still OPEN after $MaxContinues auto-continues - stopping, human needed ==" -ForegroundColor Red
-            return @{ Result = 'MAXED'; Continues = $continues; Invocations = $invocations }
+            if (Test-HandoffDone -HandoffPath $HandoffPath) {
+                Write-Host "== DONE [$CliName] $rel (moved to done/, $continues continue(s)) ==" -ForegroundColor Green
+                return @{ Result = 'DONE'; Continues = $continues; Invocations = $invocations }
+            }
+
+            if ($continues -ge $MaxContinues) {
+                Write-Host "== ALERT [$CliName] $rel still OPEN after $MaxContinues auto-continues - stopping, human needed ==" -ForegroundColor Red
+                return @{ Result = 'MAXED'; Continues = $continues; Invocations = $invocations }
+            }
+            $continues++
         }
-        $continues++
+    } finally {
+        if ($snapshotOk) {
+            & $script:SyncBackAi $ProjectDir $wtPath
+        }
     }
 }
 
@@ -1283,8 +1348,9 @@ function Assert-WorktreeFresh {
     <#
     .SYNOPSIS
         Fail-fast guard: refuse to start a pane whose worktree branch is behind
-        the resolved default branch. A stale branch combined with a junctioned .ai/ is the
-        reverse-write weapon that caused the 2026-07-13 outage (ADR-0004).
+        the resolved default branch. A stale branch can cause the executor to
+        base its work on old state; while ADR-0016 snapshot-copy removed the
+        junction reverse-write hazard, freshness still matters.
     #>
     param([string]$ProjectDir)
     $prevEAP = $ErrorActionPreference
@@ -1303,7 +1369,7 @@ function Assert-WorktreeFresh {
             if ($behindN -gt 0) {
                 $branch = git branch --show-current 2>$null
                 Write-Host "  STALE: worktree branch '$branch' is $behindN commits behind $base." -ForegroundColor Red
-                Write-Host "  Refusing to start: a stale branch + junctioned .ai/ can rewrite the primary .ai/ with old blobs." -ForegroundColor Red
+                Write-Host "  Refusing to start: a stale branch bases executor work on old state." -ForegroundColor Red
                 Write-Host "  Fix: stop this pane, rebase the branch onto $base, recreate the worktree, then restart." -ForegroundColor Yellow
                 return $false
             }
@@ -1513,7 +1579,7 @@ function Start-PaneRunner {
     Write-Host "| 'p' = pause -> CLI   'q' = quit   Ctrl-C = stop  |" -ForegroundColor Cyan
     Write-Host "+--------------------------------------------------+" -ForegroundColor Cyan
 
-    # Fail-fast: stale branch + junctioned .ai/ is the reverse-write weapon.
+    # Fail-fast: stale branch bases executor work on old state.
     # Exit cleanly (0) so the supervisor does not endlessly respawn a stale pane.
     if (-not (Assert-WorktreeFresh -ProjectDir $ProjectDir)) {
         return

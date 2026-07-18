@@ -36,17 +36,71 @@ comments above the body copied from SSOT. Regeneration keeps everything
 through the first `<!-- SSOT: ... -->` line plus one trailing blank line, and
 replaces only the body below it.
 
-**Junction safety (ADR-0004):** in-place regeneration refuses to write through
-any symlink or Windows-junction ancestor of a replica path, and refuses any
-registry destination under `.ai/` outright — the reverse-write class that
-clobbered the primary checkout's live `.ai/` on 2026-07-12/13. `--check` and
-`--dest-root` write only to their explicit sink and are not guarded.
+**Junction safety (ADR-0004) / snapshot-copy (ADR-0016):** in-place
+regeneration refuses to write through any symlink or Windows-junction ancestor
+of a replica path, and refuses any registry destination under `.ai/` outright.
+ADR-0016 removed the junction entirely in favor of a dispatcher-owned snapshot
+copy, so the symlink/junction guard is now a defense-in-depth belt-and-suspenders
+layer. `--check` and `--dest-root` write only to their explicit sink and are not
+guarded.
+
+**Skip-worktree source guard (ADR-0015 follow-up, 2026-07-17):** the worktree
+layout may set `skip-worktree` on `.ai/**` sources so that git stops trusting
+the working-tree view. A generator that reads such a source would regenerate
+replicas from the index's stale blob while the commit stat claims an update.
+The generator therefore checks `git ls-files -v <ssot>` for every source and
+aborts if the flag is 'S'. Clear the bit with `git update-index
+--no-skip-worktree <path>` before regenerating.
 
 ## `check-ssot-drift.sh` — compatibility shim
 
 Kept for existing callers and docs. It `exec`s
 `sync-replicas.sh --check` with the identical output contract and exit codes.
 New call sites should use the authoritative entry point directly.
+
+## `check-log-superset.sh` — activity-log entry-loss gate
+
+Verifies that a candidate `.ai/activity/log.md` would not DROP any entry
+headers that already exist in `origin/main`, the current working tree, or any
+`.ai/activity/log.md.bak` / `.ai/activity/log.md.KEEP*` file.
+
+**Usage (from repo root):**
+
+```bash
+bash .ai/tools/check-log-superset.sh <candidate-log.md>
+bash .ai/tools/test-check-log-superset.sh
+```
+
+**Exit codes:**
+- `0` iff the candidate contains every `^## ` header from every source.
+- `1` on any missing entry, with the verbatim lost headers listed per source.
+- `2` on setup/argument errors (missing argument, unreadable candidate, etc.).
+
+**Why this exists:** the log is prepend-order and its timestamps are
+annotations, so diffing a recovery candidate against `main` is structurally
+blind to entries that exist on disk but in no commit. PR #107 nearly lost two
+such entries because an "additions-only" diff against `main` read green while
+the true working-tree diff showed deletions. This checker compares entry
+headers as a **set**, not line counts.
+
+**Pre-commit:** `scripts/git-hooks/pre-commit` runs this on any staged
+`.ai/activity/log.md` and rejects the commit if the staged content is not a
+strict superset of all sources.
+
+## `fleet-health.sh` — pane liveness and queue-dir watchdog
+
+Cross-checks heartbeat sidecars (`.ai/.heartbeat-<cli>.json`) against open
+handoff queues and classifies each pane as OK, DOWN (idle), STALL, or WEDGED.
+Also verifies every `to-<actor>/{open,review,done}/` queue directory exists.
+
+**Usage:**
+
+```bash
+bash .ai/tools/fleet-health.sh [project-dir]
+```
+
+Exit `1` only on STALL/WEDGED/missing queue dir; internal checker errors fail
+open.
 
 ## When to run
 
@@ -57,6 +111,8 @@ New call sites should use the authoritative entry point directly.
   `claude-code` committer auto-stages the regenerated replicas instead).
 - **Ad hoc** — whenever `.ai/instructions/` is edited: run the generator,
   commit SSOT + replicas together.
+- **Fleet monitoring** — run `fleet-health.sh` to detect stale panes or missing
+  queue directories.
 
 Runtime: under 2 seconds on the full matrix (a few seconds more on Windows
 hosts, where the junction guard probes each replica ancestor).

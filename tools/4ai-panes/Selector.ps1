@@ -590,7 +590,9 @@ function Install-Framework($targetDir) {
                 '---',
                 ''
             ) -join "`r`n"
-            $cleanHeader | Set-Content -Path $activityLog -Encoding utf8 -NoNewline
+            # BOM-less UTF-8: Set-Content -Encoding utf8 prepends a BOM under PS 5.1,
+            # which breaks the shared-state encoding guard (S3-1).
+            [System.IO.File]::WriteAllText($activityLog, $cleanHeader, [System.Text.UTF8Encoding]::new($false))
             Write-InstallLog "Fallback reset activity log"
         }
 
@@ -616,7 +618,8 @@ function Install-Framework($targetDir) {
                 installed_at = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')
                 upgrade_history = @()
             } | ConvertTo-Json -Depth 3
-            $markerJson | Set-Content -Path $markerPath -Encoding utf8
+            # BOM-less UTF-8 (same S3-1 guard reason).
+            [System.IO.File]::WriteAllText($markerPath, $markerJson, [System.Text.UTF8Encoding]::new($false))
             Write-InstallLog "Fallback wrote .ai/.framework-version"
         } catch {
             Write-InstallLog "Fallback failed to write marker: $_"

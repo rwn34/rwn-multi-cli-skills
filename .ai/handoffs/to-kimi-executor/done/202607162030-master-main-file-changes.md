@@ -1,4 +1,5 @@
 # Complete file changes for master→main migration
+Status: NOT-A-BUG
 
 This handoff contains ONLY the file changes (no GitHub operations), which are routed to the appropriate CLIs per their lanes. GitHub operations (branch rename, PR, refs) remain in opencode's lane.
 
@@ -7,6 +8,7 @@ This handoff contains ONLY the file changes (no GitHub operations), which are ro
 ## Created: 2026-07-16 20:30 (UTC+7)
 ## Auto: yes
 ## Risk: B
+## Evidence: VERIFIED (grep -R "master" scripts/sync-4ai-panes-install.ps1 scripts/check-version-bump.sh -> no matches)
 
 ## Goal
 
@@ -184,3 +186,9 @@ Run verification suite per plan §7:
 
 1. Each recipient self-retires by moving their handoff to `done/`
 2. After all files changed, notify OpenCode via handoff to execute GitHub operations (branch rename, refs, worktree rebase)
+
+## Why
+The requested file changes were already applied in a prior commit/merge. Verified by grepping the target files for any remaining `master` references:
+- `scripts/sync-4ai-panes-install.ps1`: provenance guard already checks branch == 'main'.
+- `scripts/check-version-bump.sh`: no 'master' references remain.
+No further action needed; retiring as NOT-A-BUG to clear the stale queue item.

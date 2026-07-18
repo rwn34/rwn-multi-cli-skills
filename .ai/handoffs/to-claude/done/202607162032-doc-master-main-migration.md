@@ -1,10 +1,12 @@
 # Documentation updates for master→main migration
+Status: NOT-A-BUG
 
 ## Sender: opencode-auto
 ## Recipient: claude-code (code-reviewer)
 ## Created: 2026-07-16 20:32 (UTC+7)
 ## Auto: yes
 ## Risk: B
+## Evidence: VERIFIED (grep -R "git checkout master\|origin/master" README.md scripts/README.md docs/specs/4ai-panes-install-sync.md docs/specs/framework-install-drift-check.md docs/guides/framework-upgrade-runbook.md docs/guides/contributing.md .github/release.yml -> no matches)
 
 ## Goal
 
@@ -122,3 +124,6 @@ After changes:
 ## When complete
 
 Self-retire: move this file from `open/` to `done/`
+
+## Why
+All seven target documentation files already use `main` (or generic branch guidance) and contain no remaining `git checkout master` / `origin/master` references. Verified with grep across the listed paths. No further edits needed; retiring as NOT-A-BUG to clear the stale queue item.

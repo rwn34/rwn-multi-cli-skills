@@ -121,10 +121,10 @@ actually need sits in the first few dozen lines.
 
 - **Prepend** one terse entry after substantive work. Format:
 
-        ## YYYY-MM-DD HH:MM (UTC+7) — <cli-name>
+        ## YYYY-MM-DD HH:MM (UTC+7) - <cli-name>
         - Action: <one-line summary>
-        - Files: <paths, or "—">
-        - Decisions: <non-obvious choices, or "—">
+        - Files: <paths, or "-">
+        - Decisions: <non-obvious choices, or "-">
 
 **Timestamp rule:** the `HH:MM` is your current UTC+7 wall-clock time at the moment
 you prepend — i.e. finish time of the work, not start time. CLIs on different local

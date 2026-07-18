@@ -356,20 +356,26 @@ indistinguishable from an entry that was never written.
   `9371a40` blob (recovered, not reconstructed). A second scar in the same file
   (a missing entry separator) was fixed in the same pass.
 
-**Why worktrees do not help:** `scripts/wt-bootstrap.sh`'s `link_ai()` junctions
-every worktree's `.ai/` to the one canonical `.ai/` in the primary checkout, so
-`.ai/activity/log.md` is the *same inode* in every worktree (ADR-0004, which
-scopes this race out explicitly).
+**Why worktrees do not help:** under the ADR-0016 snapshot-copy model,
+`scripts/wt-bootstrap.sh` no longer junctions `.ai/` into worktrees; the
+dispatcher copies a canonical `.ai/` snapshot into the worktree before each
+handoff and syncs changes back afterward. However, `.ai/activity/log.md` is
+still a single shared mutable file in the primary checkout, so the prepend race
+persists.
 
-**Mitigation: none in effect.** ADR-0010 (Accepted, owner-approved 2026-07-11)
-decides the structural fix — an entry-per-file spool
-(`.ai/activity/entries/<UTC>-<cli>-<slug>-<rand4>.md`), where a unique filename
-per entry means no shared write, no lock, and no possible clobber. **It has
-never been implemented:** `.ai/activity/entries/` does not exist on disk,
-`log.md` is still tracked and still shared, and the two hard blockers named in
-the ADR's own migration table (`scripts/git-hooks/pre-commit`,
-`.opencode/plugin/framework-guard.js`) still hardcode the old path. Until that
-migration lands, every prepend by any CLI is another roll of this die.
+**Mitigation in effect (partial):**
+
+- ADR-0010 entry spool (`.ai/activity/entries/<UTC>-<cli>-<slug>-<rand4>.md`)
+  exists and is the long-term structural fix; `log.md` remains the authoritative
+  rendered view until the render script is finished and the hard blockers
+  (`scripts/git-hooks/pre-commit`, `.opencode/plugin/framework-guard.js`) are
+  migrated.
+- Canonical `.ai/` durability is now handled by `.ai/tools/sync-ai-state.sh`:
+  every executor worktree sync-back commits `.ai/` changes to the primary
+  checkout automatically. This makes `.ai/` state durable per handoff, not
+  ephemeral, and gives each prepend a git commit to recover from if a concurrent
+  write clobbers the working file. It does not eliminate the race, but it bounds
+  the data-loss window and provides recovery points.
 
 **Note on daily rotation** (`.ai/tools/rotate-activity-log.sh`, branch
 `exec/claude/202607130206-activity-log-daily-rotation`): it cuts the *read cost*

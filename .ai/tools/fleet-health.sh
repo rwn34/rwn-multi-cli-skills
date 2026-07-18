@@ -185,6 +185,10 @@ handoff_age_min() {
   echo $(( (NOW - ep) / 60 ))
 }
 
+# Dispatchable actors that own a worktree under .wt/<project>/<actor>.
+# Keep in sync with scripts/wt-bootstrap.sh.
+HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode"
+
 # Verify every discovered handoff queue has the required open/review/done
 # subdirectories.  Missing dirs are a framework health problem: handoffs have
 # nowhere to land.  Emits one clear line per missing dir with the fix command.
@@ -205,6 +209,69 @@ check_queue_dirs() {
   return "$missing"
 }
 
+# Check the git worktree list for layouts that break the fleet contract:
+#   - nested worktrees under .wt/<project>/.wt/... (usually a bootstrap/install
+#     accident that leaves stale branches registered)
+#   - registered worktrees whose directory is gone from disk (prunable)
+#   - worktrees directly under .wt/<project>/ for actors not in HANDOFF_ACTORS
+# Prints one actionable FRAMEWORK line per worktree layout problem and returns
+# the count on stdout as a plain integer (callers read it with $(...)).
+check_worktree_layout() {
+  local root="$1"
+  local project_name parent_dir wt_base
+  project_name="$(basename "$root")"
+  parent_dir="$(dirname "$root")"
+  wt_base="$parent_dir/.wt/$project_name"
+
+  local problems=0 wt_path wt_branch line
+  while IFS= read -r line; do
+    case "$line" in
+      worktree*)
+        wt_path="${line#worktree }"
+        wt_branch=""
+        ;;
+      branch*)
+        wt_branch="${line#branch }"
+        ;;
+      "")
+        [ -n "$wt_path" ] || continue
+        case "$wt_path" in
+          "$wt_base"|"$wt_base/"*) : ;;
+          *) continue ;;
+        esac
+        [ "$wt_path" != "$root" ] || continue
+
+        local rel="${wt_path#$wt_base/}"
+        [ -n "$rel" ] || continue
+        local first="${rel%%/*}"
+        local is_actor=0 actor
+        for actor in $HANDOFF_ACTORS; do
+          if [ "$first" = "$actor" ]; then
+            is_actor=1
+            break
+          fi
+        done
+        if [ "$is_actor" -eq 0 ]; then
+          echo "FRAMEWORK: orphaned nested worktree: $wt_path (branch ${wt_branch:-unknown}) — remove with: git -C \"$root\" worktree remove --force \"$wt_path\""
+          problems=$((problems + 1))
+          continue
+        fi
+        if [ ! -d "$wt_path" ]; then
+          echo "FRAMEWORK: missing worktree directory (registration stale): $wt_path (branch ${wt_branch:-unknown}) — prune with: git -C \"$root\" worktree prune"
+          problems=$((problems + 1))
+          continue
+        fi
+        local expected_prefix="exec/$first/"
+        if [ -n "$wt_branch" ] && [ "${wt_branch#$expected_prefix}" = "$wt_branch" ]; then
+          echo "FRAMEWORK: drifted worktree branch: $wt_path is on '$wt_branch', expected '$expected_prefix*' — investigate before next dispatch"
+          problems=$((problems + 1))
+        fi
+        ;;
+    esac
+  done < <(git -C "$root" worktree list --porcelain 2>/dev/null)
+  echo "$problems"
+}
+
 # --- main -------------------------------------------------------------------
 # Returns the number of non-OK panes (STALL/WEDGED) plus framework queue-dir
 # problems. Never dies on a bad record: every parser above defaults to the
@@ -218,6 +285,11 @@ main() {
 
   local queue_problems=0
   check_queue_dirs "$root" || queue_problems=$?
+
+  local wt_problems=0 wt_report=""
+  wt_report="$(check_worktree_layout "$root")"
+  wt_problems="$(printf '%s\n' "$wt_report" | tail -1)"
+  wt_report="$(printf '%s\n' "$wt_report" | sed '$d')"
 
   echo "fleet-health — $(cd "$root" 2>/dev/null && pwd)"
   echo "window: heartbeat/claim stale > ${STALE_MINUTES}m (mirrors pane-runner.ps1); quarantine retry after ${QUARANTINE_STALE_MINUTES}m"
@@ -267,15 +339,18 @@ main() {
   done
 
   echo ""
+  if [ -n "$wt_report" ]; then
+    printf '%s\n' "$wt_report"
+  fi
   if [ "$queue_problems" -gt 0 ]; then
     echo "$queue_problems queue dir(s) missing. Run the fix command above."
   fi
-  if [ "$bad" -gt 0 ] || [ "$queue_problems" -gt 0 ]; then
-    echo "$((bad + queue_problems)) pane(s)/queue dir(s) need attention (STALL/WEDGED/missing queue dir). Detection only — restarts stay with the owner/claude."
+  if [ "$bad" -gt 0 ] || [ "$queue_problems" -gt 0 ] || [ "$wt_problems" -gt 0 ]; then
+    echo "$((bad + queue_problems + wt_problems)) pane(s)/queue dir(s)/worktree(s) need attention (STALL/WEDGED/missing queue dir/orphaned worktree). Detection only — restarts stay with the owner/claude."
   else
     echo "all panes OK or down-idle."
   fi
-  return $((bad + queue_problems))
+  return $((bad + queue_problems + wt_problems))
 }
 
 out="$(main "$ROOT" 2>&1)"; rc=$?
@@ -285,7 +360,7 @@ printf '%s\n' "$out"
 # verdict in its output means the checker itself broke (set -u abort, missing
 # util) — that must never gate the fleet.  Queue-dir problems are real health
 # findings, not internal errors.
-if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED|FRAMEWORK:'; then
+if [ "$rc" -ne 0 ] && ! printf '%s' "$out" | grep -qE 'STALL|WEDGED|FRAMEWORK:|orphaned|drifted worktree|missing worktree directory'; then
   echo "fleet-health: internal error (exit $rc) — failing open" >&2
   exit 0
 fi

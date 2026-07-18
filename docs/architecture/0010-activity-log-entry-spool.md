@@ -67,7 +67,7 @@ does not already give. Recorded here so this is not re-litigated.
 ### 3. The race is CONFIRMED, not hypothetical
 
 On 2026-07-13 `.ai/activity/log.md` lost the header line
-`## 2026-07-13 09:20 — kiro-cli`, orphaning its three body lines. The entry was
+`## 2026-07-13 09:20 (UTC+7) - kiro-cli`, orphaning its three body lines. The entry was
 intact when written — proven by kiro's own commit `9371a40` at 09:21 — and after
 two subsequent prepends the header was gone. The line was **recovered verbatim
 from that blob** (recovered, not reconstructed), and a second scar in the same
@@ -189,14 +189,14 @@ enforcement layer does not reach.
 **Why UTC, and how the repo's two conventions are reconciled.** The repo
 currently uses UTC for *filenames* (`.ai/handoffs/**` — `YYYYMMDDHHMM`, per
 `.ai/handoffs/README.md` and CLAUDE.md) and local wall-clock for *human-facing
-headings* (`## YYYY-MM-DD HH:MM — <cli>`). That is not an inconsistency to be
+headings* (`## YYYY-MM-DD HH:MM (UTC+7) - <cli>`). That is not an inconsistency to be
 broken by fiat; it is a split by **purpose**, and we make it explicit:
 
 > **Filenames are machine sort keys and are always UTC. Headings are human
-> annotations and stay local wall-clock.**
+> annotations and stay UTC+7 wall-clock.**
 
 Entry filenames therefore follow the existing handoff convention (UTC), and the
-entry *body* keeps its current `## YYYY-MM-DD HH:MM — <cli>` local-time heading
+entry *body* keeps its current `## YYYY-MM-DD HH:MM (UTC+7) - <cli>` UTC+7 heading
 verbatim, so a rendered `log.md` reads exactly as it does today. Fixed-width
 UTC basic form means **lexicographic filename order == chronological order**,
 which is what makes the renderer a plain `sort -r`.
@@ -323,7 +323,7 @@ files.** Reasons:
 - The existing log is **not reliably machine-parseable**. Entries vary from 3
   lines to 20+; several contain multi-line `Action:` blocks with their own
   bullet lists, embedded backticks, colons, and `##`-adjacent content. The only
-  delimiter is the `## YYYY-MM-DD HH:MM — <cli>` heading, and a splitter that
+  delimiter is the `## YYYY-MM-DD HH:MM (UTC+7) - <cli>` heading, and a splitter that
   gets one boundary wrong silently welds two entries together or truncates one.
 - **The upside is zero.** Nobody needs a 2026-04 entry as an individually
   addressable file. The value of the spool is in *future concurrent writes*, and

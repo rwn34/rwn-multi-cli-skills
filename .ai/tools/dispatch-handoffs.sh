@@ -26,11 +26,12 @@
 #   handoffs get Status updated by the recipient, so re-runs skip them once
 #   they leave OPEN state. The human gate applies only to Risk C.
 #
-# Worktree-per-CLI (ADR-0004 amendment, 2026-07-11): every dispatched CLI runs
-# inside its OWN git worktree at <parent>/.wt/<project>/<cli>/, never in the
-# primary checkout. This closes the shared-HEAD race that let two concurrently
-# dispatched CLIs clobber each other's working files via `git checkout`
-# (see the ADR amendment's "2026-07-11 near-miss"). Rules, enforced below:
+# Worktree-per-CLI (ADR-0004 amendment + ADR-0016 snapshot-copy, 2026-07-11/17):
+# every dispatched CLI runs inside its OWN git worktree at
+# <parent>/.wt/<project>/<cli>/, never in the primary checkout. This closes the
+# shared-HEAD race that let two concurrently dispatched CLIs clobber each other's
+# working files via `git checkout` (see the ADR amendment's "2026-07-11
+# near-miss"). Rules, enforced below:
 #   - Worktree creation reuses scripts/wt-bootstrap.sh (single implementation).
 #   - An existing healthy worktree is REUSED, never destroyed.
 #   - Worktree setup failure => the dispatch for that handoff FAILS (non-zero
@@ -42,6 +43,11 @@
 #     then HEAD), or the handoff's explicit `Base:` field — never from ambient
 #     HEAD. This is a second, independent defect from the shared-HEAD one
 #     (see ensure_declared_base_branch()).
+#   - The shared .ai/ coordination plane is copied into the worktree as ordinary
+#     files before launch (.ai/tools/sync-ai-state.sh snapshot) and synced back
+#     to the primary checkout after the CLI exits (sync-ai-state.sh sync-back).
+#     There is NO junction/symlink, eliminating the reverse-write hazard that
+#     caused the 2026-07-16 canonical .ai/ deletion incident.
 
 set -u
 
@@ -66,6 +72,18 @@ EXEC_FAILED=0
 
 root="$(pwd)"
 [ -d "$root/.ai/handoffs" ] || { echo "Run from repo root (no .ai/handoffs found)."; exit 1; }
+
+# S3-3: ensure every discovered recipient queue has open/review/done dirs.
+# Missing dirs are auto-created here so handoffs always have somewhere to land.
+ensure_queue_dirs() {
+    local dir
+    shopt -s nullglob
+    for dir in "$root"/.ai/handoffs/to-*; do
+        [ -d "$dir" ] || continue
+        mkdir -p "$dir"/open "$dir"/review "$dir"/done 2>/dev/null || true
+    done
+}
+ensure_queue_dirs
 
 # Fleet Telegram notifications for the HEADLESS path (closes the coverage gap:
 # before this, only the PS pane-runner notified — bash-dispatched handoffs were
@@ -98,6 +116,32 @@ if [ "$MODE" = "exec" ]; then
     bash "$root/.ai/tools/reconcile-done-handoffs.sh" "$root" || true
 fi
 
+# S3-1: cheap encoding assertion + auto-repair for shared-state files. Bad
+# encoding makes grep-based history lookups silently lie and git treat the file
+# as binary. Fail-open: repair the common cases, warn+notify if repair fails.
+check_shared_encoding() {
+    local f out norm_out
+    for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
+        [ -f "$f" ] || continue
+        out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
+        if [ -n "$out" ]; then
+            echo "WARN: $out" >&2
+            norm_out="$(bash "$root/.ai/tools/normalize-encoding.sh" "$f" 2>&1)" || true
+            if [ -n "$norm_out" ]; then
+                echo "WARN: attempted repair: $norm_out" >&2
+            fi
+            if bash "$root/.ai/tools/check-encoding.sh" "$f" >/dev/null 2>&1; then
+                echo "WARN: encoding repaired: $f" >&2
+                fleet_notify alert "$project_name" "encoding-repaired" "bash" "kimi-cli" >/dev/null 2>&1 || true
+            else
+                echo "WARN: encoding repair failed for $f" >&2
+                fleet_notify alert "$project_name" "encoding-check" "bash" "kimi-cli" >/dev/null 2>&1 || true
+            fi
+        fi
+    done
+}
+check_shared_encoding
+
 # Headless invocation per CLI. Verify locally before relying on kimi/kiro forms —
 # flags differ across versions (see .ai/cli-map.md § headless invocation).
 #
@@ -128,7 +172,9 @@ headless_cmd() {
         claude) HEADLESS_ARGV=(claude -p "$prompt" --dangerously-skip-permissions) ;;
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
-        kimi)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
+        # `kimi-executor` and `kiro-executor` queue names share the same
+        # binaries as their base CLIs (2026-07-17 dark-queue fix).
+        kimi|kimi-executor)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
         # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
         # "Tool approval required but --no-interactive was specified. Use
         # --trust-all-tools" (dispatch failure 2026-07-09, see
@@ -150,7 +196,7 @@ headless_cmd() {
         # (ADR-0005) is the version-agnostic mechanical floor for these commits.
         # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
         # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
-        kiro)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
+        kiro|kiro-executor)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
@@ -165,8 +211,8 @@ headless_cmd() {
 bin_for() {
     case "$1" in
         claude) echo "claude" ;;
-        kimi)   echo "kimi" ;;
-        kiro)   echo "kiro-cli" ;;
+        kimi|kimi-executor)   echo "kimi" ;;
+        kiro|kiro-executor)   echo "kiro-cli" ;;
         opencode) echo "opencode" ;;
     esac
 }
@@ -229,6 +275,26 @@ ensure_cli_worktree() {
     return 0
 }
 
+# snapshot_ai <wt_path> — copy canonical .ai/ into the worktree as ordinary files.
+# Uses .ai/tools/sync-ai-state.sh snapshot. Idempotent: re-running refreshes the
+# snapshot to match the current canonical state. Returns 0 on success, 1 on failure.
+snapshot_ai() {
+    local wt_path="$1"
+    if ! bash "$root/.ai/tools/sync-ai-state.sh" snapshot "$root/.ai" "$wt_path/.ai" 2>&1; then
+        echo "ERROR: could not snapshot canonical .ai/ into $wt_path" >&2
+        return 1
+    fi
+    return 0
+}
+
+# sync_back_ai <wt_path> — replay worktree .ai/ changes into canonical .ai/ and
+# remove the worktree copy. Fail-open: a sync-back failure is logged but does not
+# abort (the canonical .ai/ may still be usable; a human can reconcile).
+sync_back_ai() {
+    local wt_path="$1"
+    bash "$root/.ai/tools/sync-ai-state.sh" sync-back "$wt_path" "$root" 2>&1 || true
+}
+
 # ensure_declared_base_branch <wt_path> <cli> <slug> <base> -> 0 on success
 # (worktree HEAD is now on the per-handoff branch, or on an existing branch
 # with the dispatcher's own uncommitted work preserved), 1 on hard failure.
@@ -256,18 +322,12 @@ ensure_declared_base_branch() {
     # class of mutation (`git checkout` reverting on-disk files) the ADR
     # amendment names as the root cause. Report and let the caller decide.
     #
-    # EXCLUDE .ai/** from this check. `.ai` is a directory JUNCTION into the
-    # canonical coordination plane (wt-bootstrap.sh link_ai()); `git status`
-    # does not honor .git/info/exclude for files reached through a Windows
-    # junction the way it does for a real directory — it recurses through the
-    # reparse point and reports newly-created files under .ai/ as untracked
-    # (`?? .ai/handoffs/...`) even though the junction line is present in
-    # info/exclude (verified empirically). Since .ai/ activity/handoffs churn
-    # constantly and legitimately across CLIs, treating it as "uncommitted
-    # work" here would make every dispatch spuriously skip the branch cut.
-    # This grep is scoped to exactly that known false-positive; it does not
-    # touch or attempt to fix the underlying junction/exclude gap, which is
-    # explicitly out of scope for this change (see the handoff's NON-goal).
+    # EXCLUDE .ai/** from this check. `.ai` is a SNAPSHOT COPY of the canonical
+    # coordination plane into the worktree, populated by snapshot_ai() before
+    # each dispatch. It is intentionally mutable (activity log, handoff queues,
+    # reports) and is synced back after the CLI exits. Treating its normal churn
+    # as "uncommitted work" would make every dispatch spuriously skip the branch
+    # cut. This grep is scoped to exactly that known false-positive.
     local current
     current="$(git -C "$wt_path" branch --show-current 2>/dev/null)"
     dirty="$(git -C "$wt_path" status --porcelain 2>/dev/null | grep -v ' \.ai/' || true)"
@@ -280,11 +340,12 @@ ensure_declared_base_branch() {
         return 1
     fi
 
-    # Best-effort fetch for a fresh base ref. Never fatal: a stale-but-present
-    # base is still a DECLARED one (better than ambient HEAD), and dispatch
-    # must not hard-fail just because the network is briefly unavailable.
-    if ! git -C "$wt_path" fetch origin >/dev/null 2>&1; then
-        echo "WARN: git fetch origin failed in $wt_path — using cached '$base'" >&2
+    # Best-effort fetch for a fresh base ref. Fetch from the primary checkout
+    # rather than the worktree: worktrees may inherit a relative local remote
+    # URL that does not resolve from the worktree path (common in sandbox
+    # tests), and the remote-tracking refs are shared anyway.
+    if ! git -C "$root" fetch origin >/dev/null 2>&1; then
+        echo "WARN: git fetch origin failed in $root — using cached '$base'" >&2
     fi
 
     # Resolve the base ref. If it can't be resolved at all (no network AND no
@@ -297,23 +358,16 @@ ensure_declared_base_branch() {
     fi
 
     # Attach HEAD to exec/<cli>/<slug> WITHOUT a checkout. A plain `git
-    # checkout` (or `checkout -b`) ABORTS in every executor worktree the moment
-    # the junctioned .ai/ holds live coordination-plane state that differs from
-    # this worktree's (often stale) HEAD: git reads that as "local changes" and
-    # refuses to touch the files (2026-07-12/13 fleet outage — every
-    # auto-dispatch WORKTREE_FAIL -> quarantine; see handoff
-    # 202607122330-fix-ai-junction-branch-cut-landmine). The dirty check above
-    # excludes .ai/ BY DESIGN, so checkout's refusal was the contradictory
-    # second half of one rule. symbolic-ref moves HEAD without rewriting a
-    # single file; the restores then converge worktree+index onto the branch
-    # tip for everything EXCEPT .ai/ — which is LIVE through the junction and
-    # must never be written by git in a worktree — and the index alone for
-    # .ai/, so `git status` shows genuine plane churn instead of staged
-    # phantoms. `git restore` with an explicit --source defaults to
-    # --no-overlay: files absent on the branch are removed from the worktree
-    # too (verified empirically). Keep in lockstep with
-    # tools/4ai-panes/pane-runner.ps1 Ensure-DeclaredBaseBranchReal (parity
-    # guard: test-pane-runner.ps1 (av3)).
+    # checkout` (or `checkout -b`) would rewrite files in the worktree and can
+    # entangle concurrent dispatches. symbolic-ref moves HEAD without rewriting
+    # a single file; the restore then converges worktree+index onto the branch
+    # tip for everything EXCEPT .ai/. .ai/ is a snapshot copy populated by
+    # snapshot_ai() and must not be touched by git — the snapshot is the
+    # authoritative coordination-plane state for this dispatch.
+    # `git restore` with an explicit --source defaults to --no-overlay: files
+    # absent on the branch are removed from the worktree too (verified
+    # empirically). Keep in lockstep with
+    # tools/4ai-panes/pane-runner.ps1 Ensure-DeclaredBaseBranchReal.
     if ! git -C "$wt_path" show-ref --verify --quiet "refs/heads/$branch"; then
         if ! git -C "$wt_path" branch "$branch" "$base" 2>/dev/null; then
             echo "ERROR: could not create branch $branch at $base in $wt_path" >&2
@@ -338,14 +392,17 @@ ensure_declared_base_branch() {
 # header_value <file> <key> -> echoes the value of the first matching key in
 # the handoff's status block. The status block is defined as all consecutive
 # header lines ("Key: value") at the top of the file, stopping at the first
-# blank line or `## ` section header. Keys are matched case-insensitively and
-# trailing CR characters are stripped. This replaces the brittle `head -20 | grep`
-# scan (S3-4).
+# `## ` section header. Blank lines and lines without a `Key: value` shape are
+# skipped rather than terminating the scan, so real handoffs that put a blank
+# line between `# Title` and `Status:` are parsed correctly. Keys are matched
+# case-insensitively and trailing CR characters are stripped. This replaces the
+# brittle `head -20 | grep` scan (S3-4).
 header_value() {
     local file="$1" key="$2"
     awk -v key="$key" '
         BEGIN { k = tolower(key) }
-        /^## / || /^[[:space:]]*$/ { exit }
+        /^## / { exit }
+        /^[[:space:]]*$/ { next }
         {
             line = $0
             sub(/\r$/, "", line)
@@ -673,6 +730,33 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 rm -f "$claim"
                 continue
             fi
+
+            # Snapshot-copy the canonical .ai/ into the worktree. This is the
+            # ADR-0016 replacement for the old junction model: the executor sees
+            # ordinary files, not a junction, so git cannot follow a reparse
+            # point and delete canonical .ai/ state.
+            if ! snapshot_ai "$wt_path"; then
+                echo "FAIL  [$cli] $rel — could not snapshot canonical .ai/ into worktree"
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (.ai/ snapshot)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Stage: .ai/ snapshot-copy (ADR-0016) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: run 'bash $root/.ai/tools/sync-ai-state.sh snapshot $root/.ai $wt_path/.ai' manually."
+                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+
             # Declared-base branch cut (second, independent defect from the
             # shared-HEAD one): never leave the worktree on ambient HEAD.
             if ! base="$(base_for "$f")"; then
@@ -817,7 +901,9 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             # every dispatched CLI runs in its OWN working tree, never the primary
             # checkout, so a concurrent dispatch's `git checkout` can never revert
             # this session's on-disk files (ADR-0004 amendment).
-            ( cd "$wt_path" && export AI_HANDOFF_DISPATCH=1 && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
+            # S3-1 root cause: force UTF-8 locale so any bash subprocess the CLI
+            # spawns writes em-dashes and other non-ASCII chars as UTF-8, not cp1252.
+            ( cd "$wt_path" && export AI_HANDOFF_DISPATCH=1 && export LC_ALL='C.UTF-8' && export LANG='C.UTF-8' && "${HEADLESS_ARGV[@]}" ) 2>&1 | tee "$out_tmp"
             rc=${PIPESTATUS[0]}
             echo "---- [$cli] finished (exit $rc) ----"
             # Failure alerting (Tier B — act, then notify): non-zero exit writes a
@@ -854,6 +940,13 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 fleet_notify done "$project_name" "$slug" "$cli" "$owner" || true
             fi
             rm -f "$out_tmp"
+
+            # Sync the worktree's .ai/ changes back to canonical and remove the
+            # worktree copy. Fail-open: sync-back errors are logged but do not
+            # abort dispatch; the recipient's changes are already in the canonical
+            # working tree or recoverable from the worktree.
+            sync_back_ai "$wt_path"
+
             # Release the claim: the recipient self-retires the handoff (moves it
             # to done/) or leaves it OPEN/BLOCKED. Either way our lease is over —
             # drop the sidecar so a re-run (or a pane) can reclaim if still OPEN.

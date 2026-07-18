@@ -41,7 +41,9 @@
 #   (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to
 #       $ProjectDir (the acceptance assertion for this whole fix)
 #   (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked
-#   (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to origin/master
+#   (ab) Get-DeclaredBase reads a handoff's Base: field; discovers the repo's
+#        default branch offline-first when absent (origin/HEAD, origin/main,
+#        main, HEAD); never hardcodes origin/master.
 #   (ac) parity guard: Ensure-DeclaredBaseBranchReal vs
 #        dispatch-handoffs.sh's ensure_declared_base_branch() behave the same on
 #        a real sandbox repo (branch cut from declared base, not ambient HEAD;
@@ -60,16 +62,10 @@
 #   (al) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
 #   (am) real InvokeCli honors BOTH the worktree cwd AND AI_HANDOFF_DISPATCH=1
 #        in the SAME child invocation (the interleave this rebase must prove)
-#   (av) JUNCTION LANDMINE regression: stale-HEAD worktree + live junctioned
-#        .ai/ — raw `git checkout -b` FAILS (prove-the-bug), then
-#        Ensure-DeclaredBaseBranchReal succeeds, cuts from the declared base,
-#        and preserves the live .ai/ byte-for-byte (prove-the-fix). Real
-#        worktree, real mklink /J junction — no mocks.
-#   (av2) non-.ai dirt with .ai churn present -> still refuses (safety intact)
-#   (av3) PARITY: bash twin (dispatch-handoffs.sh
-#        ensure_declared_base_branch) survives the same landmine state
-#   (av4) wt-bootstrap junction-degradation guard: degraded real-dir .ai with
-#        uncommitted content dies loud; clean real dir re-junctions
+#   (av) ADR-0016 SNAPSHOT-COPY regression: real sandbox worktree, real
+#        SnapshotAi/SyncBackAi hooks — .ai/ is an ordinary directory copy, not
+#        a junction, and a report written into worktree .ai/ syncs back to
+#        canonical.
 #   (ba-be) PANE LIVENESS HEARTBEAT SIDECAR (fleet-health.sh dead-man's switch):
 #     (ba) Write-Heartbeat writes .ai/.heartbeat-<cli>.json w/ contract fields
 #     (bb) atomic temp+rename leaves no .tmp debris
@@ -166,6 +162,20 @@ $script:EnsureDeclaredBaseBranch = {
     return $true
 }
 
+# Mock .ai/ snapshot/sync-back for tests (a)-(z): the mock worktree is not a real
+# git repo, so shelling out to sync-ai-state.sh would fail. Capture call args.
+$script:snapshotCalls = @()
+$script:syncBackCalls = @()
+$script:SnapshotAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $script:snapshotCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+    return $true
+}
+$script:SyncBackAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $script:syncBackCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+}
+
 # Mock base resolution for tests (a)-(z): avoids requiring every temp workspace to be
 # a full git repo. The dedicated (ab) test exercises the real discovery logic.
 $script:GetDeclaredBase = { param([string]$HandoffPath) return 'origin/master' }
@@ -178,6 +188,10 @@ $r = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $h -MaxC
 Assert-Equal 'DONE' $r.Result 'a: done on first run -> Result=DONE'
 Assert-Equal 0 $r.Continues 'a: done on first run -> 0 continues'
 Assert-Equal 1 $r.Invocations 'a: done on first run -> 1 invocation'
+Assert-Equal $work $script:snapshotCalls[-1].ProjectDir 'a: SnapshotAi called with ProjectDir'
+Assert-Equal $script:mockWtPath $script:snapshotCalls[-1].WtPath 'a: SnapshotAi called with WtPath'
+Assert-Equal $work $script:syncBackCalls[-1].ProjectDir 'a: SyncBackAi called with ProjectDir'
+Assert-Equal $script:mockWtPath $script:syncBackCalls[-1].WtPath 'a: SyncBackAi called with WtPath'
 
 # -- (b) still-open then done on 2nd run (auto-continue) --
 $script:mockCalls = 0; $script:mockDeleteOnCall = 2
@@ -766,139 +780,78 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
             return 0
         }
 
-        # -- (av) THE JUNCTION LANDMINE (2026-07-12/13 fleet outage; handoff  --
-        # -- 202607122330): a worktree whose HEAD is STALE and whose only     --
-        # -- dirt is the live, junctioned .ai/ must still get its declared-   --
-        # -- base branch. In this exact state the dirty-check reads "clean"   --
-        # -- (.ai/ filtered by design) but `git checkout` refuses to touch    --
-        # -- the "locally modified" junction files -> WORKTREE_FAIL x3 ->     --
-        # -- quarantine, fleet-wide. Prove the landmine exists (a raw         --
-        # -- checkout FAILS here — if git ever changes, this assertion fails  --
-        # -- loudly instead of the test passing vacuously), then prove the    --
-        # -- fix: Ensure-DeclaredBaseBranchReal succeeds, the live .ai/ is    --
-        # -- preserved byte-for-byte, and everything else converges on the    --
-        # -- base. Uses the REAL sandbox worktree with its REAL mklink /J     --
-        # -- junction — no mocks (mocking the worktree path is how PR #51     --
-        # -- shipped this bug).                                               --
-        # EAP=Continue for the block: raw `git fetch` here writes ordinary
-        # progress to STDERR, which the suite's script-level EAP=Stop would
-        # promote to a terminating NativeCommandError (same hazard
-        # Ensure-DeclaredBaseBranchReal guards internally — test code is not
-        # inside that guard).
-        $avPrevEAP = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        $seedSha = git -C $primary rev-parse HEAD
-
-        # Advance origin/master behind the worktree's back: v2 of the
-        # junctioned log (committed at the base) + a non-.ai change.
-        $avClone = Join-Path $sandboxParent 'av-mover'
-        git clone --quiet $originBare $avClone
-        Push-Location $avClone
-        git config user.email 'test@example.com'
-        git config user.name 'test'
-        'log v2 (committed at base)' | Set-Content -Path (Join-Path $avClone '.ai/activity/log.md')
-        'seed v2' | Set-Content -Path (Join-Path $avClone 'seed.txt')
-        git add -A
-        git commit --quiet -m 'advance base: .ai log v2 + seed v2'
-        git push --quiet origin master
-        Pop-Location
-
-        # Stale-HEAD worktree + LIVE uncommitted .ai churn: detach the kiro
-        # worktree at the seed commit, then append an uncommitted line to the
-        # canonical log. Through the junction the worktree sees
-        # .ai/activity/log.md as locally modified AND different at the base —
-        # the exact 2026-07-12/13 outage state.
-        Remove-Item -Path (Join-Path $realWt1 'marker-kiro.txt') -Force -ErrorAction SilentlyContinue
-        git -C $realWt1 checkout --quiet --detach $seedSha 2>$null
-        Add-Content -Path (Join-Path $primary '.ai/activity/log.md') -Value 'log v3 (LIVE, uncommitted — appended by another CLI)'
-        $logLiveBefore = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-
-        git -C $realWt1 fetch origin *> $null
-        git -C $realWt1 checkout --quiet -b 'av-raw-probe' 'origin/master' *> $null
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av: PROVE-THE-BUG - raw git checkout -b FAILS in the stale-HEAD + live-.ai state (the landmine)'
-
-        $avOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av-junction' -Base 'origin/master'
-        Assert-Equal $true $avOk 'av: PROVE-THE-FIX - Ensure-DeclaredBaseBranchReal succeeds in the landmine state'
-        $avBranch = git -C $realWt1 branch --show-current
-        Assert-Equal 'exec/kiro/av-junction' $avBranch 'av: HEAD is on exec/<cli>/<slug>'
-        $avHead = git -C $realWt1 rev-parse HEAD
-        $avBase = git -C $realWt1 rev-parse origin/master
-        Assert-Equal $avBase $avHead 'av: branch tip == origin/master (cut from the DECLARED base)'
-        $logLiveAfter = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-        Assert-Equal $logLiveBefore $logLiveAfter 'av: live junctioned .ai/activity/log.md preserved byte-for-byte (git never writes it)'
-        $seedTxt = Get-Content -Path (Join-Path $realWt1 'seed.txt') -Raw
-        Assert-Equal 'seed v2' ($seedTxt.Trim()) 'av: non-.ai files converged onto the base (seed.txt v2)'
-        $avDirt = git -C $realWt1 status --porcelain | Where-Object { $_ -notmatch '\s\.ai/' }
-        Assert-Equal $null $avDirt 'av: no phantom non-.ai dirt after the cut (only live .ai churn remains)'
-
-        # (av2) the safety must NOT weaken with the tolerance: genuine non-.ai
-        # dirt still refuses the cut even while .ai churn is present.
-        Add-Content -Path (Join-Path $realWt1 'seed.txt') -Value 'local uncommitted work'
-        $av2Ok = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av2-should-not-cut' -Base 'origin/master'
-        Assert-Equal $true $av2Ok 'av2: non-.ai dirt -> WARN-and-reuse (returns true)'
-        $av2Branch = git -C $realWt1 branch --show-current
-        Assert-Equal 'exec/kiro/av-junction' $av2Branch 'av2: branch NOT changed over uncommitted non-.ai work'
-        git -C $realWt1 show-ref --verify --quiet 'refs/heads/exec/kiro/av2-should-not-cut' *> $null
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av2: no new branch was cut over non-.ai dirt'
-        git -C $realWt1 checkout --quiet -- seed.txt 2>$null
-
-        # (av3) PARITY: the bash twin (dispatch-handoffs.sh
-        # ensure_declared_base_branch) must survive the SAME landmine state.
-        # Drive the REAL script end-to-end: a stub 'kimi' binary on PATH
-        # satisfies bin_for()/command -v (the real headless CLI is never
-        # launched — the stub exits 0 instantly); the branch cut happens
-        # BEFORE the invocation. Assert on OUTCOME (branch + preserved log),
-        # not exit code (post-launch bookkeeping varies).
-        $av3Tools = Join-Path $primary '.ai/tools'
-        New-Item -ItemType Directory -Path $av3Tools -Force | Out-Null
-        Copy-Item -Path (Join-Path $here '..\..\.ai\tools\dispatch-handoffs.sh') -Destination $av3Tools
-        $av3Scripts = Join-Path $primary 'scripts'
-        New-Item -ItemType Directory -Path $av3Scripts -Force | Out-Null
-        Copy-Item -Path $wtBootstrapPath -Destination $av3Scripts
-        $av3Open = Join-Path $primary '.ai/handoffs/to-kimi/open'
-        New-Item -ItemType Directory -Path $av3Open -Force | Out-Null
-        $av3Handoff = Join-Path $av3Open 'av3-parity.md'
-        @("# av3-parity", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-13 00:00", "Auto: yes", "Risk: A", "", "## Goal", "parity probe") -join "`n" | Set-Content -Path $av3Handoff -Encoding utf8
-        $av3StubDir = Join-Path $sandboxParent 'bin-stub'
-        New-Item -ItemType Directory -Path $av3StubDir -Force | Out-Null
-        "#!/bin/sh`nexit 0" | Set-Content -Path (Join-Path $av3StubDir 'kimi') -Encoding ascii -NoNewline
-        $av3OldPath = $env:PATH
-        $env:PATH = "$av3StubDir;$av3OldPath"
-        $av3Dispatch = Join-Path $primary '.ai/tools/dispatch-handoffs.sh'
-        Push-Location $primary
-        try {
-            $av3Out = & $bashCmd $av3Dispatch --exec --only kimi 2>&1 | Out-String
-        } finally {
-            Pop-Location
-            $env:PATH = $av3OldPath
+        # -- (av) ADR-0016 SNAPSHOT-COPY REGRESSION: the dispatcher copies canonical
+        # .ai/ into the worktree as ordinary files and syncs changes back. There
+        # is NO junction, so git cannot follow a reparse point and destroy
+        # canonical .ai/ state. Use the real sandbox worktree and the real
+        # SnapshotAi/SyncBackAi hooks.
+        $script:SnapshotAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $bash = Resolve-GitBash
+            $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+            & $bash $sync snapshot "$ProjectDir/.ai" "$WtPath/.ai" 2>&1 | ForEach-Object { Write-Host "  [snapshot-ai] $_" -ForegroundColor DarkGray }
+            return ($LASTEXITCODE -eq 0)
         }
-        $av3Wt = Join-Path $sandboxParent '.wt/proj/kimi'
-        $av3Branch = git -C $av3Wt branch --show-current
-        Assert-Equal 'exec/kimi/av3-parity' $av3Branch 'av3: PARITY - bash twin cut the declared-base branch in the same landmine state'
-        Assert-Equal $false ($av3Out -match 'could not establish declared-base branch') 'av3: bash twin did NOT hit the declared-base failure'
-        $logLiveAfterAv3 = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-        Assert-Equal $logLiveBefore $logLiveAfterAv3 'av3: bash twin preserved the live junctioned log'
+        $script:SyncBackAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $bash = Resolve-GitBash
+            $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+            & $bash $sync sync-back "$WtPath" "$ProjectDir" 2>&1 | ForEach-Object { Write-Host "  [sync-back-ai] $_" -ForegroundColor DarkGray }
+        }
 
-        # (av4) wt-bootstrap.sh junction-degradation guard: a worktree whose
-        # .ai/ has degraded into a REAL directory holding uncommitted content
-        # must make the bootstrap DIE LOUD (a CLI reading the wrong queue is a
-        # coordination-plane split-brain); a clean real dir (the fresh
-        # worktree-add state) must re-junction without complaint.
-        $av4Ai = Join-Path $realWt1 '.ai'
-        cmd /c rmdir "$av4Ai" *> $null
-        New-Item -ItemType Directory -Path $av4Ai -Force | Out-Null
-        'live state that exists only here' | Set-Content -Path (Join-Path $av4Ai 'orphaned-report.md')
-        $av4Out = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av4: DEGRADED .ai (real dir + uncommitted content) -> wt-bootstrap dies loud'
-        Assert-Equal $true ($av4Out -match 'DEGRADED') 'av4: failure message names the degradation'
-        Remove-Item -Path $av4Ai -Recurse -Force
-        git -C $realWt1 checkout --quiet -- .ai 2>$null   # clean real dir matching the index
-        $av4Out2 = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
-        Assert-Equal 0 $LASTEXITCODE 'av4: clean real dir -> re-junction succeeds'
-        Assert-Equal $true ($av4Out2 -match 'Done\.') 'av4: bootstrap completed'
-        $av4Relinked = (Get-Item $av4Ai).Attributes -band [System.IO.FileAttributes]::ReparsePoint
-        Assert-Equal $true ($av4Relinked -ne 0) 'av4: .ai is a reparse point (junction) again'
-        $ErrorActionPreference = $avPrevEAP
+        # Ensure the sync-ai-state.sh tool exists in the sandbox project so the
+        # real hooks can find it.
+        $avTools = Join-Path $primary '.ai/tools'
+        New-Item -ItemType Directory -Path $avTools -Force | Out-Null
+        Copy-Item -Path (Join-Path $here '../../.ai/tools/sync-ai-state.sh') -Destination $avTools
+        $avOpen = Join-Path $primary '.ai/handoffs/to-kimi/open'
+        New-Item -ItemType Directory -Path $avOpen -Force | Out-Null
+        $avHandoff = Join-Path $avOpen 'av-snapshot.md'
+        @("# av-snapshot", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-17 00:00", "Auto: yes", "Risk: A", "", "## Goal", "snapshot-copy probe") -join "`n" | Set-Content -Path $avHandoff -Encoding utf8
+
+        # Mock CLI writes a report into the worktree's snapshot .ai/ and deletes
+        # the canonical handoff.
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            New-Item -ItemType Directory -Path (Join-Path $Cwd '.ai/reports') -Force | Out-Null
+            'synced report from worktree' | Set-Content -Path (Join-Path $Cwd '.ai/reports/av-synced.md')
+            Remove-Item -Path $avHandoff -Force -ErrorAction SilentlyContinue
+            return 0
+        }
+
+        # Use the real worktree and branch-cut functions for this regression test.
+        $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+
+        $avWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'kimi'
+        $avResult = Invoke-HandoffRun -ProjectDir $primary -CliName 'kimi' -HandoffPath $avHandoff -MaxContinues 1
+        Assert-Equal 'DONE' $avResult.Result 'av: snapshot-copy handoff completes DONE'
+        Assert-Equal $true (Test-Path (Join-Path $primary '.ai/reports/av-synced.md')) 'av: report written in worktree .ai/ synced back to canonical'
+        Assert-Equal $false (Test-Path (Join-Path $avWt '.ai')) 'av: worktree .ai/ removed after sync-back'
+
+        # Restore the (a-x) mocks.
+        $script:GetCliWorktreePath = {
+            param([string]$ProjectDir, [string]$CliName)
+            $script:lastWtCliName = $CliName
+            if ($script:mockWtFails) { return $null }
+            return $script:mockWtPath
+        }
+        $script:EnsureDeclaredBaseBranch = {
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            if ($script:mockBranchFails) { return $false }
+            return $true
+        }
+        $script:SnapshotAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $script:snapshotCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+            return $true
+        }
+        $script:SyncBackAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $script:syncBackCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+        }
+
     } finally {
         Pop-Location
         try { git -C $primary worktree prune 2>$null | Out-Null } catch {}
@@ -1010,6 +963,17 @@ try {
 } finally {
     Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# -- (an) REAL invoke path: the spawned child inherits UTF-8 locale env vars (S3-1) --
+#     Guards the root-cause fix for cp1252 em-dash corruption: any bash/PowerShell
+#     subprocess the CLI spawns must see C.UTF-8 so non-ASCII chars are UTF-8.
+$origHeadlessAn = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%LC_ALL%"=="C.UTF-8" if "%LANG%"=="C.UTF-8" (exit 7) else (exit 9)') }
+$anCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+${function:Get-HeadlessCmd} = $origHeadlessAn
+Assert-Equal 7 $anCode 'an: child spawned by real InvokeCli sees LC_ALL=C.UTF-8 and LANG=C.UTF-8 (exit 7)'
+Assert-Equal $false (Test-Path Env:\LC_ALL) 'an: LC_ALL removed from runner env after the call'
+Assert-Equal $false (Test-Path Env:\LANG) 'an: LANG removed from runner env after the call'
 
 # -- (an-at) FLAT-INSTALL TOPOLOGY: the deployed shape, which was NEVER tested. --
 #

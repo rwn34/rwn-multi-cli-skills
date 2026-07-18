@@ -1,10 +1,12 @@
 # pane-runner.ps1 master→main migration
+Status: NOT-A-BUG
 
 ## Sender: opencode-auto
 ## Recipient: kiro-executor
 ## Created: 2026-07-16 20:31 (UTC+7)
 ## Auto: yes
 ## Risk: B
+## Evidence: VERIFIED (grep -n "Resolve-DefaultBase\|Assert-WorktreeFresh" tools/4ai-panes/pane-runner.ps1 -> helper exists and is called; grep "origin/master" tools/4ai-panes/pane-runner.ps1 -> only §1C deliberate references remain)
 
 ## Goal
 
@@ -151,3 +153,6 @@ Then run:
 ## When complete
 
 Self-retire: move this file from `open/` to `done/`
+
+## Why
+The requested Assert-WorktreeFresh refactor and Resolve-DefaultBase helper are already present in `tools/4ai-panes/pane-runner.ps1`. The function `Resolve-DefaultBase` exists and `Assert-WorktreeFresh` calls it; the remaining `origin/master` strings are the §1C deliberate master-default regression tests and doc references. No further changes needed; retiring as NOT-A-BUG.

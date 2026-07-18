@@ -1,3 +1,8 @@
+## 2026-07-18 16:55 (UTC+7) - kimi
+- Action: Fix sync-ai-state.sh snapshot hang and dispatcher worktree-fetch path so the full test-dispatch-worktree.sh suite passes on Windows Git-Bash.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
+- Decisions: Replaced per-file cp loop with tar --exclude='.gitkeep' (avoids AV scan hang); corrected manifest_for cwd via process substitution; changed ensure_declared_base_branch to fetch from $root so relative local remotes in worktrees resolve; kept test sandbox remotes relative. Full suite: 79 passed, 0 failed.
+
 ## 2026-07-17 22:56 (UTC+7) — kimi-cli
 - Action: Processed handoff `202607171845-fix-sync-replicas-guard-fail-open-edges`: closed all three fail-open edges in `sync-replicas.sh` and `check-landed-ssot.sh`, rebased the branch onto `origin/main@a82146c`, force-pushed `715a2a5`, and updated PR #112. Review routed to `kiro-cli`; merge gate stays with `claude-code`.
 - Files: `.ai/tools/sync-replicas.sh`, `.ai/tools/check-landed-ssot.sh`, `scripts/git-hooks/test-pre-commit.sh`; `.ai/handoffs/to-kimi/open/202607171845-fix-sync-replicas-guard-fail-open-edges.md` → `.ai/handoffs/to-kimi/done/202607171845-fix-sync-replicas-guard-fail-open-edges.md`; `.ai/activity/log.md`.

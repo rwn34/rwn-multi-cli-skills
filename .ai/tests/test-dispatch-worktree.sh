@@ -29,13 +29,6 @@ WT_BOOTSTRAP="$REPO_ROOT/scripts/wt-bootstrap.sh"
 # reverse-write guard from wt-bootstrap.sh) lands on master. The guard makes
 # `git restore --staged -- .ai` fail in a fresh sandbox, so we copy the live
 # bootstrap into the sandbox and strip the guard function + call site.
-WT_BOOTSTRAP_PATCHED="$(mktemp)"
-sed -e '/^# Reverse-write guard/,/^}$/d' \
-    -e '/^[[:space:]]*guard_ai_reverse_write[[:space:]]"\$wt_path"$/d' \
-    "$WT_BOOTSTRAP" > "$WT_BOOTSTRAP_PATCHED"
-cleanup_bootstrap_patched() { rm -f "$WT_BOOTSTRAP_PATCHED"; }
-trap 'cleanup; cleanup_bootstrap_patched' EXIT
-
 pass=0
 fail=0
 check() { # desc, exit-code-of-condition (0 = pass)
@@ -77,13 +70,17 @@ echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
 git -C "$PROJECT" branch -M master
-git -C "$PROJECT" remote add origin "$ORIGIN"
+# Use a relative path for the remote to avoid MSYS/Cygwin absolute-path
+# conversion issues in Git-for-Windows that can cause "could not read from
+# remote repository" / shared-library load errors in temp sandboxes.
+git -C "$PROJECT" remote add origin "../origin.git"
 git -C "$PROJECT" push --quiet -u origin master
 
 # Copy a working wt-bootstrap.sh into the sandbox so the dispatcher (which
 # resolves it from $root/scripts/wt-bootstrap.sh) picks up the sandbox version.
-mkdir -p "$PROJECT/scripts"
-cp "$WT_BOOTSTRAP_PATCHED" "$PROJECT/scripts/wt-bootstrap.sh"
+mkdir -p "$PROJECT/scripts" "$PROJECT/.ai/tools"
+cp "$WT_BOOTSTRAP" "$PROJECT/scripts/wt-bootstrap.sh"
+cp "$REPO_ROOT/.ai/tools/sync-ai-state.sh" "$PROJECT/.ai/tools/sync-ai-state.sh"
 
 # ---------- stub CLI binaries on PATH ----------
 # Each stub: records its own cwd + current branch to a per-CLI log file, then
@@ -278,11 +275,13 @@ echo "seed" > "$PROJECT_MAIN/seed.txt"
 git -C "$PROJECT_MAIN" add -A
 git -C "$PROJECT_MAIN" commit --quiet -m "seed"
 git -C "$PROJECT_MAIN" branch -M main
-git -C "$PROJECT_MAIN" remote add origin "$ORIGIN_MAIN"
+# Relative remote path avoids Git-for-Windows absolute-path conversion issues.
+git -C "$PROJECT_MAIN" remote add origin "../origin-main.git"
 git -C "$PROJECT_MAIN" push --quiet -u origin main
 
-mkdir -p "$PROJECT_MAIN/scripts"
-cp "$WT_BOOTSTRAP_PATCHED" "$PROJECT_MAIN/scripts/wt-bootstrap.sh"
+mkdir -p "$PROJECT_MAIN/scripts" "$PROJECT_MAIN/.ai/tools"
+cp "$WT_BOOTSTRAP" "$PROJECT_MAIN/scripts/wt-bootstrap.sh"
+cp "$REPO_ROOT/.ai/tools/sync-ai-state.sh" "$PROJECT_MAIN/.ai/tools/sync-ai-state.sh"
 
 mk_handoff_for() {
     local project="$1" cli="$2" slug="$3" extra="${4:-}"
@@ -686,6 +685,36 @@ out_v45="$(cat "$LOGS/t4-v45-lint.out")"
 check "v4-5: lint exits non-zero for HYPOTHESIS + Risk C" "$([ "$rc_v45" -ne 0 ] && echo 0 || echo 1)"
 check "v4-5: lint reports HYPOTHESIS not allowed with Risk C" "$(echo "$out_v45" | grep -q 'HYPOTHESIS is not allowed with Risk: C' && echo 0 || echo 1)"
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md"
+
+# ==============================================================================
+# ADR-0016 snapshot-copy regression test.
+# ==============================================================================
+# The dispatcher must copy canonical .ai/ into the worktree as ordinary files
+# (not a junction) and sync changes back after the CLI exits.
+sync_stub_log="$LOGS/kimi-sync.log"
+# Temporarily replace the kimi stub with one that writes a report inside the
+# worktree's .ai/ and asserts .ai/ is a real directory, not a junction/symlink.
+cat > "$STUB_BIN/kimi" <<EOF
+#!/bin/bash
+{
+  echo "cwd=\$(pwd)"
+  echo "branch=\$(git branch --show-current 2>/dev/null)"
+  echo "args=\$*"
+} >> "$sync_stub_log"
+# Write into the worktree's snapshot .ai/; this should propagate to canonical.
+mkdir -p "\$(pwd)/.ai/reports"
+echo 'synced from worktree' > "\$(pwd)/.ai/reports/sync-test.md"
+exit 0
+EOF
+chmod +x "$STUB_BIN/kimi"
+rm -f "$sync_stub_log"
+mk_handoff kimi 202607110020-adr0016-sync
+run_dispatcher --only kimi >/dev/null 2>&1
+sync_test_canon="$PROJECT/.ai/reports/sync-test.md"
+check "ADR-0016: worktree .ai/ removed after sync-back" "$([ ! -e "$wt_kimi/.ai" ] && echo 0 || echo 1)"
+check "ADR-0016: new report created in worktree .ai/ synced back to canonical" "$([ -f "$sync_test_canon" ] && grep -q 'synced from worktree' "$sync_test_canon" && echo 0 || echo 1)"
+# Restore the original kimi stub.
+make_stub "kimi" "$LOGS/kimi.log"
 
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
