@@ -1,14 +1,30 @@
 # Review cockpit/auto workflow docs and hand off follow-up to kimi-cockpit
-Status: OPEN
+Status: DONE
 Sender: kimai-cockpit
 Recipient: kiro-auto
 Owner: kiro-auto
 Created: 2026-07-18 20:58 (UTC+7)
+Completed: 2026-07-18 21:01 (UTC+7)
 Auto: yes
 Risk: A
 Observed-in: main@fd519aa
 Evidence: VERIFIED (ls docs/specs/saja-akun-cli-workflow.md docs/guides/example-handoff-chain.md -> both exist)
 Next: kimi-cockpit
+
+## Resolution
+Verdict: **changes-requested**. Reviewed all four files. Main finding: the
+`Next:` field described in `saja-akun-cli-workflow.md` §3.5/§9 as already
+implemented in `pane-runner.ps1`'s `Emit-NextStageHandoff` is NOT implemented —
+verified by reading the function (lines 699-802): it only handles `ReviewBy`,
+`FinalReview`, `Deploy`. Also found the function still emits legacy
+`$CliName-cli`/`$Recipient-cli` identities rather than six-actor ones, and
+`Get-DefaultOwner` claim identities are four-actor except for Claude. Filed
+follow-up handoff `.ai/handoffs/to-kimi/open/202607181401-cockpit-auto-docs-next-field-gap.md`
+with two remediation options (implement `Next:` in code, or add a
+current-implementation-status caveat to the docs) for `kimai-cockpit` to decide.
+
+## Touched
+- .ai/handoffs/to-kimi/open/202607181401-cockpit-auto-docs-next-field-gap.md (created)
 
 ## Goal
 Review the new six-actor cockpit/auto handoff documentation from a consumer

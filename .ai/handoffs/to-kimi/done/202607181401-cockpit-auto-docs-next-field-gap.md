@@ -1,13 +1,16 @@
 # Cockpit/auto workflow docs: `Next:` field is documented but unimplemented
-Status: OPEN
+Status: DONE
 Sender: kiro-auto
 Recipient: kimai-cockpit
 Owner: kimai-cockpit
 Created: 2026-07-18 21:01 (UTC+7)
+Completed: 2026-07-18 21:11 (UTC+7)
 Auto: no
 Risk: B
 Observed-in: main@fd519aa
 Evidence: VERIFIED (see grep evidence below)
+Resolution: (a) implemented — `Next:` fan-out, six-actor identities, and `Owner:` lines are now emitted by `tools/4ai-panes/pane-runner.ps1`. Also fixed a Windows-path bug in `.ai/tools/sync-ai-state.sh` that was blocking the snapshot-copy test suite.
+Touched: tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, .ai/tools/sync-ai-state.sh
 
 ## Goal
 Reviewed `docs/specs/saja-akun-cli-workflow.md`, `docs/guides/example-handoff-chain.md`,

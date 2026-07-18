@@ -742,6 +742,49 @@ function Read-HandoffField {
     return $null
 }
 
+# Six-actor identity normalization. Accepts legacy bare cli names (kimi),
+# legacy '-cli' / '-executor' forms, and full six-actor identities, and returns
+# the canonical identity used in Sender:/Recipient:/Owner:.
+function Resolve-ActorIdentity {
+    param([string]$Actor)
+    $a = $Actor.ToLower().Trim()
+    switch ($a) {
+        { $_ -in @('claude','claude-auto','claude-code') }          { return 'claude-auto' }
+        'claude-cockpit'                                            { return 'claude-cockpit' }
+        { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli','kimi-executor') } { return 'kimai-auto' }
+        { $_ -in @('kimi-cockpit','kimai-cockpit') }                { return 'kimai-cockpit' }
+        { $_ -in @('kiro','kiro-auto','kiro-cli','kiro-executor') } { return 'kiro-auto' }
+        'kiro-cockpit'                                              { return 'kiro-cockpit' }
+        { $_ -in @('opencode','opencode-auto','opencode-cli') }     { return 'opencode-auto' }
+        'opencode-cockpit'                                          { return 'opencode-cockpit' }
+        default                                                     { return $a }
+    }
+}
+
+# Map a (possibly legacy) actor string to the queue directory name used by the
+# dispatcher and pane-runner (claude, kimi, kiro, opencode).
+function Get-QueueNameFromActor {
+    param([string]$Actor)
+    $a = (Resolve-ActorIdentity -Actor $Actor).ToLower()
+    switch -Wildcard ($a) {
+        'claude*'   { return 'claude' }
+        'kimai*'    { return 'kimi' }
+        'kimi*'     { return 'kimi' }
+        'kiro*'     { return 'kiro' }
+        'opencode*' { return 'opencode' }
+        default     { return ($a -replace '-(auto|cockpit|executor|cli)$','') }
+    }
+}
+
+# Decide Auto flag from a (possibly legacy) actor string. Cockpit identities
+# are never auto-dispatched; everything else is.
+function Get-AutoFlagFromActor {
+    param([string]$Actor)
+    $a = (Resolve-ActorIdentity -Actor $Actor).ToLower()
+    if ($a -like '*-cockpit') { return 'no' }
+    return 'yes'
+}
+
 # After a handoff is completed, optionally emit the next stage of the review/
 # deploy pipeline. This is generic: the pane-runner emits the next handoff based
 # on metadata in the completed file, so individual CLIs do not need custom logic.
@@ -763,9 +806,11 @@ function Emit-NextStageHandoff {
     $ts = (Get-Date -Format 'yyyyMMddHHmm')
     $slug = [System.IO.Path]::GetFileNameWithoutExtension($base)
 
-    # Helper to write a handoff file.
-    function Write-Handoff($Recipient, $SubDir, $Title, $BodyLines) {
-        $dir = Join-Path $ProjectDir ".ai/handoffs/to-$Recipient/$SubDir"
+    # Helper to write a handoff file. $RecipientActor is the full six-actor
+    # identity; the queue directory is derived from it.
+    function Write-Handoff($RecipientActor, $SubDir, $Title, $BodyLines) {
+        $recipientQueue = Get-QueueNameFromActor -Actor $RecipientActor
+        $dir = Join-Path $ProjectDir ".ai/handoffs/to-$recipientQueue/$SubDir"
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
         $path = Join-Path $dir "$ts-$slug.md"
         # De-duplicate: if a same-second handoff with this slug already exists,
@@ -776,62 +821,73 @@ function Emit-NextStageHandoff {
             $counter++
             $path = Join-Path $dir "$ts-$slug-$counter.md"
         }
+        $sender = Get-DefaultOwner -CliName $CliName
+        $autoFlag = Get-AutoFlagFromActor -Actor $RecipientActor
         $content = @(
             "# $Title",
             "Status: OPEN",
-            "Sender: $CliName-cli",
-            "Recipient: $Recipient-cli",
+            "Sender: $sender",
+            "Recipient: $RecipientActor",
+            "Owner: $RecipientActor",
             "Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm')",
-            "Auto: yes",
+            "Auto: $autoFlag",
             "Risk: B",
             "ReviewOf: $base"
             ""
         ) + $BodyLines
         [System.IO.File]::WriteAllLines($path, $content)
-        Write-Host "-- emitted next-stage handoff: $(Split-Path $path -Leaf) -> to-$Recipient/$SubDir/ --" -ForegroundColor Cyan
+        Write-Host "-- emitted next-stage handoff: $(Split-Path $path -Leaf) -> to-$recipientQueue/$SubDir/ --" -ForegroundColor Cyan
     }
 
+    $validQueues = @('claude','kimi','kiro','opencode')
+
     $reviewBy = Read-HandoffField -HandoffPath $donePath -FieldName 'ReviewBy'
-    if ($reviewBy -and @('claude','kimi','kiro','opencode') -contains $reviewBy.ToLower()) {
-        $reviewBy = $reviewBy.ToLower()
-        Write-Handoff -Recipient $reviewBy -SubDir 'review' -Title "Review: $slug" -BodyLines @(
-            "## Goal",
-            "Review the completed work from $base and verify it meets the spec.",
-            "",
-            "## Original handoff",
-            "- File: .ai/handoffs/to-$CliName/done/$base",
-            "",
-            "## Verification",
-            "- [ ] Read the original handoff and the touched files.",
-            "- [ ] Run any verification steps listed in the original handoff.",
-            "- [ ] If approved, set Status to DONE and move this file to to-$reviewBy/done/.",
-            "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the original executor's open/ queue.",
-            ""
-        )
+    if ($reviewBy) {
+        $reviewActor = Resolve-ActorIdentity -Actor $reviewBy
+        $reviewQueue = Get-QueueNameFromActor -Actor $reviewActor
+        if ($validQueues -contains $reviewQueue) {
+            Write-Handoff -RecipientActor $reviewActor -SubDir 'review' -Title "Review: $slug" -BodyLines @(
+                "## Goal",
+                "Review the completed work from $base and verify it meets the spec.",
+                "",
+                "## Original handoff",
+                "- File: .ai/handoffs/to-$CliName/done/$base",
+                "",
+                "## Verification",
+                "- [ ] Read the original handoff and the touched files.",
+                "- [ ] Run any verification steps listed in the original handoff.",
+                "- [ ] If approved, set Status to DONE and move this file to to-$reviewQueue/done/.",
+                "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the original executor's open/ queue.",
+                ""
+            )
+        }
     }
 
     $finalReview = Read-HandoffField -HandoffPath $donePath -FieldName 'FinalReview'
-    if ($finalReview -and @('claude','kimi','kiro','opencode') -contains $finalReview.ToLower()) {
-        $finalReview = $finalReview.ToLower()
-        Write-Handoff -Recipient $finalReview -SubDir 'review' -Title "Final review: $slug" -BodyLines @(
-            "## Goal",
-            "Final review of the work from $base before release/deploy.",
-            "",
-            "## Original handoff",
-            "- File: .ai/handoffs/to-$CliName/done/$base",
-            "",
-            "## Verification",
-            "- [ ] Confirm peer review passed (if applicable).",
-            "- [ ] Confirm the work is safe to release/deploy.",
-            "- [ ] If approved, set Status to DONE and move this file to to-$finalReview/done/.",
-            "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the appropriate executor's open/ queue.",
-            ""
-        )
+    if ($finalReview) {
+        $finalActor = Resolve-ActorIdentity -Actor $finalReview
+        $finalQueue = Get-QueueNameFromActor -Actor $finalActor
+        if ($validQueues -contains $finalQueue) {
+            Write-Handoff -RecipientActor $finalActor -SubDir 'review' -Title "Final review: $slug" -BodyLines @(
+                "## Goal",
+                "Final review of the work from $base before release/deploy.",
+                "",
+                "## Original handoff",
+                "- File: .ai/handoffs/to-$CliName/done/$base",
+                "",
+                "## Verification",
+                "- [ ] Confirm peer review passed (if applicable).",
+                "- [ ] Confirm the work is safe to release/deploy.",
+                "- [ ] If approved, set Status to DONE and move this file to to-$finalQueue/done/.",
+                "- [ ] If rejected, set Status to BLOCKED, append a ## Blocker section, and move this file back to the appropriate executor's open/ queue.",
+                ""
+            )
+        }
     }
 
     $deploy = Read-HandoffField -HandoffPath $donePath -FieldName 'Deploy'
     if ($deploy -and $deploy.Trim().ToLower() -eq 'yes') {
-        Write-Handoff -Recipient 'opencode' -SubDir 'open' -Title "Deploy: $slug" -BodyLines @(
+        Write-Handoff -RecipientActor 'opencode-auto' -SubDir 'open' -Title "Deploy: $slug" -BodyLines @(
             "## Goal",
             "Deploy the work from $base to the target environment.",
             "",
@@ -847,6 +903,27 @@ function Emit-NextStageHandoff {
             "Set Status to DONE and move this file to to-opencode/done/.",
             ""
         )
+    }
+
+    $next = Read-HandoffField -HandoffPath $donePath -FieldName 'Next'
+    if ($next) {
+        foreach ($raw in $next.Split(',')) {
+            $nextActor = Resolve-ActorIdentity -Actor $raw.Trim()
+            $nextQueue = Get-QueueNameFromActor -Actor $nextActor
+            if ($validQueues -contains $nextQueue) {
+                Write-Handoff -RecipientActor $nextActor -SubDir 'open' -Title "Next: $slug" -BodyLines @(
+                    "## Goal",
+                    "Continue the chain from $base.",
+                    "",
+                    "## Original handoff",
+                    "- File: .ai/handoffs/to-$CliName/done/$base",
+                    "",
+                    "## When complete",
+                    "Set Status to DONE and move this file to to-$nextQueue/done/.",
+                    ""
+                )
+            }
+        }
     }
 }
 

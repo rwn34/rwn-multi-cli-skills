@@ -33,6 +33,10 @@ manifest_for() {
 # snapshot <canonical-ai> <worktree-ai>
 cmd_snapshot() {
     local src="$1" dst="$2"
+    if command -v cygpath >/dev/null 2>&1; then
+        src="$(cygpath -u "$src")"
+        dst="$(cygpath -u "$dst")"
+    fi
     [ -d "$src" ] || die "canonical .ai/ missing: $src"
 
     # Remove any existing worktree .ai/ (junction, dir, stale copy) and recreate.
@@ -55,6 +59,10 @@ cmd_snapshot() {
 # sync-back <worktree-dir> <canonical-project-dir>
 cmd_sync_back() {
     local wt="$1" project="$2"
+    if command -v cygpath >/dev/null 2>&1; then
+        wt="$(cygpath -u "$wt")"
+        project="$(cygpath -u "$project")"
+    fi
     local wt_ai="$wt/.ai" canon_ai="$project/.ai"
     local manifest="$wt_ai/$MANIFEST_NAME"
 

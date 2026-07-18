@@ -325,6 +325,100 @@ Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk)
 # restore the real threshold
 $script:MaxHandoffAttempts = $origMax
 
+# -- (bn-bs) Emit-NextStageHandoff: six-actor identities + Next: fan-out --
+# Use an isolated workspace so earlier tests' leftover queue files do not skew counts.
+$emitWork = Join-Path $env:TEMP ("pane-runner-emit-test-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $emitWork -Force | Out-Null
+
+function New-DoneHandoff {
+    param([string]$CliName, [string]$Slug, [string]$ExtraLines = '')
+    $dir = Join-Path $emitWork ".ai/handoffs/to-$CliName/done"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $p = Join-Path $dir "$Slug.md"
+    $lines = @(
+        "# Done handoff $Slug",
+        "Status: DONE",
+        "Sender: claude-cockpit",
+        "Recipient: $CliName-auto",
+        "Created: 2026-07-18 00:00",
+        "Auto: yes",
+        "Risk: B"
+    )
+    if ($ExtraLines) { $lines += ($ExtraLines -split "`n") }
+    $lines += @("", "## Goal", "test")
+    $lines -join "`n" | Set-Content -Path $p -Encoding utf8
+    return $p
+}
+
+function Get-EmitCount {
+    param([string]$Queue, [string]$SubDir)
+    $d = Join-Path $emitWork ".ai/handoffs/to-$Queue/$SubDir"
+    if (-not (Test-Path $d)) { return 0 }
+    return (Get-ChildItem -Path $d -Filter '*.md' -File).Count
+}
+
+function Get-EmitFile {
+    param([string]$Queue, [string]$SubDir, [string]$SlugPattern)
+    $d = Join-Path $emitWork ".ai/handoffs/to-$Queue/$SubDir"
+    if (-not (Test-Path $d)) { return $null }
+    return (Get-ChildItem -Path $d -Filter '*.md' -File | Where-Object { $_.Name -like "*$SlugPattern*" } | Select-Object -First 1)
+}
+
+# (bn) ReviewBy: bare cli maps to <cli>-auto, sender is the emitting pane's six-actor identity
+$bnDone = New-DoneHandoff -CliName 'kimi' -Slug 'bn-review' -ExtraLines 'ReviewBy: kiro'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kimi' -HandoffPath $bnDone
+Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'review') 'bn: ReviewBy bare kiro emits one review handoff'
+$bnFile = Get-EmitFile -Queue 'kiro' -SubDir 'review' -SlugPattern 'bn-review'
+Assert-Equal $true ($null -ne $bnFile) 'bn: review file exists'
+$bnContent = Get-Content -Path $bnFile.FullName -Raw
+Assert-Equal $true ($bnContent -match '(?m)^Sender:\s*kimai-auto\s*$') 'bn: review sender is kimai-auto'
+Assert-Equal $true ($bnContent -match '(?m)^Recipient:\s*kiro-auto\s*$') 'bn: review recipient is kiro-auto'
+Assert-Equal $true ($bnContent -match '(?m)^Auto:\s*yes\s*$') 'bn: review handoff is Auto: yes'
+Assert-Equal $true ($bnContent -match 'ReviewOf:\s*bn-review\.md') 'bn: review handoff carries ReviewOf'
+
+# (bo) Next: fans out to multiple actors with correct identities and Auto flags
+$boDone = New-DoneHandoff -CliName 'claude' -Slug 'bo-next' -ExtraLines "Next: kimai-auto, kiro-auto`nFinalReview: claude-auto"
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $boDone
+Assert-Equal 1 (Get-EmitCount -Queue 'kimi' -SubDir 'open') 'bo: Next kimai-auto emits one open handoff'
+Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'open') 'bo: Next kiro-auto emits one open handoff'
+$boKimi = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bo-next'
+Assert-Equal $true ($null -ne $boKimi) 'bo: kimi Next file exists'
+$boKimiContent = Get-Content -Path $boKimi.FullName -Raw
+Assert-Equal $true ($boKimiContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bo: Next sender is claude-auto'
+Assert-Equal $true ($boKimiContent -match '(?m)^Recipient:\s*kimai-auto\s*$') 'bo: Next recipient is kimai-auto'
+Assert-Equal $true ($boKimiContent -match '(?m)^Auto:\s*yes\s*$') 'bo: Next auto recipient is Auto: yes'
+
+# (bp) Next: to a cockpit writes Auto: no so the dispatcher leaves it for the cockpit
+$bpDone = New-DoneHandoff -CliName 'opencode' -Slug 'bp-cockpit' -ExtraLines 'Next: kimai-cockpit'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'opencode' -HandoffPath $bpDone
+$bpFile = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bp-cockpit'
+Assert-Equal $true ($null -ne $bpFile) 'bp: Next cockpit emits a handoff'
+$bpContent = Get-Content -Path $bpFile.FullName -Raw
+Assert-Equal $true ($bpContent -match '(?m)^Recipient:\s*kimai-cockpit\s*$') 'bp: cockpit recipient identity'
+Assert-Equal $true ($bpContent -match '(?m)^Auto:\s*no\s*$') 'bp: cockpit handoff is Auto: no'
+
+# (bq) Deploy: yes emits an opencode-auto handoff
+$bqDone = New-DoneHandoff -CliName 'claude' -Slug 'bq-deploy' -ExtraLines 'Deploy: yes'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $bqDone
+Assert-Equal 1 (Get-EmitCount -Queue 'opencode' -SubDir 'open') 'bq: Deploy emits one open handoff'
+$bqFile = Get-EmitFile -Queue 'opencode' -SubDir 'open' -SlugPattern 'bq-deploy'
+Assert-Equal $true ($null -ne $bqFile) 'bq: deploy file exists'
+$bqContent = Get-Content -Path $bqFile.FullName -Raw
+Assert-Equal $true ($bqContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bq: deploy sender is claude-auto'
+Assert-Equal $true ($bqContent -match '(?m)^Recipient:\s*opencode-auto\s*$') 'bq: deploy recipient is opencode-auto'
+Assert-Equal $true ($bqContent -match '(?m)^Auto:\s*yes\s*$') 'bq: deploy handoff is Auto: yes'
+
+# (br) FinalReview: <actor> emits a review handoff with six-actor identities
+$brDone = New-DoneHandoff -CliName 'kiro' -Slug 'br-final' -ExtraLines 'FinalReview: claude-auto'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kiro' -HandoffPath $brDone
+$brFile = Get-EmitFile -Queue 'claude' -SubDir 'review' -SlugPattern 'br-final'
+Assert-Equal $true ($null -ne $brFile) 'br: final-review file exists'
+$brContent = Get-Content -Path $brFile.FullName -Raw
+Assert-Equal $true ($brContent -match '(?m)^Sender:\s*kiro-auto\s*$') 'br: final-review sender is kiro-auto'
+Assert-Equal $true ($brContent -match '(?m)^Recipient:\s*claude-auto\s*$') 'br: final-review recipient is claude-auto'
+
+Remove-Item -Path $emitWork -Recurse -Force -ErrorAction SilentlyContinue
+
 # -- (p) REAL invoke path: a native child that writes stderr AND exits non-zero --
 #     This is the regression the mocked tests can't see. We drive the actual
 #     $script:InvokeCli (captured before the mock) with the call-site EAP='Stop'
