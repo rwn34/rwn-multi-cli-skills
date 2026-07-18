@@ -1,3 +1,8 @@
+## 2026-07-18 17:17 (UTC+7) - kimi
+- Action: Retired stale phantom handoff `.ai/handoffs/to-kimi/open/202607171655-fix-log-recovery-gate-and-s-bit-deadlock.md`; the canonical copy is already `Status: DONE` in `to-kimi/done/` and the work was merged via PR #114 (`a82146c`). No implementation was duplicated.
+- Files: `.ai/handoffs/to-kimi/open/202607171655-fix-log-recovery-gate-and-s-bit-deadlock.md` (deleted), `.ai/activity/log.md`
+- Decisions: Verified PR #114 is merged, `done/` copy exists with Resolution, and `check-log-superset.sh`/`test-check-log-superset.sh` are present on `origin/main`. Treated the `open/` copy as a phantom rather than reprocessing the handoff.
+
 ## 2026-07-18 16:55 (UTC+7) - kimi
 - Action: Fix sync-ai-state.sh snapshot hang and dispatcher worktree-fetch path so the full test-dispatch-worktree.sh suite passes on Windows Git-Bash.
 - Files: .ai/tools/sync-ai-state.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
