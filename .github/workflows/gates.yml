@@ -19,6 +19,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gates:
     runs-on: ubuntu-latest
@@ -32,6 +36,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tools/multi-cli-install/package-lock.json
+
+      # Cheap change-detection so the Node-heavy installer block (install +
+      # asset drift + typecheck/tests) only runs when installer-related paths
+      # actually changed. The required "gates" status still reports green when
+      # these steps are skipped; they are not required as separate contexts.
+      - name: Detect installer-related changes
+        id: installer
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --depth=1 origin "${{ github.base_ref }}"
+            changed=$(git diff --name-only "origin/${{ github.base_ref }}" HEAD || true)
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+              echo "installer_changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            changed=$(git diff --name-only "$before" HEAD || true)
+          fi
+          if echo "$changed" | grep -qE '^(tools/multi-cli-install/|scripts/new-project\.sh|scripts/install-template\.sh|\.github/workflows/gates\.yml)$'; then
+            echo "installer_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installer_changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # The ONE drift authority is the generator itself: --check regenerates
       # every replica into a temp tree and diffs. On failure it prints the
@@ -62,6 +93,7 @@ jobs:
         run: bash scripts/git-hooks/test-pre-commit.sh
 
       - name: Installer dependency install
+        if: steps.installer.outputs.installer_changed == 'true'
         run: npm ci
         working-directory: tools/multi-cli-install
 
@@ -70,12 +102,14 @@ jobs:
         # no committed generated assets, and every asset file byte-matching its
         # source. This is the gate that catches the 2026-07-12 defect class
         # (stale asset AGENTS.md + missing .opencode guard layer).
+        if: steps.installer.outputs.installer_changed == 'true'
         run: |
           npx tsx scripts/sync-assets.ts
           cd "$GITHUB_WORKSPACE" && bash .ai/tools/check-asset-drift.sh
         working-directory: tools/multi-cli-install
 
       - name: Installer typecheck + tests
+        if: steps.installer.outputs.installer_changed == 'true'
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
 
