@@ -85,6 +85,30 @@ Do not rename — they are grandfathered. New handoffs use the timestamp format.
 Sorting `ls .ai/handoffs/to-<cli>/open/` still shows oldest-first with both
 formats present.
 
+## Six-actor cockpit / auto model — 2026-07-18
+
+The queue directories are still named after the four CLIs (`to-claude/`,
+`to-kimi/`, `to-kiro/`, `to-opencode/`), but a handoff's `Sender:`,
+`Recipient:`, and `Owner:` lines use the six-actor identity that includes the
+mode:
+
+| Identity | Mode | Role |
+|----------|------|------|
+| `claude-cockpit` | interactive cockpit | architecture, orchestration, final review, human relay |
+| `kimai-cockpit` | interactive cockpit | executor/tester, dispatcher to auto |
+| `claude-auto` | headless auto pane | spec/plan design, final review |
+| `kimai-auto` | headless auto pane | backend + shell package implementation |
+| `kiro-auto` | headless auto pane | frontend implementation |
+| `opencode-auto` | headless auto pane | deploy, GitHub ops |
+
+- `Auto: yes` + `Risk: A/B` routes to the recipient's `-auto` pane.
+- `Auto: no`, hard-gate `Risk: C`, or a `Next:` pointing at a cockpit routes to
+the recipient's `-cockpit` interactive session.
+
+See `docs/specs/saja-akun-cli-workflow.md` for the routing table, multi-stage
+chains, visibility model, and escalation rules, and
+`docs/guides/example-handoff-chain.md` for a concrete end-to-end example.
+
 ## Protocol v4 (lifecycle of a single handoff) — 2026-07-16
 
 Every handoff carries routing fields in its status block:
