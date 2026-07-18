@@ -20,7 +20,7 @@ requires a human operator at three terminals (or three AI agent runtimes).
 
 | # | Scenario | Concern |
 |---|---|---|
-| S1 | Activity log — simultaneous prepend | Do entries clobber? Does the file get corrupted? |
+| S1 | Activity spool — simultaneous entry writes | Do entries clobber? (The pre-ADR-0010 `log.md` prepend race this scenario originally probed is CLOSED structurally — see S1.) |
 | S2 | Handoff queue — simultaneous create | Do handoff numbers collide? (Known: we've seen 026 collide in one session.) |
 | S3 | Handoff queue — one CLI reads while another writes | Torn reads? Missed handoffs? |
 | S4 | SSOT replica — two CLIs regenerate simultaneously | Last-write-wins? Corruption? |
@@ -36,30 +36,56 @@ requires a human operator at three terminals (or three AI agent runtimes).
 3. Open three terminals. Position them so you can see all three simultaneously.
 4. Start all three CLIs in orchestrator mode but do NOT send a prompt yet.
 
-### Scenario S1 — Activity log race
+### Scenario S1 — Activity spool concurrent write (repointed 2026-07-13, ADR-0010)
 
-**Setup:** All three CLIs have a prompt ready to send that will end with "now
-append a one-line entry to `.ai/activity/log.md` saying 'CONCURRENCY-TEST-S1-<cli>
-at <timestamp>'".
+> **History:** this scenario originally probed the whole-file prepend race on
+> `.ai/activity/log.md` — two CLIs reading, prepending, and rewriting one shared
+> file. That race was **confirmed with real data loss on 2026-07-13** (a
+> `kiro-cli` entry header clobbered, recovered from blob `9371a40`) and is now
+> **closed structurally by ADR-0010**: the log is an entry-per-file spool
+> (`.ai/activity/entries/`), so there is no shared file to clobber. S1 is
+> repointed to prove the spool under concurrency instead of retired, because
+> "demonstrate it, don't assert it" is the ADR's own verification bar.
+
+**Setup:** All three CLIs have a prompt ready that ends with "now write an
+activity-log entry file to `.ai/activity/entries/` using the ADR-0010 filename
+scheme (`<YYYYMMDDTHHMMSSZ>-<cli>-concurrency-test-s1-<rand4>.md`), body
+'CONCURRENCY-TEST-S1-<cli> at <timestamp>'".
 
 **Action:** Press Enter in all three terminals as close to simultaneously as
 possible.
 
 **Record:**
-- Final `.ai/activity/log.md` — does it contain all three entries?
-- Run `git diff .ai/activity/log.md` — any suspicious interleaving (half-entries,
-  broken markdown headers)?
-- File size sanity — log.md line count should increase by exactly 3 entries
-  worth of lines (~10–15 lines).
+- `ls .ai/activity/entries/*concurrency-test-s1*` — are all three files present?
+- Each file's content intact (4 lines, no interleaving, no truncation)?
+- Any two files share a name? (rand4 birthday collision — see below.)
 
-**Expected behavior (per spec):** All three entries present, in prepend order.
-No corruption.
+**Expected behavior (per spec):** All three entry files present and intact.
+There is no ordering artifact to check — sort order is filename order
+(best-effort chronological, ADR-0010 §4), not write-arrival order.
 
 **Plausible failure modes:**
-- Two entries overlap at the boundary between prepend chunks.
-- One CLI reads stale log, prepends to stale copy, writes back — overwriting
-  another CLI's just-prepended entry (last-write-wins on the whole file).
-- Markdown `---` separators interleave oddly.
+- **rand4 collision** — two writers draw the same 4-hex suffix in the same
+  second (≈0.007% for 3 writers; the ADR accepts this deliberately — entry
+  writes are LLM `Write` calls with no `O_EXCL`, so collision-freedom lives in
+  the name). Symptom: one file where two should be. Detection is TRIVIAL (count
+  files) — unlike the old race, a collision can never silently weld or truncate
+  another entry's content. Mitigation: the loser rewrites with a fresh suffix.
+- A CLI writing to the retired `log.md` path instead — visible as an untracked
+  `log.md`; the renderer refuses to touch a tracked log, so nothing is lost,
+  the entry just misses the view until moved.
+
+**Automated proxy (no three terminals needed):** the 2026-07-13 migration run
+demonstrated 40 parallel shell writers in the same second — 40/40 files
+survived with intact content. Re-run with:
+
+```bash
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+for i in $(seq 1 40); do ( R=$(printf '%04x' $((RANDOM*RANDOM%65536))); \
+  printf 'test %02d\n' "$i" > ".ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-${R}.md" ) & done; wait
+ls .ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-*.md | wc -l   # expect 40
+# cleanup: rm .ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-*.md
+```
 
 ### Scenario S2 — Handoff numbering collision
 
@@ -181,7 +207,7 @@ an activity log entry summarizing the verdict.
 ## Cleanup
 
 After the test:
-1. `git checkout .ai/activity/log.md` to reset (or keep the test entries —
+1. Delete the S1 test entry files from `.ai/activity/entries/` (or keep them —
    operator's choice, mark them as CONCURRENCY-TEST so they're greppable).
 2. Delete the test handoffs created in S2/S2b.
 3. Delete the regenerated SSOT replicas in S4 (or leave if they're identical

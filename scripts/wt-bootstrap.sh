@@ -4,9 +4,12 @@
 # .ai/research/worktree-multi-project-topology.md (sections 3, 4, 8).
 #
 # Each executor gets an independent working tree at a SIBLING location
-# (<parent>/.wt/<project>/<executor>/) on branch exec/<executor>/init, and its
-# .ai/ is replaced with a junction/symlink to the canonical <project>/.ai/ so
-# all CLIs share one coordination plane (one log, one handoff queue).
+# (<parent>/.wt/<project>/<executor>/) on branch exec/<executor>/init.
+# The shared .ai/ coordination plane is NO LONGER a junction/symlink into the
+# worktree (ADR-0004 replaced by ADR-0016 snapshot-copy model). Instead, the
+# dispatcher copies a canonical .ai/ snapshot into the worktree before each
+# handoff and syncs changes back afterward. wt-bootstrap.sh only ensures the
+# worktree exists; it never mounts .ai/.
 #
 # Usage: bash scripts/wt-bootstrap.sh <project-dir> [executor...]
 #        (default executors: kiro kimi opencode)
@@ -22,6 +25,11 @@ set -euo pipefail
 # ---------- defaults ----------
 DEFAULT_EXECUTORS="kiro kimi opencode"
 
+# All dispatchable actors that need a handoff queue tree.  Keep in sync with
+# .ai/handoffs/README.md (six-actor model) and .ai/tools/fleet-health.sh.
+# kimi-executor and kiro-executor are live in this repo (have open handoffs).
+HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode"
+
 # ---------- logging ----------
 log()  { echo "[wt-bootstrap] $*"; }
 warn() { echo "[wt-bootstrap] WARN: $*" >&2; }
@@ -35,6 +43,7 @@ wt-bootstrap.sh — set up executor git worktrees for a project (idempotent).
 
 Usage:
   bash scripts/wt-bootstrap.sh <project-dir> [executor...]
+  bash scripts/wt-bootstrap.sh --remove <project-dir> [executor...]
 
 Arguments:
   <project-dir>  Path to the PRIMARY checkout (holds the real .git + canonical .ai/).
@@ -43,32 +52,46 @@ Arguments:
 What it does, per executor:
   1. Create a git worktree at <parent>/.wt/<project>/<executor>/ on branch
      exec/<executor>/init (skipped cleanly if the worktree already exists).
-  2. Replace that worktree's .ai/ with a junction (Windows) / symlink (POSIX)
-     to the canonical <project-dir>/.ai/. Re-established idempotently.
-  3. Add ".ai" to the worktree's .git/info/exclude so the junction is never
-     committed.
+  2. Add ".ai" to the worktree's .git/info/exclude so the snapshot-copy .ai/
+     (populated by the dispatcher before each handoff) is never committed.
+  3. Pin a per-worktree git identity so commits carry the executor's name.
+
+With --remove:
+  Remove one or more executor worktrees. Because .ai/ is now an ordinary
+  directory (not a junction), removal is a normal git worktree remove.
 
 Safety:
   - Never destroys existing work. If a worktree path exists but is NOT a git
     worktree, the script aborts with a message.
+  - With --remove, refuses to act if the worktree's .ai/ is still a junction.
   - Sourcing this file has no side effects.
 
 Options:
   --help, -h     Show this help and exit.
+  --remove       Remove the named executor worktrees safely.
 EOF
 }
 
-# ---------- platform detection ----------
-is_windows() {
-  case "$(uname -s 2>/dev/null || echo "${OS:-}")" in
-    *MINGW*|*MSYS*|*CYGWIN*|Windows_NT) return 0 ;;
-    *) return 1 ;;
-  esac
+# Ensure the shared coordination-plane handoff queue directories exist for every
+# configured actor.  This is shared state (all worktrees junction to the same
+# .ai/), so it is repaired once per bootstrap run, not once per executor.
+# .gitkeep files are touched so the empty subdirectories are stable even on a
+# fresh clone where bootstrap has not yet run.
+ensure_handoff_queues() {
+  local base="$1/.ai/handoffs"
+  for actor in $HANDOFF_ACTORS; do
+    for sub in open review done; do
+      mkdir -p "$base/to-$actor/$sub"
+      touch "$base/to-$actor/$sub/.gitkeep"
+    done
+  done
 }
 
 # ---------- arg parsing ----------
 PROJECT_ARG=""
 EXECUTORS=""
+REMOVE_MODE=false
+
 for arg in "$@"; do
   case "$arg" in
     --help|-h) usage; exit 0 ;;
@@ -78,6 +101,7 @@ done
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage; exit 0 ;;
+    --remove)  REMOVE_MODE=true ;;
     --*)       die "Unknown flag: $1 (see --help)" ;;
     *)
       if [ -z "$PROJECT_ARG" ]; then
@@ -99,6 +123,10 @@ PROJECT_DIR="$(cd "$PROJECT_ARG" && pwd)"
 git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1 \
   || die "Not a git repository: $PROJECT_DIR"
 [ -d "$PROJECT_DIR/.ai" ] || die "Canonical coordination plane missing: $PROJECT_DIR/.ai"
+
+# Shared handoff queue structure must exist before any worktree is created;
+# dispatchers and health checks assume every actor has open/review/done dirs.
+ensure_handoff_queues "$PROJECT_DIR"
 
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 PARENT_DIR="$(dirname "$PROJECT_DIR")"
@@ -125,47 +153,91 @@ exclude_ai() {
   fi
 }
 
-# Replace <worktree>/.ai with a junction/symlink to the canonical .ai.
-# Idempotent: if a link already exists, recreate it to guarantee the target.
-link_ai() {
-  wt_path="$1"
-  link="$wt_path/.ai"
-  if [ -L "$link" ]; then
-    rm -f "$link"
-  elif [ -d "$link" ] && is_windows && [ -n "$(cmd_islink "$link")" ]; then
-    cmd //c rmdir "$(winpath "$link")" >/dev/null 2>&1 || true
-  elif [ -e "$link" ]; then
-    # A real checked-out .ai copy from the worktree add — remove the copy so we
-    # can junction the canonical one in its place. Safe: contents are tracked.
-    rm -rf "$link"
+# Remove a single executor worktree. With .ai/ now an ordinary directory (not a
+# junction), this is a normal git worktree remove. We still remove the worktree's
+# .ai/ first as a belt-and-suspenders guard against any future re-introduction of
+# a junction, but under the snapshot-copy model it is always an ordinary dir.
+remove_worktree() {
+  local executor="$1" wt_path="$2" branch="$3"
+
+  if [ ! -e "$wt_path" ]; then
+    log "skip   $executor — worktree does not exist ($wt_path)"
+    return 0
   fi
 
-  if is_windows; then
-    cmd //c mklink //J "$(winpath "$link")" "$(winpath "$PROJECT_DIR/.ai")" >/dev/null \
-      || die "mklink /J failed for $link"
-  else
-    ln -s "$PROJECT_DIR/.ai" "$link" \
-      || die "ln -s failed for $link"
+  if [ ! -d "$wt_path" ] || ! git -C "$wt_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    die "Path exists but is not a git worktree: $wt_path (refusing to remove it)"
+  fi
+
+  # Belt-and-suspenders: remove the worktree's .ai/ BEFORE git worktree remove.
+  # Under the snapshot-copy model this is an ordinary directory; under the old
+  # junction model this would have been fatal. Keeping the removal here makes
+  # --remove safe even if a worktree was created before the snapshot-copy rollout.
+  rm -rf "$wt_path/.ai"
+
+  git -C "$PROJECT_DIR" worktree remove --force "$wt_path" \
+    || die "git worktree remove failed for $wt_path"
+  log "remove $executor — worktree removed ($wt_path)"
+
+  # Clean up the init branch if it still exists and is fully merged to HEAD.
+  if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$branch"; then
+    if git -C "$PROJECT_DIR" merge-base --is-ancestor "$branch" HEAD 2>/dev/null; then
+      git -C "$PROJECT_DIR" branch -d "$branch" >/dev/null 2>&1 \
+        && log "prune  $executor — deleted merged branch $branch"
+    else
+      warn "$executor — branch $branch is not merged; left intact"
+    fi
   fi
 }
 
-# Convert a Git-Bash POSIX path to a Windows path for cmd.exe.
-winpath() {
-  if command -v cygpath >/dev/null 2>&1; then
-    cygpath -w "$1"
-  else
-    echo "$1" | sed -e 's|^/\([a-zA-Z]\)/|\1:/|' -e 's|/|\\|g'
-  fi
+# Pin the per-worktree committer identity to the executor that owns the tree.
+# Worktrees otherwise inherit the shared repo config's user.name — which flips
+# with whichever CLI last set it (observed 2026-07-13: 3 of 4 pane worktrees
+# carrying claude-code). The ADR-0005 pre-commit gate TRUSTS that identity: a
+# kiro commit mislabeled claude-code would inherit claude's cross-territory
+# replica exception. Idempotent; re-pinned every run so it also repairs drift.
+set_identity() {
+  local wt="$1" executor="$2" identity
+  case "$executor" in
+    kimi)     identity="kimi-cli" ;;
+    kiro)     identity="kiro-cli" ;;
+    claude)   identity="claude-code" ;;
+    opencode) identity="opencode" ;;
+    *)        log "warn   $executor — no identity mapping; leaving git user.name as-is"; return 0 ;;
+  esac
+  git -C "$wt" config --worktree user.name "$identity"
+  git -C "$wt" config --worktree user.email "$identity@users.noreply.github.com"
 }
 
-# Echo non-empty if the Windows dir at $1 is a junction/reparse point.
-cmd_islink() {
-  cmd //c dir //a:l "$(dirname "$(winpath "$1")")" 2>/dev/null \
-    | grep -i "$(basename "$1")" || true
-}
+# ---------- remove mode ----------
+if [ "$REMOVE_MODE" = true ]; then
+  REMOVED=""
+  SKIPPED=""
+  for executor in $EXECUTORS; do
+    wt_path="$WT_CONTAINER/$executor"
+    branch="exec/$executor/init"
+    if [ -e "$wt_path" ]; then
+      remove_worktree "$executor" "$wt_path" "$branch"
+      REMOVED="${REMOVED:+$REMOVED }$executor"
+    else
+      log "skip   $executor — worktree does not exist ($wt_path)"
+      SKIPPED="${SKIPPED:+$SKIPPED }$executor"
+    fi
+  done
+  echo
+  log "Summary:"
+  log "  removed: ${REMOVED:-(none)}"
+  log "  skipped: ${SKIPPED:-(none)}"
+  log "Done."
+  exit 0
+fi
 
 # ---------- bootstrap each executor ----------
 mkdir -p "$WT_CONTAINER"
+
+# Per-worktree config (used by set_identity) only takes effect when the main
+# repo config opts in; make sure fresh clones have it.
+git -C "$PROJECT_DIR" config extensions.worktreeConfig true
 
 CREATED=""
 SKIPPED=""
@@ -191,10 +263,10 @@ for executor in $EXECUTORS; do
     CREATED="${CREATED:+$CREATED }$executor"
   fi
 
-  # Junction + exclude are re-established every run (idempotent) so they survive
-  # `git worktree prune` / branch deletion churn (design §8).
-  link_ai "$wt_path"
+  # Exclude .ai/ so the dispatcher's snapshot copy is never committed from the
+  # worktree. Identity is re-pinned every run so drifted trees are repaired.
   exclude_ai "$wt_path"
+  set_identity "$wt_path" "$executor"
 done
 
 # ---------- summary ----------
@@ -202,5 +274,5 @@ echo
 log "Summary:"
 log "  created: ${CREATED:-(none)}"
 log "  skipped: ${SKIPPED:-(none)}"
-log "  .ai junction → $PROJECT_DIR/.ai (re-established for all)"
+log "  .ai excluded from worktree (snapshot-copy model; dispatcher populates it)"
 log "Done."

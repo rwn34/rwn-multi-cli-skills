@@ -171,6 +171,14 @@ else
 fi
 
 # ---------- activity/log.md ----------
+# ADR-0010 decision (2026-07-13, recorded per its § Migration "decide
+# explicitly"): the FLEET-level log deliberately STAYS a single prepended file
+# and is NOT migrated to the entry-per-file spool. Reason: `.fleet/` has exactly
+# one writer per project (that project's orchestrator), so the multi-writer
+# whole-file clobber race that ADR-0010 eliminates structurally for
+# `.ai/activity/` does not apply here. This divergence is a deliberate,
+# documented choice — revisit if the fleet tier ever gains concurrent
+# per-project writers.
 ACTIVITY_LOG="$FLEET_DIR/activity/log.md"
 if [ -e "$ACTIVITY_LOG" ]; then
   log "skip   activity/log.md — already exists (never clobbered)"

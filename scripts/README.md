@@ -71,7 +71,7 @@ bash scripts/install-template.sh /path/to/your/project
 ```
 
 Target must be a clean git repo. The script creates branch
-`ai-template-install`, makes one commit, and leaves Phase 6 (merge to master)
+`ai-template-install`, makes one commit, and leaves Phase 6 (merge to main)
 as a printed follow-up.
 
 ### Flags
@@ -83,7 +83,7 @@ as a printed follow-up.
 
 ```bash
 cd /path/to/your/project
-git checkout master
+git checkout main
 git branch -D ai-template-install
 rm .ai-install-rollback-point.txt
 ```

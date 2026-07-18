@@ -1,17 +1,18 @@
 name: framework-check
 
-# Self-test suite for the multi-CLI framework. Runs all four per-CLI hook
-# test matrices plus the SSOT drift checker. Intent: catch regressions in
-# hook behavior or replica drift before they land on master.
+# PR-only, fast companion to `gates`. `gates` already runs the full hook suites,
+# SSOT drift, and landed-blob checks; this workflow covers the one check `gates`
+# does not: protocol-v4 handoff lint. Keeping it as a separate required check
+# means handoff evidence discipline is validated independently and quickly.
 #
-# All steps are plain bash — no compile/cache needed. Linux-only (bash is
-# native on ubuntu-latest).
+# Deliberately does NOT run on push-to-main — `gates` handles main validation.
 
 on:
   pull_request:
-  push:
-    branches:
-      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   framework-check:
@@ -20,14 +21,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Claude hooks test suite
-        run: bash .claude/hooks/test_hooks.sh
-
-      - name: Kimi hooks test suite
-        run: bash .kimi/hooks/test_hooks.sh
-
-      - name: Kiro hooks test suite
-        run: bash .kiro/hooks/test_hooks.sh
-
-      - name: SSOT drift check
-        run: bash .ai/tools/check-ssot-drift.sh
+      # Protocol v4 lint: catches sender-side evidence discipline errors
+      # (DONE-without-evidence, HYPOTHESIS + priority/Risk C, file-level claims
+      # without Observed-in:) before they reach the dispatch queue.
+      - name: Handoff protocol v4 lint
+        run: bash .ai/tools/lint-handoff.sh

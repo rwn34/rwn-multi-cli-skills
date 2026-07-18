@@ -32,7 +32,7 @@ from the target project root in bash (Git Bash on Windows) unless noted.
    or stash anything pending — the upgrade must be reviewable as a single
    diff and revertible with `git reset --hard`.
 2. **Fresh refs.** `git fetch` in both the target project and the template
-   repo. Upgrade from the template's current `master`, not a stale checkout.
+   repo. Upgrade from the template's current `main`, not a stale checkout.
 3. **Identify the install vintage.** Check for the version marker:
 
    ```bash

@@ -84,6 +84,35 @@ The marker is a durable sidecar under `.ai/handoffs/.quarantine/`, named `<recip
 - **Clear manually** (un-quarantine) by **deleting** the sidecar after you fix or unblock the handoff — the runner re-attempts it on the next poll.
 - **Known limitation:** there is no automatic staleness expiry yet. A handoff you fix *in place* without clearing its sidecar stays skipped until you delete the sidecar (or it moves to `done/`).
 
+### Fleet supervisor (OS-level, survives terminal death)
+
+`fleet-supervisor.ps1` runs as a **Windows Task Scheduler** task (registered via `install-fleet-supervisor.ps1`) — one level ABOVE `run-pane-supervised.ps1`. It survives terminal death (PowerShell restart, wt.exe crash) because it doesn't depend on any terminal being open.
+
+Each pane-runner writes a **persistent heartbeat file** to `%LOCALAPPDATA%\rwn-auto\fleet-heartbeat\<project>__<cli>.json` on every poll — outside the repo to avoid `.ai/` churn. The supervisor reads these heartbeats and classifies each pane:
+
+- **L1 (liveness):** heartbeat file exists AND timestamp is fresh (< 90s). A stale or missing heartbeat means the pane (or terminal) is dead.
+- **L2 (capability):** the heartbeat carries the outcome of the pane's last CLI invocation. `auth_failure` or `quota_exceeded` with ≥3 consecutive failures means the CLI is alive but **cannot do work** (dead API key, exhausted quota, provider down).
+
+Actions:
+
+| Condition | Action |
+|---|---|
+| All panes healthy | Nothing |
+| ALIVE + NOT CAPABLE | **Alert only** (Telegram, names the CLI + reason). NEVER relaunches — a dead API key isn't fixed by restarting the process. |
+| DEAD + open handoffs | **Alert + relaunch** (opens a new wt tab with pane-runners for the project) |
+| DEAD + empty queue | **Alert only** (deduped, once per incident) |
+
+Safety: exponential backoff (1→2→4→8→16 min) + max-attempts circuit breaker (default 5) on relaunch; alert dedupe on state transition; a live fleet is **never** relaunched (false-positive guard).
+
+```powershell
+# Register (run once):
+powershell -File install-fleet-supervisor.ps1
+# Remove:
+powershell -File uninstall-fleet-supervisor.ps1
+```
+
+**Hard boundary:** the supervisor cannot run when the machine is off or asleep. See `.ai/known-limitations.md`.
+
 ### Launch pacing (why launches no longer land scrambled)
 
 Windows Terminal applies a chained `wt` command (`new-tab … ; split-pane … ; split-pane …`) against **whatever pane is focused when it gets there**. Firing one invocation with dozens of subcommands — which is what marking ~7 projects used to do — makes WT race itself and the layout comes out shuffled.
@@ -126,12 +155,17 @@ $env:RWN_4AI_TAB_DELAY_MS  = 0      # opt back into the legacy one-shot batch
 | `restart-pane.ps1` | Manual respawn: re-enters **this** pane's `pane-runner.ps1` loop after a Ctrl-C or exit dropped it to a bare prompt. Pane-local — it relaunches only this pane's CLI and never touches the other panes (each pane is its own process + claim-lock). `-Cli` defaults to `$env:RWN_PANE_CLI` (stamped by `pane-runner.ps1`), so with no arguments it restarts the correct CLI in the current pane. Also `-ProjectDir`, `-Owner`, `-MaxContinues`, `-PollSeconds`. |
 | `test-pane-runner.ps1` | Pester-free harness for `pane-runner.ps1` decision logic (mock CLI, no real launch). Run: `powershell -File test-pane-runner.ps1`. |
 | `test-selector-e2e.ps1` | Pester-free harness for `Selector.ps1`: real `Install-Framework` runs into a temp sandbox, plus badge resolution (`[v SRC]`/`[v OK]`/`[! OLD]`/`[- none]`) and the launch plan (staged emission == legacy atomic chain, N projects -> N tab launches, delay knobs). Asserts on the constructed `wt` command/stage arrays — never launches Windows Terminal. Run: `powershell -File test-selector-e2e.ps1`. |
+| `fleet-supervisor.ps1` | OS-level fleet supervisor (Windows Task Scheduler). Detects dead pane-runners via persistent heartbeat files (L1 liveness + L2 capability), alerts the owner via Telegram, and relaunches the fleet. Exponential backoff + circuit breaker + alert dedupe. See [Fleet supervisor](#fleet-supervisor-os-level-survives-terminal-death) above. |
+| `install-fleet-supervisor.ps1` | Registers the fleet supervisor as a scheduled task ("run only when user is logged on" + Interactive, so it CAN open wt panes). Scripted + reversible. `-IntervalMinutes` (default 1), `-WhatIf` to preview. |
+| `uninstall-fleet-supervisor.ps1` | Removes the fleet supervisor scheduled task. `-WhatIf` to preview. |
+| `test-fleet-supervisor.ps1` | Pester-free harness for `fleet-supervisor.ps1` (33 tests: liveness, false-positive guard, down+handoffs, down+empty-queue, alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall). Run: `powershell -File test-fleet-supervisor.ps1`. |
+| `test-pane-supervisor.ps1` | Pester-free harness for `run-pane-supervised.ps1` (stub-driven: respawn, give-up, healthy-run reset, backoff schedule). Run: `powershell -File test-pane-supervisor.ps1`. |
 | `install-framework.log` | Generated at runtime next to the scripts by `Install-Framework` — an append-only trace of each framework install attempt (source, git state, installer exit codes, fallback copies). Not committed. |
 | `Launch4Panes.vbs` | VBS wrapper. Opens the PS1 from Start Menu without leaving a lingering window. |
 | `icon.ico` | Custom icon for the Start Menu shortcut (dark theme, 4 colored bars). |
 | `.gitignore` | Ignores `.4pane-history`, `.4pane-layout`, and `*.tmp`. |
 
-> **Not in this dir:** `scripts/sync-4ai-panes-install.ps1` lives in the repo's top-level `scripts/`, **not** in `tools/4ai-panes/`. It is the install-sync engine (see [§3.2](#32-install)) and is **not** one of the nine allowlisted tool files it copies — it is never installed into `~/.rwn-auto/rwn-4AI-panes`.
+> **Not in this dir:** `scripts/sync-4ai-panes-install.ps1` lives in the repo's top-level `scripts/`, **not** in `tools/4ai-panes/`. It is the install-sync engine (see [§3.2](#32-install)) and is **not** one of the allowlisted tool files it copies — it is never installed into `~/.rwn-auto/rwn-4AI-panes`.
 
 ---
 
@@ -382,7 +416,7 @@ Edit the `$cliDefs` ordered dictionary in `Selector.ps1`. Each entry needs a `de
 | Nothing happens when clicking shortcut | The VBS file may be empty. Verify `Launch4Panes.vbs` is not 0 bytes. |
 | `wt.exe` not found | Install **Windows Terminal** from the Microsoft Store. |
 | Window opens but no selector | Check that `Selector.ps1` exists in the same folder as `Launch4Panes.ps1`. |
-| Pane splits are wrong sizes | The `-s` values are sensitive. `0.75`, `0.6667`, `0.5` for 4 equal panes. Adjust carefully. |
+| Pane splits are wrong sizes | Width splits: `0.75`, `0.6667`, `0.5` for 4 equal bottom panes; `0.5` splits the top row. Height split is controlled by `$topStripFraction` in `Selector.ps1` (default 0.65 = cockpits 65% / fleet 35%). Adjust carefully. |
 | Splits go to wrong window | The `-w rwn4ai` window name targets a specific wt window. Close all wt instances and retry. |
 | CLI pane is missing | That CLI isn't on PATH. Install it or check `Get-Command <cli-name>`. |
 | Menu looks garbled | Box-drawing characters need a monospace font in Windows Terminal settings. |

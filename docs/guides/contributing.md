@@ -22,7 +22,7 @@ If neither template fits, open a blank issue and say so in the first line.
 
 ## Submitting pull requests
 
-1. Fork / branch from `master`.
+1. Fork / branch from `main`.
 2. Make the change. Keep the diff scoped — one concern per PR.
 3. Fill in `.github/pull_request_template.md` when you open the PR
    (GitHub loads it automatically). The checklist there is the minimum bar.
@@ -85,8 +85,10 @@ If you're contributing and one of the CLIs is involved:
 - Canonical AI instructions live in `.ai/instructions/`. CLI-native folders
   (`.claude/`, `.kimi/`, `.kiro/`) hold replicas generated via `.ai/sync.md`.
   Edit the canonical version, then re-sync — don't edit replicas directly.
-- The cross-CLI activity log is `.ai/activity/log.md`. Each CLI prepends an
-  entry after substantive work; read recent entries before starting new work.
+- The cross-CLI activity log is the entry spool `.ai/activity/entries/` — one
+  file per entry (ADR-0010; `.ai/activity/log.md` is a generated view). Each
+  CLI writes a new entry file after substantive work; read recent entries
+  before starting new work.
 - Root-file creation is gated by ADR-0001
   (`docs/architecture/0001-root-file-exceptions.md`). New root files require
   ADR amendment.

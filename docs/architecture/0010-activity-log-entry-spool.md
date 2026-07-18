@@ -14,6 +14,100 @@ It **supersedes the write protocol** — not the content format — stated in
 CLI contracts ("prepend one activity-log entry"). Entries are now **written**,
 never **prepended**.
 
+## Amendment (2026-07-13) — blockers closed, split-fear disproven, rotation rejected
+
+Read this before the body. Four facts changed after the ADR was accepted; one of
+them makes a body citation stale.
+
+### 1. Both "hard blockers" are already closed
+
+They landed 2026-07-12 as deliberate prep for this ADR, and were verified on disk
+2026-07-13. The Migration checklist's *"Blockers — a CLI cannot log at all until
+these land"* table is **satisfied for both enforcement layers**, and OpenCode can
+already write an entry file and commit it.
+
+- `scripts/git-hooks/pre-commit:111` now reads:
+  `.ai/activity/log.md|.ai/activity/entries/*) return 1 ;;`
+- The guard's writable-lane array **moved out of**
+  `.opencode/plugin/framework-guard.js` into `.opencode/lib/lane.js`. This was
+  forced, not chosen: the OpenCode plugin-host bug documented in
+  `.ai/reports/opencode-2026-07-12-guard-dead-plugin-load-failure.md` requires
+  every top-level export of a plugin module to be a function, so a plain exported
+  array killed the plugin load. The lane contains `".ai/activity/entries/**"` at
+  `.opencode/lib/lane.js:42`.
+
+**The body's citation is stale.** "What it costs" and the Blockers table point at
+`.opencode/plugin/framework-guard.js` (~L84, `rel === ".ai/activity/log.md"`).
+That string no longer exists in that file. The lane lives in
+`.opencode/lib/lane.js`. The body is left as written; this is the correction.
+
+The permission change was deliberately **additive**: `.ai/activity/log.md` stays
+writable for the duration of the transition. Both test files
+(`scripts/git-hooks/test-pre-commit.sh`, `.opencode/plugin/test-guard.mjs`) were
+updated in the same landing and now assert **both** paths — the spool and the
+old log — so the no-regression property is under test, not merely intended.
+
+### 2. §6's core fear is empirically disproven — and §6's decision still stands
+
+A working daily-rotation splitter was built and run against the real log on
+2026-07-13 (branch `exec/claude/202607130206-activity-log-daily-rotation`, since
+abandoned). It partitioned 333 entries into 17 dated files with a byte-level
+round-trip proof: 342/342 entries recovered, zero loss, every dated file free of
+foreign-date entries, header sequence md5-matched against the baseline.
+
+So §6's claim that *"a bad split … corrupts the project's only audit trail"* is
+**not an argument against splitting per se** — a mechanically-verified split is
+achievable, and was achieved.
+
+**Freeze is retained anyway, on §6's other ground: the upside is zero.** Nobody
+needs a 2026-04 entry as an individually addressable file, and freeze is one
+`git mv` with no content transformation. A verified split buys nothing a freeze
+does not already give. Recorded here so this is not re-litigated.
+
+### 3. The race is CONFIRMED, not hypothetical
+
+On 2026-07-13 `.ai/activity/log.md` lost the header line
+`## 2026-07-13 09:20 (UTC+7) - kiro-cli`, orphaning its three body lines. The entry was
+intact when written — proven by kiro's own commit `9371a40` at 09:21 — and after
+two subsequent prepends the header was gone. The line was **recovered verbatim
+from that blob** (recovered, not reconstructed), and a second scar in the same
+file was repaired.
+
+`.ai/known-limitations.md` § "Concurrent activity-log writes" is promoted from
+*Untested / hypothetical* to **CONFIRMED**. This is the first confirmed data loss
+from the race, and it landed in the framework's only cross-CLI audit trail. It
+strengthens the case for this ADR; it weakens nothing in it.
+
+### 4. Alternative (D): daily rotation of `log.md` — REJECTED
+
+Proposed 2026-07-13: rotate prior days' entries into `log-YYYYMMDD.md`, leave only
+today's in `log.md`, leave the write path unchanged. Pitched as delivering *"~90%
+of the read-cost benefit for ~10% of the change"*, superseding this ADR.
+
+**Rejected.** Rotation addresses **read cost only**, and this ADR **already
+delivers that same read-cost win** via §3 — the injection hooks read the newest N
+entry files instead of `head -40 log.md` — *while also* eliminating the write
+race. Rotation keeps `log.md` a single shared mutable file and **adds one more
+whole-file rewriter to it**. The trade was never "90% of the benefit for 10% of
+the change"; it was "give up the race fix, and keep a read-cost fix that the race
+fix already includes."
+
+The spool migration is in flight instead:
+`.ai/handoffs/to-kimi/open/202607130405-implement-adr0010-activity-spool.md` and
+`.ai/handoffs/to-kiro/open/202607130406-adr0010-spool-kiro-territory.md`.
+
+**One design addition came out of it, and the migration depends on it: readers go
+dual-mode BEFORE the freeze.** Every reader reads `.ai/activity/entries/` if it
+exists and is non-empty, else falls back to `.ai/activity/log.md`.
+
+This is not optional polish. The three injection hooks live in three CLI
+territories (`.claude/`, `.kimi/`, `.kiro/`), and the cross-CLI pre-commit guard
+forbids any one CLI from writing all three — so they **cannot** land atomically
+with the freeze (§2). Dual-mode makes each territory's change independent and
+order-free, and reduces the freeze to a gated last step. Without it, freezing
+`log.md` would silently blind whichever CLI's hook landed last: the exact
+silent-vanishing failure class this ADR exists to remove.
+
 ## Context
 
 ### The race
@@ -95,14 +189,14 @@ enforcement layer does not reach.
 **Why UTC, and how the repo's two conventions are reconciled.** The repo
 currently uses UTC for *filenames* (`.ai/handoffs/**` — `YYYYMMDDHHMM`, per
 `.ai/handoffs/README.md` and CLAUDE.md) and local wall-clock for *human-facing
-headings* (`## YYYY-MM-DD HH:MM — <cli>`). That is not an inconsistency to be
+headings* (`## YYYY-MM-DD HH:MM (UTC+7) - <cli>`). That is not an inconsistency to be
 broken by fiat; it is a split by **purpose**, and we make it explicit:
 
 > **Filenames are machine sort keys and are always UTC. Headings are human
-> annotations and stay local wall-clock.**
+> annotations and stay UTC+7 wall-clock.**
 
 Entry filenames therefore follow the existing handoff convention (UTC), and the
-entry *body* keeps its current `## YYYY-MM-DD HH:MM — <cli>` local-time heading
+entry *body* keeps its current `## YYYY-MM-DD HH:MM (UTC+7) - <cli>` UTC+7 heading
 verbatim, so a rendered `log.md` reads exactly as it does today. Fixed-width
 UTC basic form means **lexicographic filename order == chronological order**,
 which is what makes the renderer a plain `sort -r`.
@@ -229,7 +323,7 @@ files.** Reasons:
 - The existing log is **not reliably machine-parseable**. Entries vary from 3
   lines to 20+; several contain multi-line `Action:` blocks with their own
   bullet lists, embedded backticks, colons, and `##`-adjacent content. The only
-  delimiter is the `## YYYY-MM-DD HH:MM — <cli>` heading, and a splitter that
+  delimiter is the `## YYYY-MM-DD HH:MM (UTC+7) - <cli>` heading, and a splitter that
   gets one boundary wrong silently welds two entries together or truncates one.
 - **The upside is zero.** Nobody needs a 2026-04 entry as an individually
   addressable file. The value of the spool is in *future concurrent writes*, and

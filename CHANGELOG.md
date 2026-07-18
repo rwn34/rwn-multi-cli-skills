@@ -20,7 +20,7 @@ promotion happened.
 
 ### Added
 
-- [TODO: new features]
+- [TODO]
 
 ### Changed
 
@@ -38,6 +38,434 @@ promotion happened.
   `.claude/agents/*.md` frontmatter or Kimi's agent config. The three Claude
   agent prompts carry an explicit `ENFORCEMENT: SOFT` block saying so. Nothing
   here implies parity between the two.
+
+## [0.0.44]
+
+### Changed
+
+- Documented remaining field-report findings S2-6 (peer review is a convention, not a mechanical gate) and S3-2 (framework guidance can embed stale point-in-time specifics) as known limitations in `.ai/known-limitations.md`.
+
+## [0.0.43]
+
+### Added
+
+- Added `docs/specs/saja-akun-cli-workflow.md` and `docs/guides/example-handoff-chain.md` documenting the six-actor cockpit/auto handoff workflow, routing table, multi-stage chains, and escalation rules. Updated `.ai/handoffs/README.md` to cross-reference the new docs.
+
+## [0.0.42]
+
+### Changed
+
+- Reduced GitHub Actions minute usage: `gates` now runs the full suite only on pull requests and the version-bump detective on `push:main`; `framework-check` is reduced to the handoff lint that `gates` does not cover; `release` only triggers on `push:main` when `tools/multi-cli-install/package.json` changes.
+
+### Fixed
+
+- [TODO]
+
+### Security
+
+- [TODO]
+
+## [0.0.41] - 2026-07-18
+
+### Added
+
+- ADR-0014: enforcement-layer (`.claude/hooks/**`) changes land via peer-reviewed
+  PR (author ≠ reviewer, required CI gates, no self-merge) instead of
+  owner-apply-only, replacing the hand-applied-patch escape hatch that made the
+  owner a relay rather than a gate.
+- Fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`): OS-level scheduled
+  task that detects dead pane-runners via persistent heartbeat files, alerts the
+  owner via Telegram, and relaunches the fleet. Two-level health model: L1
+  (liveness — heartbeat file mtime) and L2 (capability — last CLI invocation
+  outcome distinguishes auth/quota failure from idle-with-empty-queue).
+  ALIVE-but-NOT-CAPABLE alerts only (never relaunches — a dead API key is not
+  fixed by restarting the process). DEAD + open handoffs alerts and relaunches.
+  DEAD + empty queue alerts only (deduped, once per incident).
+- Persistent heartbeat in `pane-runner.ps1`: each pane writes a JSON heartbeat
+  file to `%LOCALAPPDATA%\rwn-auto\fleet-heartbeat\` on every poll (idle, running,
+  claim-blocked) carrying project, CLI, PID, timestamp, state, and last CLI
+  invocation outcome. Outside the repo to avoid `.ai/` coordination-plane churn.
+- CLI output capture (`Tee-Object`) in `pane-runner.ps1`'s `$script:InvokeCli`:
+  tees child CLI output to a temp file so `Get-LastCliOutcome` can classify
+  auth/quota/error patterns for the L2 capability signal.
+- Install/uninstall scripts (`install-fleet-supervisor.ps1` /
+  `uninstall-fleet-supervisor.ps1`): scripted, reversible Task Scheduler
+  registration. Runs "only when user is logged on" + Interactive so the task
+  CAN open Windows Terminal panes (verified empirically).
+- Safety: exponential backoff + max-attempts circuit breaker on relaunch
+  failure; alert dedupe on state transition (not per-poll); a live fleet is
+  NEVER relaunched (false-positive guard — the worst outcome is two fleets
+  racing the same handoff queue).
+- `test-fleet-supervisor.ps1`: 33-test Pester-free harness covering liveness
+  (fresh/stale/missing), false-positive guard, down+handoffs, down+empty-queue,
+  alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall.
+- ADR-0016: `.ai/` durability contract — dispatcher commits canonical `.ai/`
+  after every executor sync-back, so handoff retirements, activity-log appends,
+  reports, and steering changes are durable in git history instead of existing
+  only in the working tree.
+- `fleet-health.sh` worktree-hygiene checks: detect junctioned/symlinked `.ai/`
+  (ADR-0016 violation), stale worktrees behind `origin/main`, and shared-state
+  encoding corruption before they cause silent data loss.
+- `test-fleet-health.sh`: 14-test harness covering OK/down-idle, STALL, WEDGED,
+  missing queue dirs, junctioned `.ai/`, stale worktree, and encoding problems.
+- `scripts/sync-4ai-panes-install.ps1`: ancestor guard — a third, independent
+  provenance property on top of the existing primary-checkout + main-branch
+  guard. A local branch literally named `main` is not proof that `HEAD` is
+  reachable from `origin/main`; this closes that gap with
+  `git merge-base --is-ancestor HEAD origin/main` (best-effort `git fetch`
+  first, fails closed if `origin/main` is unresolvable or HEAD is not an
+  ancestor). Chose option (b) from the design brief — main-only by default
+  with an explicit, narrower opt-in escape hatch (`RWN_4AI_ALLOW_UNMERGED=1`,
+  separate from `-Force`/`SYNC_FORCE`) for deliberately dogfooding an
+  in-development pane-runner/launcher change before it merges. Refusal leaves
+  the previously deployed files completely untouched (no partial deploy).
+  `scripts/test-sync-4ai-panes-install.ps1` extended to 52 assertions (was 24),
+  including a live RED proof: an unpushed local `main` commit is refused and
+  a prior real deploy's files are verified byte-identical afterward.
+
+### Changed
+
+- `scripts/check-version-bump.sh` now keeps its versioned-path allowlist in
+  lockstep with the installer ship manifests (`scripts/install-template.sh`,
+  `tools/multi-cli-install/scripts/sync-assets.ts`,
+  `tools/multi-cli-install/src/installer/copy-framework.ts`). A shipped path
+  that is not allowlisted, or an allowlisted path that no installer ships, fails
+  the gate.
+- `scripts/check-version-bump.sh` now verifies that bullets under a new
+  `## [x.y.z]` CHANGELOG heading were promoted from the `## [Unreleased]`
+  bullets that disappeared in the same master push. Bullets invented at merge
+  time, or hand-edited during promotion, fail the gate.
+- **Activity log is now an entry-per-file spool (ADR-0010, Waves 1–2 of 3).**
+  Each CLI writes its own new file in `.ai/activity/entries/` (UTC filename +
+  random suffix); the whole-file prepend race — confirmed with real data loss on
+  2026-07-13 when a `kiro-cli` entry header was clobbered — becomes structurally
+  impossible: unique filename ⇒ no shared write ⇒ no lock ⇒ no clobber.
+  Concurrency demonstrated, not asserted: 40/40 same-second writers survived
+  with intact content. `.ai/activity/log.md` becomes a generated view rendered
+  on demand by the new `.ai/tools/render-activity-log.sh`. The Wave-3 freeze
+  (`git mv` of `log.md` to `archive/log-pre-spool.md` + `.gitignore`) is gated
+  on all three CLIs' inject hooks landing dual-mode on `master`, and is NOT in
+  this release.
+- Kimi hooks (`activity-log-inject`, `activity-log-remind`, `git-dirty-remind`)
+  are dual-mode: read the spool when it has entries, fall back to `log.md` so
+  pre-migration clones keep working.
+- Installers (`scripts/install-template.sh`, `tools/multi-cli-install`)
+  sanitize to an empty spool (`.ai/activity/entries/.gitkeep`) instead of a
+  seeded `log.md`; the manifest already excludes the whole `.ai/activity/`
+  subtree, so spool entries never enter adopter manifests.
+- Dispatch prompts (`dispatch-handoffs.sh`, `pane-runner.ps1`) instruct
+  recipients to "write an activity-log entry" instead of "prepend".
+- `.fleet/activity/log.md` (`scripts/fleet-init.sh`) deliberately stays a
+  single prepended file — one writer per project, so the race does not apply;
+  the decision is documented in the script per ADR-0010 § Migration.
+- Archival protocol (`.ai/activity/archive/README.md`) is now a `git mv` of
+  entry files into `archive/YYYY-MM/`; the cut-and-regroup rollup (itself a
+  whole-file rewrite racing live writers) is retired.
+
+### Removed
+
+- `.ai/tools/activity-append.sh` and `.ai/tests/test-activity-append.sh` — the
+  serializing writer with zero callers (ADR-0010 § Alternatives (A)).
+
+### Fixed
+
+- `pane-runner.ps1` now refuses to start if its worktree branch is behind
+  `origin/main`. A stale branch combined with a junctioned `.ai/` was the
+  reverse-write weapon that caused the 2026-07-13 primary `.ai/` clobber; the
+  guard exits cleanly (supervisor does not respawn) and prints the rebase/recreate
+  fix steps.
+- `wt-bootstrap.sh` now pins each executor worktree's committer identity
+  (`user.name`/`user.email` per `--worktree` config) on every run, create or
+  skip. Worktrees previously inherited the shared repo config's `user.name` —
+  which flips with whichever CLI last set it (observed: 3 of 4 pane worktrees
+  carrying `claude-code`) — and the ADR-0005 pre-commit gate trusts that
+  identity, so a mislabeled commit could inherit another CLI's territory
+  exception. The re-pin is idempotent and repairs drifted trees.
+- Remaining `master`→`main` references in live operational docs/scripts:
+  `.github/workflows/release.yml` comments, `.ai/known-limitations.md`,
+  `tools/4ai-panes/run-pane-supervised.ps1` drift-reminder message, and
+  `CHANGELOG.md`'s own stale `origin/master` reference.
+- `reconcile-done-handoffs.sh` now runs `lint-handoff.sh` before moving a
+  terminal-status handoff to `done/`; a handoff that fails lint (e.g.
+  `Status: DONE` with no evidence) stays in `open/` instead of being retired.
+
+## [0.0.39] - 2026-07-13
+
+### Added
+
+- **Cockpit handoff ownership — the `Auto:` tag is the claim boundary.** New
+  `.ai/tools/claim-handoff.sh` + `.ai/tools/release-handoff.sh`: a cockpit
+  (interactive session) takes an `Auto: yes` handoff ONLY by atomically flipping
+  `Auto:` to `no` and writing a claim sidecar under `.ai/handoffs/.claims/`, so
+  the auto pane skips it on its next poll; the inverse restores pane ownership
+  for "claimed it, changed my mind". Staleness mirrors
+  `pane-runner.ps1 Test-HandoffClaimed` exactly (same-host dead pid → reclaim;
+  15-minute window otherwise; fail-closed on ambiguity). Rule documented in
+  `.ai/handoffs/README.md` (Polling section); the operating-prompt SSOT
+  one-liner and CLAUDE.md/AGENTS.md contract wording route through claude-code
+  (only claude-code may commit cross-CLI SSOT replicas atomically per the
+  ADR-0005 pre-commit policy). Covered by the new sibling suite
+  `tools/4ai-panes/test-claim-handoff.ps1`, which drives the real
+  `Get-QualifyingHandoff` gate. Symmetric across all four CLIs.
+- Fleet pane liveness watchdog (dead-man's switch): `pane-runner.ps1` writes an atomic heartbeat sidecar (`.ai/.heartbeat-<cli>.json`) once per poll cycle; `.ai/tools/fleet-health.sh` cross-checks heartbeat freshness against each pane's open queue and classifies `OK` / `STALL` (queue with nobody watching) / `WEDGED` (polling but not picking up) / `DOWN (idle)` (informational) — exit 1 on STALL/WEDGED so CI and hooks can gate, fail-open on its own errors. Surfaced in `stop-reminder.sh` (STALL/WEDGED lines at session end) and the 4AI-panes Selector badge (`stall:<cli>` marker). Detection and alerting only — no auto-restart. Staleness mirrors the pane-runner claim-lock policy (15-min window, same-host dead pid = stale, foreign host = time window only).
+- `sync-replicas.sh --check` — the replica generator is now the ONE SSOT drift
+  authority (detects **and** repairs); wired into both CI workflows
+  (`framework-check.yml`, `gates.yml`) so an SSOT-changing PR without
+  regenerated replicas fails with a copy-pasteable fix command. In-place
+  regeneration is junction-safe: it refuses writes through any symlink or
+  Windows-junction ancestor and any registry destination under `.ai/`
+  (ADR-0004 reverse-write class).
+
+### Changed
+
+- `check-ssot-drift.sh` is now a thin compatibility shim that execs
+  `sync-replicas.sh --check` (identical output contract and exit codes); the
+  manual copy commands in `.ai/sync.md` are demoted to reference material in
+  favor of the generator.
+
+## [0.0.38] - 2026-07-13
+
+### Added
+
+- Tests for the branch-cut fix below, in the failure class that burned the fleet
+  all night: `test-pane-runner.ps1` (av)–(av4) reproduce the landmine in a REAL
+  sandbox worktree with a REAL `mklink /J` junction — a raw `git checkout -b`
+  is asserted to FAIL in the stale-HEAD + live-`.ai/` state (prove-the-bug, so
+  the test can never pass vacuously), then both dispatch paths are asserted to
+  cut the declared-base branch and preserve the live `.ai/` byte-for-byte
+  (prove-the-fix). Non-`.ai/` dirt still refuses the cut; a degraded real-dir
+  `.ai/` fails `wt-bootstrap.sh` loud. The bash twin is driven end-to-end
+  through a real `dispatch-handoffs.sh --exec` invocation (stub CLI binary),
+  keeping the two implementations in behavioral lockstep.
+
+### Fixed
+
+- **Fleet outage: the shared `.ai/` junction broke every executor worktree
+  branch cut.** `.ai/` is a single directory junctioned into every worktree
+  (ADR-0004), so a worktree whose HEAD is stale relative to `origin/master`
+  sees the live coordination-plane churn (`.ai/activity/log.md` and friends)
+  as "local changes". The dispatchers' dirty-check filters `.ai/` BY DESIGN —
+  concluding the tree is clean — but `git checkout -b exec/<cli>/<slug>
+  origin/master` then REFUSES to overwrite those same files. One rule with two
+  contradictory surfaces: every auto-dispatch hit `WORKTREE_FAIL`, three
+  strikes, quarantine — kimi, kiro, and opencode all stalled within hours.
+- `tools/4ai-panes/pane-runner.ps1` `Ensure-DeclaredBaseBranchReal` and
+  `.ai/tools/dispatch-handoffs.sh` `ensure_declared_base_branch()` (kept 1:1):
+  the branch cut no longer uses `git checkout` at all. `symbolic-ref` moves
+  HEAD without rewriting a single file; `git restore --source=<branch>
+  --staged --worktree -- . ':!.ai'` converges everything EXCEPT the junctioned
+  `.ai/` onto the branch tip, and a second index-only restore for `.ai/`
+  leaves `git status` showing genuine plane churn instead of staged phantoms.
+  The live `.ai/` is never written by git in a worktree — the append-only
+  coordination plane cannot be clobbered by a dispatch again.
+- `scripts/wt-bootstrap.sh` `link_ai()`: a worktree `.ai/` degraded from a
+  junction into a real directory used to be silently `rm -rf`'d and replaced —
+  destroying any fleet state that existed only there. A real dir now dies loud
+  when it holds uncommitted content (split-brain guard), re-junctions cleanly
+  when it matches the index (fresh `worktree add` state), and the link is
+  verified post-creation. **Deployment: pane-runners hold the script in
+  memory — the owner must restart the panes after this merges, then clear
+  `.ai/handoffs/.quarantine/` so the stalled queue retries.**
+
+## [0.0.37] - 2026-07-12
+
+### Fixed
+
+- **Fleet outage: the panes' `bash` was WSL's `C:\Windows\System32\bash.exe`, not
+  Git Bash.** The panes launch from a plain Windows context (vbs -> PowerShell)
+  whose persisted PATH puts `C:\WINDOWS\system32` first and contributes Git only
+  as `C:\Program Files\Git\cmd` — which holds `git.exe` but **no `bash.exe`**. So
+  `Get-Command bash` resolved to the WSL launcher, which re-parses its arguments
+  as a shell string and eats the backslashes of the Windows path it is handed
+  (`C:\Users\...\wt-bootstrap.sh` -> `C:Users...wt-bootstrap.sh`, exit 127). Every
+  headless dispatch failed worktree setup, tripped three strikes, and the whole
+  fleet quarantined itself.
+- `tools/4ai-panes/pane-runner.ps1`: new `Resolve-GitBash` — probes the well-known
+  Git for Windows locations, then derives `bash.exe` from `git.exe`'s install root,
+  and only then accepts a PATH hit; **rejects** any candidate under
+  `%WINDIR%\System32` or `WindowsApps` (WSL / Store launchers). Fails loud and
+  returns `$false` when nothing resolves — it never silently proceeds, and never
+  falls back to the primary checkout.
+- `tools/4ai-panes/Selector.ps1`: `Find-Bash` had the identical defect (trusted
+  `Get-Command bash` first) and is hardened the same way.
+- **Not** fixed by path conversion: Git Bash executes the same backslash Windows
+  path correctly. Running `wt-bootstrap.sh` under WSL would be wrong regardless —
+  `git worktree` and `mklink /J` junctions are Windows-side operations.
+
+### Added
+
+- Tests for the above, closing the gap that let this ship green: the hazard was
+  already documented in `test-pane-runner.ps1` (the suite *skipped* on WSL bash)
+  but the production resolver never got the same guard. Now covered by
+  resolver-rejection cases, anti-rot source guards, and — critically — **real,
+  non-stubbed bash invocations** (`wt-bootstrap.sh --help` via the resolved Git
+  Bash; a backslash-path execution probe under the reconstructed pane `PATH`).
+  `test-pane-runner.ps1`'s own bash probe now uses `Resolve-GitBash`, so its
+  real-worktree tests no longer silently skip in the environment the panes run in.
+
+## [0.0.36] - 2026-07-12
+
+### Changed
+
+- OpenCode's model switched from `zhipu-coding/glm-4.7` to
+  `zhipu-coding/glm-4.7-flash` (`opencode.json`, both the top-level `model` and
+  the `opencode` agent's `model`) — owner-requested, for pane responsiveness.
+
+## [0.0.35] - 2026-07-12
+
+### Fixed
+
+- OpenCode enforcement guard restored: `.opencode/plugin/framework-guard.js` no
+  longer fails to load. PR #45 had added a non-function top-level export
+  (`export const WRITABLE_LANE = []`), which OpenCode's plugin host rejects with
+  `TypeError("Plugin export is not a function")` — killing the entire plugin, so
+  at runtime NOTHING was lane-restricted (project source, secrets, other CLIs'
+  territory were all writable). The lane data moved to `.opencode/lib/lane.js`
+  (outside the host's `{plugin,plugins}/*.{ts,js}` discovery glob), so the guard
+  module now exports only functions. Added load-path tests to `test-guard.mjs`
+  that reproduce the host's export invariant and drive the initialized hook
+  end-to-end, so a total load failure can never ship green again.
+
+## [0.0.34] - 2026-07-12
+
+### Fixed
+
+- **Fleet still down after 0.0.33: the declared-base branch cut threw on a
+  successful `git fetch` (`pane-runner.ps1` `Ensure-DeclaredBaseBranchReal`).**
+  Second-order regression, unmasked by the 0.0.33 flat-install fix. git writes
+  ordinary progress to **stderr** — `git fetch` emits `From <remote>` whenever it
+  actually retrieves refs, `git checkout` emits `Switched to a new branch`. The
+  runner sets `$ErrorActionPreference = 'Stop'`, and PS 5.1 promotes a native
+  command's stderr record to a **terminating** `NativeCommandError`; `*> $null`
+  does **not** suppress that promotion (the throw precedes the redirect). So a
+  perfectly successful fetch blew up the whole branch cut, surfacing as an opaque
+  `WORKTREE_FAIL` and re-quarantining every handoff. `$script:InvokeCli` and
+  `$script:InvokeWtBootstrap` already guard against exactly this hazard and
+  document it; `Ensure-DeclaredBaseBranchReal` was simply missing the guard. It
+  stayed hidden because the wt-bootstrap path failed *first* (0.0.33's bug), so the
+  branch cut was never reached — and it is intermittent by nature: a fetch with
+  nothing new writes no stderr and never throws, so it only fires when the remote
+  has actually moved. Now forces `EAP='Continue'` around the native git calls and
+  restores the prior value in `finally`. No failure signal is lost: every call's
+  outcome is judged by `$LASTEXITCODE`, never by whether it threw.
+- **Regression test for it (`test-pane-runner.ps1`, cases `au`–`au3`).** The
+  existing real-git test `(ac)` has a genuine origin but **never advances it**, so
+  its fetches had nothing to report, wrote no stderr, and never threw — the bug was
+  structurally unreachable by the suite. The new case advances the bare origin
+  behind the worktree's back, then cuts a branch under a real `EAP='Stop'`, so it
+  reproduces the live `RemoteException` against the unguarded function and passes
+  against the guarded one, plus anti-rot guards that the EAP guard stays put.
+
+## [0.0.33] - 2026-07-12
+
+### Fixed
+
+- **Total auto-fleet outage: `pane-runner.ps1` could not find `wt-bootstrap.sh` in
+  the deployed launcher (regression from PR #51).** The worktree-bootstrap resolver
+  had a single candidate, `$PSScriptRoot/../../scripts/wt-bootstrap.sh`, on the
+  assumption that `$PSScriptRoot` is always `<repo>/tools/4ai-panes/`. That is true
+  in the repo tree and **false in the shape we actually deploy**:
+  `scripts/sync-4ai-panes-install.ps1` installs the pane tools FLAT into
+  `~/.rwn-auto/rwn-4AI-panes/`, where `../../scripts/` resolves to `~/scripts/` —
+  which does not exist. Every pane-runner took that path, so **all four CLIs**
+  (kimi, kiro, opencode, claude-auto) failed worktree setup and quarantined every
+  handoff they picked up. Sibling dot-sources (`fleet-clis.ps1`, `notify.ps1`) were
+  unaffected because they ARE installed flat beside the runner; only the
+  repo-relative path broke. `wt-bootstrap.sh` belongs to the **project being operated
+  on**, not to the tool's install location, so it is now resolved through an ordered
+  multi-candidate resolver (`Resolve-WtBootstrapPath`): (1) `$ProjectDir/scripts/`,
+  (2) `$PSScriptRoot/../../scripts/` (repo-tree/dev), (3) `$RWN_FRAMEWORK_REPO/scripts/`
+  (same env var + default as `Selector.ps1`). If none exist it fails loud, listing
+  every path tried. The never-fall-back-to-the-primary-checkout contract is
+  unchanged — that behavior is what turned this into a visible quarantine instead of
+  four CLIs silently trampling each other in the primary checkout.
+- **`scripts/wt-bootstrap.sh` is now shipped to onboarded projects
+  (`scripts/install-template.sh`).** The already-shipped `.ai/tools/dispatch-handoffs.sh`
+  resolves it as `<project>/scripts/wt-bootstrap.sh`, so without this copy that
+  reference dangled in **every adopted project** and worktree setup could never
+  succeed there — the same class of break as the pane-fleet outage above, latent in
+  the adopter path.
+- **The deployed topology is now under test (`tools/4ai-panes/test-pane-runner.ps1`,
+  cases `an`–`at`).** The suite passed all through this outage because every worktree
+  test mocks `$script:GetCliWorktreePath` (so the resolver was never reached) and the
+  suite only ever ran *from the repo tree*, where the broken path happens to resolve.
+  A test that only runs in the repo tree is not testing what we ship. The new cases
+  build a synthetic flat-install sandbox and drive the resolver directly with
+  `$ScriptRoot` as a parameter: they reproduce the outage against the old
+  single-candidate expression, assert the new resolver survives it via the project
+  copy and via `RWN_FRAMEWORK_REPO`, assert the repo-tree case still works, assert
+  fail-loud when nothing resolves, and add an anti-rot guard so nobody "simplifies"
+  the resolver back to one hardcoded path.
+
+## [0.0.32] - 2026-07-12
+
+### Added
+
+- **Tier-restatement drift gate (`.ai/tools/check-tier-restatements.sh`).** The
+  autonomy-tier table lives in six places: the SSOT (operating-prompt §8), three
+  generated replicas, and two HAND-WRITTEN restatements — `CLAUDE.md` and
+  `.claude/agents/orchestrator.md`. The replicas are byte-diffed by
+  `check-ssot-drift.sh`, but the two restatements paraphrase the tiers in their own
+  voice, so a byte-diff structurally cannot cover them. They had no mechanical check
+  at all and silently drifted through PR #54. The new gate asserts the load-bearing
+  tier concepts (`deploy to PRODUCTION`, `deploy to STAGING`, merge-to-main, ADR
+  authorship, worktree cleanup, the two no-auto-deploy couplings, …) appear in both
+  restatements, and — critically — that each concept is still present in the SSOT
+  §8 section it is tracking, so moving or deleting a tier item upstream fails the
+  build instead of leaving the check quietly tracking a stale copy. Placement
+  assertions additionally pin staging-deploy to Tier B and production-deploy to
+  Tier C. Wired into `gates`, with a hermetic self-test
+  (`.ai/tools/test-check-tier-restatements.sh`) that proves the check goes red on
+  each failure mode.
+
+### Changed
+
+- **Full git/GitHub authority to the fleet.** Operating-prompt §8 now states
+  that ALL git/GitHub mechanics are fleet-executed — commit, branch, push
+  (Tier A); open PR, merge to main, branch deletion, repo/tree/worktree cleanup
+  (Tier B). None of them is an owner ask. Per owner directive 2026-07-12:
+  *"Committing tree, merge, cleanup, push, or any activity related to GitHub is
+  yours to make."* Previously §8 named only commits and pushes, leaving cleanup
+  and PR/branch hygiene in an unclassified grey zone that drifted toward asking.
+- **Deploy split into STAGING (Tier B) and PRODUCTION (Tier C).** This
+  distinction did not previously exist anywhere in the framework — §8,
+  `.opencode/contract.md` and ADR-0002 all treated every deploy as an
+  undifferentiated Tier-C gate. Staging deploys are now the fleet's call
+  (act-then-notify) while keeping every operational guardrail: dry-run first,
+  brief-only commands, refuse on a dirty tree or failing tests. **Production
+  deploys are unchanged and no guardrail is weakened** — per-deploy human
+  confirmation on every mutating command, all four Stage-2 conditions intact.
+  New prohibited coupling: a staging deploy must never auto-promote to
+  production (sibling of the existing merge-never-auto-deploys rule).
+- **ADR authorship/amendment moved Tier C → Tier B**, resolving a live
+  contradiction: §4 says Claude Code *owns* ADRs (architect lane) while §8
+  required owner pre-approval before writing one. Authorship is now
+  act-then-notify; the requirement to surface it prominently (PR + summary +
+  activity log) is retained — only the pre-approval gate is removed.
+- Files: `.ai/instructions/operating-prompt/principles.md` (§4, §8, §13),
+  `.claude/skills/operating-prompt/SKILL.md` (replica),
+  `docs/architecture/0011-git-ops-execution-to-opencode.md` (Amendment
+  2026-07-12b), `docs/architecture/0002-cli-role-topology.md` (deploy language
+  aligned), `.opencode/contract.md` + `AGENTS.md` (OpenCode is the deploy
+  executor: staging fleet-authorized, production human-confirmed),
+  `CLAUDE.md`, `.claude/agents/orchestrator.md`.
+- **Implementation subagents are now FALLBACK-ONLY, and using one requires a
+  written reason** (operating-prompt §14.2a, owner directive 2026-07-12). §14
+  already said "hand off as much as you can", but it stated that as an economic
+  preference with no mechanism — so it held while Claude was calm and collapsed
+  the moment it was busy. §14.2a converts it into a rule with a visible failure
+  mode: Claude MUST NOT reach for `coder`, `tester`, `refactorer`, `debugger`,
+  `doc-writer`, or `release-engineer` for work Kimi, Kiro, or OpenCode could do,
+  and any invocation must name one of exactly four legitimate exceptions in the
+  activity log — **(a)** Claude-exclusive territory (`.claude/**`, which the
+  cross-CLI guard and the ADR-0005 backstop put out of every other CLI's reach),
+  **(b)** recipient genuinely unavailable (say which, and how you know),
+  **(c)** the owner waiting live on a small fix, **(d)** the final review + merge
+  gate (Claude's by definition — author ≠ reviewer). An unexplained invocation is
+  a protocol violation, not a convenience. This mirrors ADR-0011's
+  `infra-engineer` fallback-logging rule and for the same reason: an activity log
+  filling with unexplained subagent use is the tell that the reflex has returned.
+>>>>>>> origin/main
 - **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
   present.** `scripts/check-version-bump.sh` previously proved only that a
   `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
@@ -54,6 +482,7 @@ promotion happened.
   describing a different PR than the one that bumped the version still pass, and
   a human still reads the entry at release.
 
+<<<<<<< HEAD
 ### Security
 
 - Documented two residuals this change explicitly does **not** close
@@ -79,6 +508,8 @@ promotion happened.
 
 - [TODO: vulnerabilities addressed]
 
+=======
+>>>>>>> origin/main
 ## [0.0.31] - 2026-07-12
 
 ### Added
@@ -398,6 +829,52 @@ promotion happened.
   differing only in case (`/PROJ/` next to `/proj/`) would have been folded *inside* the
   project root and its lane paths allowed. Legitimate paths always match case exactly, so
   the strict compare costs nothing and closes the fold.
+
+## [0.0.23] - 2026-07-12
+
+### Fixed
+
+- **All three Kimi enforcement hooks failed to enforce anything on absolute paths.**
+  `.kimi/hooks/worktree-fleet-guard.sh`, `framework-guard.sh`, and `root-guard.sh`
+  compared tool-emitted paths against `pwd` byte-for-byte, but the runtime emits
+  Windows-absolute forms (`C:\...`, `C:/...`) while Git Bash `pwd` yields the MSYS
+  form (`/c/...`). The compare never matched, so: `framework-guard.sh` let every
+  absolute/backslash/`..`-laundered write into `.claude/`, `.kiro/`, `.codegraph/`,
+  `.kimigraph/`, `.kirograph/` fall through to allow; `root-guard.sh`'s
+  "contains a slash ⇒ not at root" test allowed `C:/<repo>/evil.txt` — a write
+  straight at the repo root — unconditionally; `worktree-fleet-guard.sh` read a
+  sibling-prefix escape (`/c/repo-evil/x`) as in-tree and ALLOWED it, while blocking
+  legitimate in-tree writes emitted as `C:/<worktree>/...` as false-positive escapes.
+  The suite was 55/55 green because every fixture it fed was relative — the tests
+  and the runtime disagreed about the input domain. Same defect class Kiro fixed
+  2026-07-09 (T-K2) and Claude fixed on its own side (handoff
+  `202607120020-hook-abspath-bypass`); propagated to Kimi via handoff
+  `202607120059-kimi-guard-abspath-bypass`.
+- **Kimi hook suite was not hermetic.** `test_hooks.sh` passed 55/55 from the primary
+  checkout but failed 2/55 (t32/t35, fleet fixtures) from a worktree cwd — worktree
+  confinement legitimately blocked the absolute fixture paths before the fleet rule
+  ran. Under the ADR-0004 amendment dispatched CLIs run in worktrees, so the suite
+  failed in exactly the environment it now executes in. Fleet fixtures now pin cwd,
+  hook paths resolve from the script's location (not cwd), and path-shape fixtures
+  derive from the session root so the suite is green from both cwds (90/90).
+
+### Added
+
+- **Lexical pure-bash path canonicalizer in all three Kimi guards.** One repo-relative
+  form whether handed relative, `C:\x`, `C:/x`, `/c/x`, mixed separators, `c:` vs
+  `C:`, or `.`/`..` segments. Fail-CLOSED: bare-drive (`C:`) and drive-relative
+  (`C:foo`) shapes block the write. Only paths genuinely under the project root are
+  relativized (case-folded compare with a trailing-`/` boundary, so `/c/repo-evil`
+  is not read as under `/c/repo`); outside paths stay absolute for the
+  worktree/fleet rules. Deliberately NOT `realpath`/`cygpath`: `cygpath -u 'C:'`
+  and `cygpath -u 'C:foo\bar'` succeed (fail-open), and reparse-point resolution
+  would relocate `.ai/` junction writes outside a worktree (ADR-0004).
+- **Absolute-path fixtures for every territorial rule** in `test_hooks.sh` (55 → 90
+  assertions): each guard exercised in MSYS-absolute, Windows forward/backslash,
+  mixed-separator, lowercase-drive, `./`-prefixed and `..`-laundered forms, plus
+  sibling-prefix boundary and fail-closed shape refusals. Anti-tautology-verified:
+  the new fixtures produce 22 distinct failures against the pristine `origin/master`
+  guards.
 
 ## [0.0.21] - 2026-07-12
 

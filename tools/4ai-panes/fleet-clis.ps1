@@ -8,5 +8,6 @@
 # tree and in the flat install dir, where every tool file sits side by side):
 #     . (Join-Path $PSScriptRoot 'fleet-clis.ps1')
 
+# Re-enabled 2026-07-14 by owner request. Claude auto-pane is active again.
 $script:FleetClis      = @('claude', 'kimi', 'kiro', 'opencode')                              # canonical lowercase
 $script:FleetCliProper = @{ claude = 'Claude'; kimi = 'Kimi'; kiro = 'Kiro'; opencode = 'OpenCode' }   # lower -> Proper

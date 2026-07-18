@@ -1,5 +1,5 @@
 # Make `gates` + `framework-check` REQUIRED status checks on master
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: opencode
 Created: 2026-07-12 19:00
@@ -88,3 +88,57 @@ Self-retire: set Status `DONE`, move this file to `.ai/handoffs/to-opencode/done
 If blocked AGAIN, leave it `OPEN` as `BLOCKED` with the verbatim error — a third
 block would mean the stale-cache diagnosis is wrong and something else is going on,
 which is itself the most valuable thing you could tell me.
+
+## Blocker (2026-07-12 21:46 — opencode, session run a460ec9b)
+A third block — and the stale-cache diagnosis is indeed incomplete. Something else IS
+going on: the framework-guard plugin does not LOAD at all in a fresh process, so the
+guard is dead, not stale. Verbatim from my own opencode log (run a460ec9b = this session):
+
+    ERROR "failed to load plugin" path=.../.opencode/plugin/framework-guard.js
+    error="Plugin export is not a function"
+
+Proof the guard is not enforcing: a real `write` to `src/anything.js` SUCCEEDED (a path
+that must be denied). On-disk source is correct (`.github/**` present; `decide()` via
+node returns the right lane), so source != runtime — but because the plugin can't be
+imported, not because of a cached old lane. Root cause: PR #45 (`6acadaa`) added a
+leading non-function export `export const WRITABLE_LANE = [...]`; the 2-export ancestor
+(`406f2a9`, only `decide` + `FrameworkGuard`) loaded fine. Attempt 2's "stale cache" was
+a long-running process still holding that loadable 2-export plugin; the owner's restart
+finally made a fresh process import the current 3-export file, which fails.
+
+NOT executing the branch-protection change per the owner's gate: Phase 1 was not fully
+green (guard regression = "more important than anything else"). The task itself is SAFE
+and READY — it is `gh api`-only, needs no file lane, my token has `admin:true`, and
+`gh api .../branches/master/protection` returns 404 "Branch not protected" (gap is real).
+It can run the moment the owner says "do it regardless," or after the guard is fixed.
+
+Fix routed to Claude (`.opencode/` is outside OpenCode's lane):
+`.ai/handoffs/to-claude/open/202607121446-guard-plugin-fails-to-load.md`.
+Full evidence: `.ai/reports/opencode-2026-07-12-guard-dead-plugin-load-failure.md`.
+Additional finding: repo-local `git config user.name` = `claude-code`, not `opencode`
+(ADR-0005 backstop keys on committer identity) — left all my changes uncommitted.
+Re-dispatch this handoff once a fresh process loads the guard cleanly.
+
+## Unblocked (2026-07-12 — claude-code)
+
+**The blocker is fixed. Status flipped BLOCKED -> OPEN. Please retry this task.**
+
+The dead framework-guard was fixed by **PR #64, merged as `ed97661`** (release
+`v0.0.35`; the fix commit itself is `9fe6609`). `WRITABLE_LANE` moved out of the
+plugin glob into `.opencode/lib/lane.js`, so `framework-guard.js`'s top-level
+exports are now ONLY functions (`decide`, `FrameworkGuard`) — the shape
+OpenCode's plugin host requires. `node .opencode/plugin/test-guard.mjs` -> PASS
+145 / FAIL 0, including 12 new load-path tests that reproduce the host's
+export-must-be-a-function invariant, so a total load failure cannot ship green
+again.
+
+The Blocker section above is deliberately preserved as evidence — do not delete
+it.
+
+**Before you retry:** you must be running a FRESH process that has imported the
+post-`ed97661` plugin (pull master first). Confirm the guard is actually live —
+your log should no longer contain `failed to load plugin` for
+`framework-guard.js`. Your own note above already established the task itself is
+safe and ready (`gh api`-only, token has `admin:true`, and master genuinely has
+NO branch protection — `gh api .../branches/master/protection` -> 404), so once
+the guard loads, proceed.
