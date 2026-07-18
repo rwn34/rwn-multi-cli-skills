@@ -513,6 +513,78 @@ hour after a PowerShell restart, with no alert anywhere.
 
 ---
 
+## Peer review is a convention, not a mechanical gate (S2-6)
+
+**Status:** Open. Identified in field report 2026-07-16.
+
+**What:** A handoff can carry both `ReviewBy:` and `FinalReview:` headers. The
+dispatcher treats them as independent fan-out targets, so peer review and final
+review can run concurrently. In practice, final review has often reached its
+queue before peer review ran.
+
+**Why it is not mechanically enforced yet:**
+
+- There is no explicit `Depends-on:` field linking a final-review handoff to the
+  peer-review handoff it must wait for.
+- Matching by filename/slug is heuristic and breaks when a task is reopened or
+  superseded.
+- The current reconcile step moves `DONE` handoffs to `done/`; it does not
+  inspect dependencies.
+
+**Mitigation in effect:**
+
+- The cockpit/auto workflow doc (`docs/specs/saja-akun-cli-workflow.md`) states
+  that review is a precondition: the cockpit (or `claude-auto`) must not create
+  the final-review handoff until the peer-review handoff is retired to `done/`.
+- The activity log is the audit trail: a final-review entry should reference the
+  retired peer-review handoff filename.
+
+**Residual risk:** an auto pane can still pick up a final-review handoff while
+its peer review is in flight. The worst case is a premature approval. The
+pre-commit backstop and CI gates still apply, so a bad merge is mechanically
+blocked, but review noise and duplicate final reviews are not.
+
+**What would close this:** add a `Depends-on:` field to handoffs and teach the
+dispatcher/reconcile step to hold a handoff until every dependency is retired to
+`done/`. That is a protocol + tooling change, not a convention change.
+
+---
+
+## Framework guidance can embed stale point-in-time specifics (S3-2)
+
+**Status:** Open. Identified in field report 2026-07-16.
+
+**What:** Generated or authored guidance (contract files, ADRs, READMEs) often
+embeds measurements or specifics that were true when written but drift over time:
+file sizes, line counts, route names, "placeholder" IDs, or "this config value is
+X". A recipient that verifies the claim against the current repo may conclude the
+warning is false and dismiss it.
+
+**Why it is hard to fix generically:**
+
+- Some claims are inherently point-in-time ("the log is ~600 KB").
+- Some are project-local specifics that the framework cannot know are stable.
+- Re-generating every guidance doc on every change is expensive and noisy.
+
+**Mitigation in effect:**
+
+- Prefer thresholds or re-derivation over frozen numbers. E.g. "read only the
+  top window" instead of "the log is ~600 KB".
+- When a spec cites a concrete value, also cite the command used to derive it so
+  a reader can re-run it.
+- The activity log itself is bounded-read guidance: read only the top entries or
+  grep for a topic rather than treating the file size claim as authoritative.
+
+**Residual risk:** stale specifics will keep appearing. The discipline is on the
+author to re-derive claims and on the reader to verify alarming specifics before
+acting on them.
+
+**What would close this:** a CI gate that re-derives every numbered claim in
+framework docs and fails when the derivation no longer matches. That is a large
+scope and likely overkill; the current accepted limitation is author discipline.
+
+---
+
 ## How to add an entry
 
 When you discover a new platform quirk:
