@@ -9,6 +9,12 @@
 - Decisions: Did not re-implement `check-log-superset.sh` or pre-commit wiring — both exist on `origin/main` and pass tests. Confirmed PR #97 resolves the skip-worktree deadlock (`guard_ai_reverse_write()` replaced by `heal_skip_worktree()` plus `reverse-write-detector.sh`).
 - Verification: `bash .ai/tools/test-check-log-superset.sh` → 9 passed, 0 failed; targeted pre-commit log-superset integration tests → 4 passed, 0 failed; `git ls-files .ai/handoffs/to-kimi/open/202607171655-fix-log-recovery-gate-and-s-bit-deadlock.md` → empty.
 
+## 2026-07-18 18:34 (UTC+7) - kimi
+- Action: Opened PR #115 to make dispatcher/pane-runner owner identities consistent with the six-actor auto-default model, and routed review to `kiro-cli` via `.ai/handoffs/to-kiro/review/202607181133-review-pr115-auto-identity-consistency.md`. The framework already routes `Auto: yes` + `Risk: A/B` handoffs to auto panes by default; this change fixes `owner_for()` / `Get-DefaultOwner()` and the hardcoded claim owner.
+- Files: `.ai/tools/dispatch-handoffs.sh`, `.ai/tests/test-dispatch-owner-for.sh`, `tools/4ai-panes/pane-runner.ps1`, `tools/4ai-panes/test-pane-runner.ps1`, `.ai/handoffs/to-kiro/review/202607181133-review-pr115-auto-identity-consistency.md`, `.ai/activity/log.md`
+- Decisions: Did not edit SSOT sources (no replica sync needed). Left the pre-existing tar/snapshot-copy failure in `test-pane-runner.ps1` untouched — it reproduces on `origin/main` and is unrelated to this PR. Pushed the review handoff to `main` so `kiro-auto` can pick it up immediately.
+- Verification: `bash .ai/tests/test-dispatch-owner-for.sh` → 20 passed, 0 failed; `bash .ai/tests/test-dispatch-worktree.sh` → 79 passed, 0 failed; `gh pr create` → PR #115; `git push origin main` succeeded after transient DNS failure.
+
 ## 2026-07-18 18:21 (UTC+7) - kimi
 - Action: Recovered opencode-auto's stuck PR #113 by pushing its pending local commit (`ab44737`) and retiring the handoff `.ai/handoffs/to-opencode/open/202607171845-gate-release-workflow-autopublish.md` to `done/`. PR #113 now gates `release.yml` with `workflow_dispatch` + tag push only; review routed to `kiro-cli`, merge gate stays with `claude-code`.
 - Files: `.github/workflows/release.yml` (via PR #113); `.ai/handoffs/to-opencode/open/202607171845-gate-release-workflow-autopublish.md` → `.ai/handoffs/to-opencode/done/202607171845-gate-release-workflow-autopublish.md`; `.ai/handoffs/.claims/opencode__202607171845-gate-release-workflow-autopublish.claim.json` (deleted); `.ai/activity/log.md`
