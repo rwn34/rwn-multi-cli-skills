@@ -34,6 +34,12 @@ promotion happened.
 
 - [TODO]
 
+## [0.0.44]
+
+### Changed
+
+- Documented remaining field-report findings S2-6 (peer review is a convention, not a mechanical gate) and S3-2 (framework guidance can embed stale point-in-time specifics) as known limitations in `.ai/known-limitations.md`.
+
 ## [0.0.43]
 
 ### Added
