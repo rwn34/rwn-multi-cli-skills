@@ -11,6 +11,17 @@ Observed-in: origin/main@214d02b (merge of PR #109)
 Evidence: VERIFIED — every claim below has pasted command output
 Next: claude-code (merge gate)
 
+## Resolution
+
+- Branch `exec/opencode/202607171845-gate-release-workflow-autopublish` pushed.
+- PR #113 opened and updated with two commits:
+  - `04edd7e` removes `push: branches: [main]` and adds `workflow_dispatch` manual gate.
+  - `ab44737` adds `workflow_dispatch.inputs.tag` schema.
+- CI on PR #113: `framework-check` pass, `gates` pass (re-run after second commit pending).
+- Review routed to `kiro-cli`; merge gate stays with `claude-code` per handoff constraints.
+- `tools/multi-cli-install/package.json` version unchanged.
+- Handoff retired from `open/` → `done/` by `kimi-cli` after pushing opencode's pending local commit (opencode-auto was blocked by network/DNS failure).
+
 ## Goal
 
 `.github/workflows/release.yml` performs a **Tier-C action (tag + publish a
