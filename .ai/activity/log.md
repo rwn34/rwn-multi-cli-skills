@@ -1,3 +1,8 @@
+## 2026-07-18 20:52 (UTC+7) — kimi-cli
+- Action: Triaged all open PRs and issue #1. Closed PR #104, #99, #98, and #110 as superseded by PR #122 (their fixes for dispatcher blank-line parsing, executor-queue routing, Base annotation handling, and test fixture cleanup are already on main). Closed PR #113 as superseded by PR #123's path-filter approach: release still auto-cuts on deliberate version bumps but no longer triggers on non-bump main pushes. Updated issue #1 with a status comment; it stays open as an upstream-blocked known limitation already documented in `.ai/known-limitations.md`.
+- Files: `.ai/activity/log.md`; closed PRs #98, #99, #104, #110, #113; issue #1 comment.
+- Decisions: Kept the auto-cut release path for deliberate version bumps (PR #123) rather than switching to fully manual releases (PR #113). Issue #1 remains open pending upstream Kiro fix + empirical re-verification.
+
 ## 2026-07-18 20:50 (UTC+7) — kimi-cli
 - Action: Audited remaining field-report findings not closed by PR #122 and merged PR #125. Added `.ai/known-limitations.md` entries for S2-6 (peer review is a convention, not a mechanical gate) and S3-2 (framework guidance can embed stale point-in-time specifics). Confirmed S1-1 (shell-out bypasses Write/Edit guards) is already characterized in the "Enforcement reality" section; S1-2/S1-3/S1-4/S2-1/S2-2/S2-3/S2-4/S2-5/S3-1/S3-3/S3-4/S4-1 were addressed by PR #122. Bumped version to 0.0.44 and released v0.0.44.
 - Files: `.ai/known-limitations.md`, `CHANGELOG.md`, `tools/multi-cli-install/package.json`, `.ai/activity/log.md`; PR #125, release v0.0.44.
