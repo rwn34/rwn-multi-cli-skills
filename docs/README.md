@@ -21,4 +21,4 @@ AI agents read this directly via `file://docs/**/*.md` in their resource configs
 ## Who reads here
 
 All agents that need project context load `file://docs/**/*.md` as a resource.
-Content is read directly from disk — no duplication, no sync.
+Content is read directly from disk — no duplication, no sync.<!-- test -->
