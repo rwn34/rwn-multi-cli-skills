@@ -263,6 +263,12 @@ Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable ->
 Release-Handoff -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
 
+# -- Get-DefaultOwner returns six-actor auto identities --
+Assert-Equal 'claude-auto'   (Get-DefaultOwner -CliName 'claude')   'k: claude owner is claude-auto'
+Assert-Equal 'kimai-auto'    (Get-DefaultOwner -CliName 'kimi')     'k: kimi owner is kimai-auto'
+Assert-Equal 'kiro-auto'     (Get-DefaultOwner -CliName 'kiro')     'k: kiro owner is kiro-auto'
+Assert-Equal 'opencode-auto' (Get-DefaultOwner -CliName 'opencode') 'k: opencode owner is opencode-auto'
+
 # -- poison-pill quarantine (ADR-0008 self-healing safety valve) --
 $kimiOpen = Join-Path $work ".ai/handoffs/to-kimi/open"
 New-Item -ItemType Directory -Path $kimiOpen -Force | Out-Null

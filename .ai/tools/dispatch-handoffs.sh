@@ -98,13 +98,19 @@ command -v fleet_notify >/dev/null 2>&1 || fleet_notify() { :; }
 project_name="$(basename "$root")"
 
 # The recipient CLI's activity-log identity (mirrors pane-runner.ps1 Get-DefaultOwner).
+# Six-actor model: auto panes are the default recipients; cockpit queues are
+# non-dispatchable and exist only for explicit human routing.
 owner_for() {
     case "$1" in
-        claude)   echo "claude-auto" ;;
-        kimi)     echo "kimi-cli" ;;
-        kiro)     echo "kiro-cli" ;;
-        opencode) echo "opencode" ;;
-        *)        echo "$1" ;;
+        claude|claude-auto)       echo "claude-auto" ;;
+        claude-cockpit)           echo "claude-cockpit" ;;
+        kimi|kimi-auto|kimi-executor) echo "kimai-auto" ;;
+        kimi-cockpit)             echo "kimai-cockpit" ;;
+        kiro|kiro-auto|kiro-executor) echo "kiro-auto" ;;
+        kiro-cockpit)             echo "kiro-cockpit" ;;
+        opencode|opencode-auto)   echo "opencode-auto" ;;
+        opencode-cockpit)         echo "opencode-cockpit" ;;
+        *)                        echo "$1" ;;
     esac
 }
 
@@ -569,8 +575,10 @@ acquire_claim() {
     local claim="$1" cli="$2" slug="$3"
     mkdir -p "$claim_dir" 2>/dev/null
     local tmp="$claim_dir/.${cli}__${slug}.$$.tmp"
-    printf '{"handoff":"%s","recipient":"%s","owner":"claude-auto","pid":%s,"host":"%s","claimed_at":"%s"}\n' \
-        "$slug" "$cli" "$$" "$(hostname 2>/dev/null)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+    local owner
+    owner="$(owner_for "$cli")"
+    printf '{"handoff":"%s","recipient":"%s","owner":"%s","pid":%s,"host":"%s","claimed_at":"%s"}\n' \
+        "$slug" "$cli" "$owner" "$$" "$(hostname 2>/dev/null)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
     # Exclusive publish: a hard link fails if the claim already exists, so two
     # racers can't both win, AND the claim name appears already pointing at the
     # fully-written inode — never a 0-byte window (the noclobber `:>` analog, but
@@ -594,6 +602,13 @@ acquire_claim() {
     mv -f "$tmp" "$claim" 2>/dev/null || { rm -f "$tmp"; return 1; }
     return 0
 }
+
+# Library mode: sourcing with DISPATCH_LIB=1 defines the helper functions
+# without running the dispatch body, so unit tests can exercise owner_for(),
+# bin_for(), etc. directly.
+if [ -n "${DISPATCH_LIB:-}" ]; then
+    return 0 2>/dev/null || exit 0
+fi
 
 found=0
 for to_dir in "$root"/.ai/handoffs/to-*; do
