@@ -126,6 +126,8 @@ When you are the **recipient**, self-retire on completion: set Status `DONE` and
 move the handoff from `open/` to `done/` yourself; the sender validates post-hoc.
 Blocked → leave in `open/` as `BLOCKED` with a verbatim `## Blocker`.
 
+The `Auto:` tag is the ownership boundary: `Auto: yes` + Risk A/B belongs to the auto pane (a cockpit must not hand-take it), `Auto: no` / Risk C is cockpit-owned; a cockpit takes an `Auto: yes` handoff only by first running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` + claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
+
 ## Root file policy
 
 Repo root is strict. Permitted root files are listed in
