@@ -20,6 +20,32 @@ promotion happened.
 
 ### Added
 
+- [TODO]
+
+### Changed
+
+- [TODO]
+
+### Deprecated
+
+- [TODO]
+
+### Removed
+
+- [TODO]
+
+### Fixed
+
+- [TODO]
+
+### Security
+
+- [TODO]
+
+## [0.0.41] - 2026-07-18
+
+### Added
+
 - ADR-0014: enforcement-layer (`.claude/hooks/**`) changes land via peer-reviewed
   PR (author ≠ reviewer, required CI gates, no self-merge) instead of
   owner-apply-only, replacing the hand-applied-patch escape hatch that made the
@@ -89,10 +115,6 @@ promotion happened.
   entry files into `archive/YYYY-MM/`; the cut-and-regroup rollup (itself a
   whole-file rewrite racing live writers) is retired.
 
-### Deprecated
-
-- [TODO: features marked for removal]
-
 ### Removed
 
 - `.ai/tools/activity-append.sh` and `.ai/tests/test-activity-append.sh` — the
@@ -119,11 +141,6 @@ promotion happened.
 - `reconcile-done-handoffs.sh` now runs `lint-handoff.sh` before moving a
   terminal-status handoff to `done/`; a handoff that fails lint (e.g.
   `Status: DONE` with no evidence) stays in `open/` instead of being retired.
-- [TODO: bug fixes]
-
-### Security
-
-- [TODO: vulnerabilities addressed]
 
 ## [0.0.39] - 2026-07-13
 
