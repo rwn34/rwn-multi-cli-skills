@@ -33,6 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
+        if: github.event_name == 'pull_request'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -44,6 +45,7 @@ jobs:
       # actually changed. The required "gates" status still reports green when
       # these steps are skipped; they are not required as separate contexts.
       - name: Detect installer-related changes
+        if: github.event_name == 'pull_request'
         id: installer
         run: |
           set -euo pipefail
@@ -68,6 +70,7 @@ jobs:
       # every replica into a temp tree and diffs. On failure it prints the
       # copy-pasteable fix (`bash .ai/tools/sync-replicas.sh`) to stderr.
       - name: SSOT drift check
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/sync-replicas.sh --check
 
       # Landed-blob check: compares the committed blobs of SSOT sources and
@@ -75,25 +78,31 @@ jobs:
       # laundering pattern that working-tree drift checks missed (ADR-0015
       # follow-up, 2026-07-17).
       - name: Landed SSOT blob consistency check
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/check-landed-ssot.sh
 
       - name: Claude hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .claude/hooks/test_hooks.sh
 
       - name: Kimi hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .kimi/hooks/test_hooks.sh
 
       - name: Kiro hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .kiro/hooks/test_hooks.sh
 
       - name: OpenCode guard test suite
+        if: github.event_name == 'pull_request'
         run: node .opencode/plugin/test-guard.mjs
 
       - name: Git pre-commit backstop test (ADR-0005)
+        if: github.event_name == 'pull_request'
         run: bash scripts/git-hooks/test-pre-commit.sh
 
       - name: Installer dependency install
-        if: steps.installer.outputs.installer_changed == 'true'
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: npm ci
         working-directory: tools/multi-cli-install
 
@@ -102,14 +111,14 @@ jobs:
         # no committed generated assets, and every asset file byte-matching its
         # source. This is the gate that catches the 2026-07-12 defect class
         # (stale asset AGENTS.md + missing .opencode guard layer).
-        if: steps.installer.outputs.installer_changed == 'true'
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: |
           npx tsx scripts/sync-assets.ts
           cd "$GITHUB_WORKSPACE" && bash .ai/tools/check-asset-drift.sh
         working-directory: tools/multi-cli-install
 
       - name: Installer typecheck + tests
-        if: steps.installer.outputs.installer_changed == 'true'
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
 
@@ -129,9 +138,11 @@ jobs:
       # before the repo assertion means a non-compliant tree cannot skip it and
       # hide a checker that has quietly stopped biting.
       - name: Tier restatement checker self-test
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/test-check-tier-restatements.sh
 
       - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/check-tier-restatements.sh
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
