@@ -44,6 +44,9 @@ Risk: A
 
 ## Goal
 $goal
+
+## Evidence
+Verified by running the reconcile test suite.
 EOF
 }
 
@@ -60,6 +63,9 @@ Risk: A
 
 ## Goal
 $goal
+
+## Evidence
+Verified by running the reconcile test suite.
 EOF
 }
 
@@ -76,6 +82,69 @@ Risk: A
 
 ## Goal
 $goal
+
+## Evidence
+Verified by running the reconcile test suite.
+EOF
+}
+
+mk_open_no_evidence() {
+    local name="$1" goal="$2" status="${3:-DONE}"
+    cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
+# Test handoff
+Status: $status
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+$goal
+EOF
+}
+
+mk_open_impossible() {
+    local name="$1" goal="$2"
+    cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
+# Test handoff
+Status: IMPOSSIBLE
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+$goal
+
+## Why
+The cited premise does not hold in the recipient tree.
+
+## Evidence
+Fresh run shows the expected file is absent.
+EOF
+}
+
+mk_open_notabug() {
+    local name="$1" goal="$2"
+    cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
+# Test handoff
+Status: NOT-A-BUG
+Sender: claude-code
+Recipient: kimi
+Created: 2026-07-17 00:00 (UTC+7)
+Auto: yes
+Risk: A
+
+## Goal
+$goal
+
+## Why
+The reported behavior matches the documented contract.
+
+## Evidence
+Fresh run completed with exit 0 per the contract.
 EOF
 }
 
@@ -141,8 +210,8 @@ check "test4: no output for OPEN handoff" "$([ -z "$out4" ] && echo 0 || echo 1)
 # ==============================================================================
 # 5. Terminal statuses IMPOSSIBLE and NOT-A-BUG also move to done/.
 # ==============================================================================
-mk_open "202607170005-impossible.md" "sender was wrong; premise disproven" "IMPOSSIBLE"
-mk_open "202607170006-notabug.md" "reported behavior is intentional" "NOT-A-BUG"
+mk_open_impossible "202607170005-impossible.md" "sender was wrong; premise disproven"
+mk_open_notabug "202607170006-notabug.md" "reported behavior is intentional"
 out5="$(run_reconcile 2>&1)"
 rc5=$?
 check "test5: reconcile exits 0 with terminal statuses" "$([ "$rc5" -eq 0 ] && echo 0 || echo 1)"
@@ -153,12 +222,24 @@ check "test5: NOT-A-BUG handoff now in done/" "$([ -f "$HANDOFFS/to-kimi/done/20
 check "test5: reports both terminal moves" "$(echo "$out5" | grep -c 'moved .* -> done/' | grep -q '2' && echo 0 || echo 1)"
 
 # ==============================================================================
-# 6. Idempotency: re-running with no stray terminal handoffs is silent and exits 0.
+# 6. Retirement gate: terminal handoff without evidence stays in open/ for correction.
 # ==============================================================================
+mk_open_no_evidence "202607170007-no-evidence.md" "forgot to include evidence" "DONE"
 out6="$(run_reconcile 2>&1)"
 rc6=$?
-check "test6: second run exits 0" "$([ "$rc6" -eq 0 ] && echo 0 || echo 1)"
-check "test6: second run is silent" "$([ -z "$out6" ] && echo 0 || echo 1)"
+check "test6: reconcile exits 0 despite lint failure" "$([ "$rc6" -eq 0 ] && echo 0 || echo 1)"
+check "test6: no-evidence handoff stays in open/" "$([ -f "$HANDOFFS/to-kimi/open/202607170007-no-evidence.md" ] && echo 0 || echo 1)"
+check "test6: no-evidence handoff is not moved to done/" "$([ ! -f "$HANDOFFS/to-kimi/done/202607170007-no-evidence.md" ] && echo 0 || echo 1)"
+check "test6: reports lint warning" "$(echo "$out6" | grep -qi 'fails v4 lint' && echo 0 || echo 1)"
+
+# ==============================================================================
+# 7. Idempotency: re-running with no stray terminal handoffs is silent and exits 0.
+# ==============================================================================
+rm -f "$HANDOFFS/to-kimi/open/202607170007-no-evidence.md"
+out7="$(run_reconcile 2>&1)"
+rc7=$?
+check "test7: second run exits 0" "$([ "$rc7" -eq 0 ] && echo 0 || echo 1)"
+check "test7: second run is silent" "$([ -z "$out7" ] && echo 0 || echo 1)"
 
 echo ""
 echo "==== reconcile-done-handoffs suite: $pass passed, $fail failed ===="

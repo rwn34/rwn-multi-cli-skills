@@ -23,6 +23,16 @@ set -u
 base="${1:-.}"
 handoffs_dir="${HANDOFFS_DIR:-$base/.ai/handoffs}"
 
+# Pre-compute v4 lint errors so terminal handoffs that fail sender-side evidence
+# discipline are not silently moved to done/. The lint script scans open/ and
+# review/ itself; we just check whether a given file's relative path appears in
+# its error output. Missing lint script = skip the gate (e.g. minimal test fixtures).
+lint_script="$base/.ai/tools/lint-handoff.sh"
+lint_errors=""
+if [ -f "$lint_script" ]; then
+    lint_errors="$(HANDOFFS_DIR="$handoffs_dir" bash "$lint_script" 2>&1 || true)"
+fi
+
 for to_dir in "$handoffs_dir"/to-*; do
     [ -d "$to_dir" ] || continue
     for sub in open review; do
@@ -33,10 +43,16 @@ for to_dir in "$handoffs_dir"/to-*; do
             case "$(basename "$f")" in
                 README.md|template.md) continue ;;
             esac
+            rel="${f#$handoffs_dir/}"
             # Header check: parse `Status:` by key, case-insensitive.
             status="$(sed -n 's/^[[:space:]]*[Ss][Tt][Aa][Tt][Uu][Ss][[:space:]]*:[[:space:]]*//p' "$f" 2>/dev/null | head -1 | tr '[:upper:]' '[:lower:]')"
             case "$status" in
                 done|impossible|not-a-bug)
+                    # Retirement gate: terminal statuses need evidence sections.
+                    if [ -n "$lint_errors" ] && printf '%s\n' "$lint_errors" | grep -qF "$rel"; then
+                        echo "reconcile-done: WARNING $rel fails v4 lint; leaving in $sub/ for correction"
+                        continue
+                    fi
                     done_dir="$to_dir/done"
                     mkdir -p "$done_dir" 2>/dev/null
                     target="$done_dir/$(basename "$f")"

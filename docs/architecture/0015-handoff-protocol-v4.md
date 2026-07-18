@@ -300,9 +300,9 @@ control; a self-asserted "the owner said yes" is not.
   default-branch discovery.
 - In-flight handoffs without the new fields continue to work, per the spec's
   migration section.
-- The tests `v4-1`..`v4-5` reference `origin/master`, which the repo no longer
-  uses after the master→main migration. They need repointing to `origin/main`
-  independently of this ADR.
+- The tests `v4-1`..`v4-5` were repointed from `origin/master` to `origin/main`
+  as part of the master→main migration. The ADR text above predates that
+  cleanup.
 - `v4-3` currently asserts the behavior Decision 3 refuses. It must be rewritten
   to assert that a hard-gate `Gate:` value HOLDs even with `Gate-satisfied-by`
   present.

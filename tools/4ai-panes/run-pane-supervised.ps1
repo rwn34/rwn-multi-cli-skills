@@ -88,7 +88,7 @@ try {
             }
             if ($drifted.Count -gt 0) {
                 Write-Host "!! DRIFT WARNING: live install differs from $($prov.source_repo)\tools\4ai-panes ($($drifted -join ', '))." -ForegroundColor Yellow
-                Write-Host "!! last sync: branch=$($prov.branch) commit=$($prov.commit) at $($prov.synced_at). Re-run scripts/sync-4ai-panes-install.ps1 from the primary checkout on master." -ForegroundColor Yellow
+                Write-Host "!! last sync: branch=$($prov.branch) commit=$($prov.commit) at $($prov.synced_at). Re-run scripts/sync-4ai-panes-install.ps1 from the primary checkout on main." -ForegroundColor Yellow
             }
         }
     }

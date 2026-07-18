@@ -42,3 +42,9 @@ jobs:
       # follow-up, 2026-07-17).
       - name: Landed SSOT blob consistency check
         run: bash .ai/tools/check-landed-ssot.sh
+
+      # Protocol v4 lint: catches sender-side evidence discipline errors
+      # (DONE-without-evidence, HYPOTHESIS + priority/Risk C, file-level claims
+      # without Observed-in:) before they reach the dispatch queue.
+      - name: Handoff protocol v4 lint
+        run: bash .ai/tools/lint-handoff.sh

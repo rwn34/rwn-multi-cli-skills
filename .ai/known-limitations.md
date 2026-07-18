@@ -109,6 +109,32 @@ mechanical lane barrier.
 
 ---
 
+## `.ai/` durability contract (snapshot-copy + per-handoff commits, ADR-0016)
+
+**Status:** Accepted 2026-07-18.
+
+Canonical `.ai/` state is durable because the dispatcher commits it after every
+executor sync-back. Executor worktrees receive `.ai/` as an ordinary-file
+snapshot, not a junction, so destructive git verbs inside a worktree cannot
+follow a symlink and delete the shared coordination plane.
+
+**What is durable:** handoff queue moves, activity-log appends, reports, and
+steering changes that have been synced back and committed.
+
+**What is NOT durable:** in-flight changes inside a running executor worktree
+that have not yet reached sync-back. A crash between mutation and sync-back
+loses that worktree's `.ai/` delta.
+
+**The remaining prepend race:** concurrent direct appends to
+`.ai/activity/log.md` can still interleave until ADR-0010's entry-spool model
+replaces direct log prepends. The encoding repair in
+`.ai/tools/check-encoding.sh` catches the most common corruption forms but does
+not serialize writers.
+
+See `docs/architecture/0016-ai-durability-contract.md` for the full contract.
+
+---
+
 ## Kiro CLI — subagent hook inheritance broken
 
 **Status:** Open. Confirmed empirically 2026-04-19 21:22 by kiro-cli.
@@ -401,7 +427,7 @@ any annotated tag, two SHAs exist:
 These will always differ for annotated tags. They are NOT a divergence.
 
 **The trap:** when sanity-checking a tag across local vs remote, comparing
-`git log --oneline -1 master` (commit SHA) against `git ls-remote --tags origin
+`git log --oneline -1 main` (commit SHA) against `git ls-remote --tags origin
 <tag>` (tag-object SHA) will always show a "mismatch" even on a perfectly
 healthy tag. This false alarm cost one cycle (pre.4 was reported as divergent,
 pre.5 was cut to sidestep, then forensic investigation showed pre.4 was fine).
