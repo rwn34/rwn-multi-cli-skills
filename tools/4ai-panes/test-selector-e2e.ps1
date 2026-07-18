@@ -493,11 +493,20 @@ function Test-Badges {
     Assert-That ($b -eq '[- none]') 'non-existent dir badges [- none] without throwing' "got '$b'"
 
     # The handoff badge is UNCHANGED for the source repo: [v SRC] + [H:n].
+    # B7: with open handoffs and NO heartbeat sidecar, the badge also carries
+    # the stall: marker (a queue nobody is watching — fleet-health.sh's STALL).
     New-Item -ItemType Directory -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open') -Force | Out-Null
     'x' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\a.md')
     'y' | Set-Content -Path (Join-Path $fwSrc '.ai\handoffs\to-kimi\open\b.md')
     $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
-    Assert-That ($b -eq '[v SRC] [H:2]') 'source repo still gets the [H:n] handoff badge' "got '$b'"
+    Assert-That ($b -eq '[v SRC] [H:2 stall:kimi]') 'source repo gets [H:n] + stall: when the heartbeat is missing' "got '$b'"
+
+    # B7 positive case: a FRESH heartbeat sidecar clears the stall marker.
+    $hb = Join-Path $fwSrc '.ai\.heartbeat-kimi.json'
+    '{"cli":"kimi","pid":1,"host":"x","ts":"now","handoff":"idle"}' | Set-Content -Path $hb
+    $b = Invoke-GetProjectBadges -Dir $fwSrc -FrameworkSrc $fwSrc
+    Assert-That ($b -eq '[v SRC] [H:2]') 'fresh heartbeat sidecar -> no stall: marker' "got '$b'"
+    Remove-Item -Path $hb -Force
 
     # Legend: documents the new badge and fits the narrowest box (<= 70 chars).
     $legend = & ([scriptblock]::Create((Get-SelectorAssignmentText -Ast (Get-SelectorAst) -VarName 'badgeLegend') + "`r`n" + '$badgeLegend'))
@@ -701,8 +710,8 @@ function Test-DelayKnobs {
     Write-Log "  $tabAssign"
     Assert-That ($paneAssign -match 'RWN_4AI_PANE_DELAY_MS' -and $paneAssign -match '250') `
         '$paneDelayMs reads RWN_4AI_PANE_DELAY_MS, default 250' "got: $paneAssign"
-    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '1200') `
-        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 1200' "got: $tabAssign"
+    Assert-That ($tabAssign -match 'RWN_4AI_TAB_DELAY_MS' -and $tabAssign -match '4000') `
+        '$tabDelayMs reads RWN_4AI_TAB_DELAY_MS, default 4000' "got: $tabAssign"
 
     $prevPane = $env:RWN_4AI_PANE_DELAY_MS
     $prevTab  = $env:RWN_4AI_TAB_DELAY_MS
@@ -710,7 +719,7 @@ function Test-DelayKnobs {
         Remove-Item Env:RWN_4AI_PANE_DELAY_MS -ErrorAction SilentlyContinue
         Remove-Item Env:RWN_4AI_TAB_DELAY_MS -ErrorAction SilentlyContinue
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 250) 'pane delay: default 250 when unset'
-        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 1200) -eq 1200) 'tab delay: default 1200 when unset'
+        Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_TAB_DELAY_MS' -Default 4000) -eq 4000) 'tab delay: default 4000 when unset'
 
         $env:RWN_4AI_PANE_DELAY_MS = '500'
         Assert-That ((Invoke-GetDelayMs -Name 'RWN_4AI_PANE_DELAY_MS' -Default 250) -eq 500) 'pane delay: honored when set to 500'

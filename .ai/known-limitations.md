@@ -83,6 +83,57 @@ will stop a bad write — they won't.
 
 ---
 
+## Bash exposure reduction — two residuals it does NOT close (2026-07-12)
+
+**Status:** Open, accepted. Recorded alongside the per-agent shell-command
+restriction (`refactorer`, `security-auditor`, `data-migrator` — see
+`.ai/instructions/agent-catalog/principles.md`, "Per-agent shell command sets").
+Design: `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli).
+
+That change narrows three agents from "any shell command" to "the commands their
+job needs". **Zero agents lost Bash.** It is a real but modest reduction in
+*default* blast radius. It is explicitly NOT a fix for either of the following.
+
+### Residual 1 — a restricted Bash is still an evadable Bash (ACCEPTED, NOT CLOSED)
+
+A command-NAME allowlist does not survive an adversarial model. Restricting
+`refactorer` to `pytest` does not stop `eval`, `sh -c`, `$(...)`, base64-decoded
+commands, or variable-built paths; nor does it stop an allowlisted command being
+piped into a non-allowlisted one (`semgrep --json | tee .kimi/evil.md` — the
+scanner is permitted, the `tee` is the violation). Kiro's `allowedCommands` is a
+name allowlist and adds no fail-closed handling for wrapper constructs.
+
+**Why we are not closing it:** closing it means re-deriving PR #53's `pretool-bash.sh`
+§2.3 fail-closed logic inside a *second* enforcement point, keyed on command names
+instead of paths. That is the "two surfaces, one rule, nothing keeping them in
+lockstep" trap this framework has hit repeatedly. The adversarial case stays with
+the guard (Claude) and with prompt-level SAFETY RULES. **Read the restriction as
+"take the cheap, real, no-new-surface win" — NOT as "Bash evasion is solved."**
+
+### Residual 2 — Kimi and Kiro subagents do not inherit hooks AT ALL
+
+For Claude subagents, the restriction is a *complement* to the guard: hooks
+inherit, so `pretool-bash.sh` is still behind it. **For Kimi and Kiro subagents
+there is nothing behind it.** Kiro subagent hooks never fire (see "Kiro CLI —
+subagent hook inheritance broken" above, upstream bug #7671); Kimi's PreToolUse
+guards do not fire for file-write tools at all and `kimi -p` runs zero hooks (see
+"Enforcement reality" above).
+
+So for Kimi/Kiro subagents, **exposure reduction is not a defense-in-depth layer —
+it is the ONLY control**, backed only by prompt-level rules and the ADR-0005 git
+pre-commit backstop. This is a **platform limitation that no allowlist can fix.**
+Kiro's `toolsSettings.execute_bash.allowedCommands` is hard-enforced at the tool
+layer (not the hook layer), so it does survive the subagent gap — but it is still
+only a command-name allowlist, i.e. Residual 1 applies on top.
+
+**What NOT to do because of this:**
+- Do not describe the three restricted agents as "sandboxed" or "locked down".
+  They are *narrowed*, and only softly so on Claude and Kimi.
+- Do not assume a Claude/Kimi agent's prose command list is enforced. It is not —
+  only Kiro's is mechanical. See the enforcement matrix in the agent catalog.
+
+---
+
 ## Crush — no hook layer (CLOSED by OpenCode swap, 2026-07-09)
 
 **Status:** CLOSED 2026-07-09. Crush is replaced by OpenCode as the 4th CLI
@@ -106,6 +157,32 @@ uses `opencode run` and is unaffected. Also: `opencode run` headless with
 `edit: "ask"` auto-rejects writes — the dispatcher passes `--auto`; the
 framework-guard plugin fires before the permission layer and remains the
 mechanical lane barrier.
+
+---
+
+## `.ai/` durability contract (snapshot-copy + per-handoff commits, ADR-0016)
+
+**Status:** Accepted 2026-07-18.
+
+Canonical `.ai/` state is durable because the dispatcher commits it after every
+executor sync-back. Executor worktrees receive `.ai/` as an ordinary-file
+snapshot, not a junction, so destructive git verbs inside a worktree cannot
+follow a symlink and delete the shared coordination plane.
+
+**What is durable:** handoff queue moves, activity-log appends, reports, and
+steering changes that have been synced back and committed.
+
+**What is NOT durable:** in-flight changes inside a running executor worktree
+that have not yet reached sync-back. A crash between mutation and sync-back
+loses that worktree's `.ai/` delta.
+
+**The remaining prepend race:** concurrent direct appends to
+`.ai/activity/log.md` can still interleave until ADR-0010's entry-spool model
+replaces direct log prepends. The encoding repair in
+`.ai/tools/check-encoding.sh` catches the most common corruption forms but does
+not serialize writers.
+
+See `docs/architecture/0016-ai-durability-contract.md` for the full contract.
 
 ---
 
@@ -329,13 +406,59 @@ to Kimi collided with Claude's 026 to Kimi.
 
 ## Concurrent activity-log writes
 
-**Status:** Untested (see `.ai/tests/concurrency-test-protocol.md`).
+**Status: CONFIRMED — no longer hypothetical.** First observed clobber
+2026-07-13, found by claude-code while processing
+`to-claude/202607130206-activity-log-daily-rotation`.
 
-**Risk:** three CLIs prepending to `.ai/activity/log.md` simultaneously could
-clobber entries. No atomic-append guarantee.
+**Risk:** four CLIs prepending to `.ai/activity/log.md` simultaneously clobber
+each other's entries. The prepend is a whole-file rewrite (read → insert at top →
+write back), so a writer whose read predates another's write destroys that
+entry. No atomic-append guarantee. The loss is **silent**: no error, no merge
+conflict, no gate that could ever detect it — a clobbered entry is
+indistinguishable from an entry that was never written.
 
-**Mitigation:** none yet. Run concurrency protocol to characterize actual
-behavior before deciding on file-lock vs. lease-based coordination.
+**The confirmed incident (evidence, not inference):**
+
+- Commit `9371a40` (kiro-cli, 2026-07-13 09:21) wrote the entry
+  `## 2026-07-13 09:20 — kiro-cli` (handoff `202607122215-top-strip-fraction-65-35`,
+  PR #73). The blob proves the entry was intact and well-formed at 09:21.
+- By ~09:55 the working copy of `log.md` had that **header line deleted** while
+  its three body lines (`- Action:` / `- Files:` / `- Decisions:`) survived —
+  an orphaned body with no owner. Two CLIs prepended in between (09:42 kiro,
+  09:55 claude); one of those whole-file rewrites dropped the line.
+- Structural fingerprint: every `- Action:` line in the file is preceded by a
+  `## ` header at N−1 — except that one, whose header slot was an empty line,
+  leaving a tell-tale double blank.
+- Repaired 2026-07-13 by claude-code by restoring the exact header line from the
+  `9371a40` blob (recovered, not reconstructed). A second scar in the same file
+  (a missing entry separator) was fixed in the same pass.
+
+**Why worktrees do not help:** under the ADR-0016 snapshot-copy model,
+`scripts/wt-bootstrap.sh` no longer junctions `.ai/` into worktrees; the
+dispatcher copies a canonical `.ai/` snapshot into the worktree before each
+handoff and syncs changes back afterward. However, `.ai/activity/log.md` is
+still a single shared mutable file in the primary checkout, so the prepend race
+persists.
+
+**Mitigation in effect (partial):**
+
+- ADR-0010 entry spool (`.ai/activity/entries/<UTC>-<cli>-<slug>-<rand4>.md`)
+  exists and is the long-term structural fix; `log.md` remains the authoritative
+  rendered view until the render script is finished and the hard blockers
+  (`scripts/git-hooks/pre-commit`, `.opencode/plugin/framework-guard.js`) are
+  migrated.
+- Canonical `.ai/` durability is now handled by `.ai/tools/sync-ai-state.sh`:
+  every executor worktree sync-back commits `.ai/` changes to the primary
+  checkout automatically. This makes `.ai/` state durable per handoff, not
+  ephemeral, and gives each prepend a git commit to recover from if a concurrent
+  write clobbers the working file. It does not eliminate the race, but it bounds
+  the data-loss window and provides recovery points.
+
+**Note on daily rotation** (`.ai/tools/rotate-activity-log.sh`, branch
+`exec/claude/202607130206-activity-log-daily-rotation`): it cuts the *read cost*
+of the log but does **not** address this race — it keeps `log.md` a single
+shared mutable file and adds one more whole-file rewriter to it. It is not a
+substitute for ADR-0010.
 
 ---
 
@@ -355,7 +478,7 @@ any annotated tag, two SHAs exist:
 These will always differ for annotated tags. They are NOT a divergence.
 
 **The trap:** when sanity-checking a tag across local vs remote, comparing
-`git log --oneline -1 master` (commit SHA) against `git ls-remote --tags origin
+`git log --oneline -1 main` (commit SHA) against `git ls-remote --tags origin
 <tag>` (tag-object SHA) will always show a "mismatch" even on a perfectly
 healthy tag. This false alarm cost one cycle (pre.4 was reported as divergent,
 pre.5 was cut to sidestep, then forensic investigation showed pre.4 was fine).
@@ -392,6 +515,124 @@ when the false alarm triggers a precautionary version bump.
   destructive command may clobber a healthy ref.
 - Do not bump a version pre-emptively to "sidestep" the divergence without
   first peeling and re-comparing — the divergence may not exist.
+
+---
+
+## Fleet supervision stops when the machine is off or asleep
+
+**Status:** Accepted limit (owner decision 2026-07-12 — record it, do not solve it). Recorded 2026-07-13 by kimi-cli with the fleet-supervisor build (handoff `to-kimi/202607122130`).
+
+**What:** The OS-level fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`, a Windows Task Scheduler task) detects dead pane-runners, alerts the owner, and relaunches the fleet — but only while the machine is running and the user is logged on.
+
+> **The fleet cannot self-heal when the machine is off or asleep.** A Windows scheduled
+> task cannot run on a powered-off box — it cannot relaunch the fleet, and it cannot
+> even send the alert. Every local supervision mechanism shares this hard boundary.
+> True always-available operation would require an always-on host (VPS / cloud runner /
+> home server), which drags in secrets handling, cost, and remote-tree topology.
+> **Owner decision 2026-07-12: accept this limit for now; record it, do not solve it.**
+
+**Partial mitigation (not a fix):** the supervisor's `-AtLogOn` trigger runs one cycle at user logon, so a fleet that died while the machine was off is detected and relaunched within a minute of the next logon — with the standard backoff/circuit-breaker. What is NOT covered: the offline window itself (no alerts, no consumers, handoffs wait silently), and sleep/hibernate (the task cannot wake the box; `StartWhenAvailable` only catches up after wake).
+
+**What NOT to do because of this:**
+- Do not claim the fleet is "always available" or "self-healing" without this qualifier.
+- Do not build a cloud/VPS watchdog without an owner decision — that is a different autonomy + secrets posture, explicitly declined for now.
+
+---
+
+## Fleet cannot self-heal when the machine is off or asleep (owner decision 2026-07-12)
+
+**Status:** Accepted boundary — recorded, not solved.
+
+**The limit.** A Windows scheduled task cannot run on a powered-off or asleep
+box. The fleet supervisor (`fleet-supervisor.ps1`, registered via Task
+Scheduler) can detect dead panes, alert the owner via Telegram, and relaunch
+the fleet — but only while the machine is on and the user is logged in. It
+cannot relaunch the fleet or even send the alert when the machine is off.
+
+Every local supervision mechanism shares this hard boundary. True
+always-available operation would require an always-on host (VPS / cloud
+runner / home server), which drags in secrets handling, cost, and remote-tree
+topology.
+
+**Owner decision 2026-07-12: accept this limit for now; record it, do not
+solve it.**
+
+**What the supervisor DOES cover:** terminal death (PowerShell restart, wt.exe
+crash, accidental close) while the machine is on. This is the failure mode
+that bit us on 2026-07-12 — four handoffs sat OPEN and unconsumed for over an
+hour after a PowerShell restart, with no alert anywhere.
+
+---
+
+## Peer review is a convention, not a mechanical gate (S2-6)
+
+**Status:** Open. Identified in field report 2026-07-16.
+
+**What:** A handoff can carry both `ReviewBy:` and `FinalReview:` headers. The
+dispatcher treats them as independent fan-out targets, so peer review and final
+review can run concurrently. In practice, final review has often reached its
+queue before peer review ran.
+
+**Why it is not mechanically enforced yet:**
+
+- There is no explicit `Depends-on:` field linking a final-review handoff to the
+  peer-review handoff it must wait for.
+- Matching by filename/slug is heuristic and breaks when a task is reopened or
+  superseded.
+- The current reconcile step moves `DONE` handoffs to `done/`; it does not
+  inspect dependencies.
+
+**Mitigation in effect:**
+
+- The cockpit/auto workflow doc (`docs/specs/saja-akun-cli-workflow.md`) states
+  that review is a precondition: the cockpit (or `claude-auto`) must not create
+  the final-review handoff until the peer-review handoff is retired to `done/`.
+- The activity log is the audit trail: a final-review entry should reference the
+  retired peer-review handoff filename.
+
+**Residual risk:** an auto pane can still pick up a final-review handoff while
+its peer review is in flight. The worst case is a premature approval. The
+pre-commit backstop and CI gates still apply, so a bad merge is mechanically
+blocked, but review noise and duplicate final reviews are not.
+
+**What would close this:** add a `Depends-on:` field to handoffs and teach the
+dispatcher/reconcile step to hold a handoff until every dependency is retired to
+`done/`. That is a protocol + tooling change, not a convention change.
+
+---
+
+## Framework guidance can embed stale point-in-time specifics (S3-2)
+
+**Status:** Open. Identified in field report 2026-07-16.
+
+**What:** Generated or authored guidance (contract files, ADRs, READMEs) often
+embeds measurements or specifics that were true when written but drift over time:
+file sizes, line counts, route names, "placeholder" IDs, or "this config value is
+X". A recipient that verifies the claim against the current repo may conclude the
+warning is false and dismiss it.
+
+**Why it is hard to fix generically:**
+
+- Some claims are inherently point-in-time ("the log is ~600 KB").
+- Some are project-local specifics that the framework cannot know are stable.
+- Re-generating every guidance doc on every change is expensive and noisy.
+
+**Mitigation in effect:**
+
+- Prefer thresholds or re-derivation over frozen numbers. E.g. "read only the
+  top window" instead of "the log is ~600 KB".
+- When a spec cites a concrete value, also cite the command used to derive it so
+  a reader can re-run it.
+- The activity log itself is bounded-read guidance: read only the top entries or
+  grep for a topic rather than treating the file size claim as authoritative.
+
+**Residual risk:** stale specifics will keep appearing. The discipline is on the
+author to re-derive claims and on the reader to verify alarming specifics before
+acting on them.
+
+**What would close this:** a CI gate that re-derives every numbered claim in
+framework docs and fails when the derivation no longer matches. That is a large
+scope and likely overkill; the current accepted limitation is author discipline.
 
 ---
 

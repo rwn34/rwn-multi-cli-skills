@@ -6,7 +6,7 @@ name: release
 #      multi-cli-install Node package, packages the bash installers, and creates
 #      a GitHub Release for that tag.
 #
-#   2. A push to master — the auto-cut path. Reads .version from
+#   2. A push to main — the auto-cut path. Reads .version from
 #      tools/multi-cli-install/package.json (the version SSOT) and, if no
 #      Release for v<version> exists yet, creates + pushes the tag and then
 #      runs the SAME build+publish steps for it. This exists because the
@@ -21,7 +21,7 @@ name: release
 # Release for the target tag already exists (queried live via `gh release
 # view`), so a re-pushed version or a retried run is a clean no-op — never a
 # partial/duplicate re-publish. Serialization is enforced by the workflow-level
-# `concurrency` block so two master pushes cannot race the tag-create.
+# `concurrency` block so two main pushes cannot race the tag-create.
 #
 # Pre-release detection is purely tag-shape based — any tag containing "-"
 # (e.g. v0.0.1-pre.1, v0.1.0-rc.1) is marked pre-release.
@@ -32,16 +32,20 @@ name: release
 on:
   push:
     branches:
-      - master
+      - main
+    # Auto-cut releases are only possible when the version SSOT changes.
+    # Skip the workflow entirely for the common case of non-bump pushes.
+    paths:
+      - 'tools/multi-cli-install/package.json'
     tags:
       - 'v*'
 
 permissions:
   contents: write
 
-# Serialize release runs so two near-simultaneous master pushes cannot both
+# Serialize release runs so two near-simultaneous main pushes cannot both
 # reach the tag-create / publish steps and collide on the same tag or assets.
-# Group by ref: every master push shares one group and queues; a manually
+# Group by ref: every main push shares one group and queues; a manually
 # pushed tag runs under its own group. cancel-in-progress is FALSE on purpose —
 # a queued run must wait for an in-flight publish to finish rather than abort
 # it, so we never leave a half-uploaded release behind. The decide-step
@@ -106,7 +110,7 @@ jobs:
           #    reflects any run that finished after this run's checkout. This
           #    prevents a partial/duplicate re-publish (no half-uploaded assets,
           #    no duplicate release) on a re-pushed version or a retried run.
-          #    Clean skip is chosen over hard-fail because the master path fires
+          #    Clean skip is chosen over hard-fail because the main path fires
           #    on EVERY push — most carry no bump, so failing loudly would keep
           #    the workflow perpetually red on the normal case. Skip is also
           #    inherently idempotent and still recovers a partial failure (tag
@@ -117,7 +121,7 @@ jobs:
             exit 0
           fi
 
-          # 3. No release yet. On the master path, ensure the tag exists on
+          # 3. No release yet. On the main path, ensure the tag exists on
           #    origin before we publish (the tag-push path already has it).
           #    Check origin directly (not the local checkout) so we see a tag a
           #    concurrent/earlier run may have pushed after our checkout.
@@ -184,7 +188,7 @@ jobs:
         if: steps.decide.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          # Explicit tag: on the master-push path github.ref is a branch, so the
+          # Explicit tag: on the main-push path github.ref is a branch, so the
           # action cannot infer the tag and must be told the decided one.
           tag_name: ${{ steps.decide.outputs.tag }}
           generate_release_notes: true

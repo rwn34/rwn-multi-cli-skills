@@ -1,0 +1,4 @@
+## 2026-07-13 14:19 — kimi-cli
+- Action: ADR-0010 Wave 2 — installers + docs + version 0.0.39; Wave 3 freeze DEFERRED (gate 0/3 on origin/master)
+- Files: scripts/install-template.sh, scripts/fleet-init.sh, tools/multi-cli-install/{src/installer/sanitize.ts,test/{upgrade-phase-a,installer}.test.ts,package.json}, README.md, docs/guides/contributing.md, .ai/tests/concurrency-test-protocol.md, .ai/activity/archive/README.md, CHANGELOG.md
+- Decisions: installers clear copied log.md AND template entries, leave empty spool (.gitkeep); fleet log stays single-file (one writer per project — documented in fleet-init.sh per ADR § Migration); bumped 0.0.39 with substantive CHANGELOG section because check-version-bump.sh origin/master demands it (ADR-0012 merge-time-bump tension noted in report); freeze gated per handoff — .kimi hook dual-mode only exists on my branch until the PR merges

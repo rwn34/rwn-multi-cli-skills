@@ -25,6 +25,26 @@ For any claim of completed work, before publishing the claim:
 The grep output is the evidence. The claim without the evidence is an
 assertion; the claim with the evidence is a fact.
 
+### Committed-object evidence
+
+A clean `git status` is not evidence that a change landed — it is equally
+consistent with a committed change and with git being blind to the change
+(e.g. via `--skip-worktree` or a junctioned shared directory). When the claim
+is *"this landed in history"*, grep the **committed object**, not the working
+tree.
+
+✗ Do not use:
+
+    $ git status --short .ai/instructions/operating-prompt/principles.md
+    # (clean output proves nothing when the path is skip-worktree)
+
+✓ Use instead:
+
+    $ git ls-tree HEAD .ai/instructions/operating-prompt/principles.md
+    100644 blob ed78db836acb35b1415b543426ed11d0c3026ff4  .ai/instructions/operating-prompt/principles.md
+    $ git cat-file -p ed78db836acb35b1415b543426ed11d0c3026ff4 | grep -n "wholesale"
+    118:**Never read `.ai/activity/log.md` wholesale.** ...
+
 ## Scope tiers
 
 Enforcement is asymmetric. The discipline is strongest where the cost of being

@@ -127,8 +127,22 @@ STOP and route via a handoff — not to work around the guard.
   entries, handoff files, commits, pushes, branch creation.
 - **Tier B (act, then notify):** opening a PR; merging a peer-reviewed,
   CI-green PR to main; branch deletion and repo/tree/worktree cleanup;
-  **deploy to STAGING** (dry-run first, refuse on dirty tree or failing tests).
+  **killing a confirmed-stale CLI child process** (§8.1); **deploy to STAGING**
+  (dry-run first, refuse on dirty tree or failing tests).
   Do it, then say you did it — summary + activity log.
+
+**Confirmed-stale CLI kills (§8.1, owner directive 2026-07-13).** A stale auto
+CLI is killed by the fleet, not the owner — waiting on a human costs delivery
+time. Guards: (1) **two independent staleness signals** (e.g. claim/heartbeat
+past the 15-min window AND no CPU progress + no log growth; or a dead parent
+runner AND an expired claim) — one signal is not confirmation; (2) kill the
+**CLI child only, never the pane-runner or supervisor** (the runner's `finally`
+releases the claim and re-polls — that is the recovery path); (3) any fleet
+member may kill any pane's confirmed-stale child — process lifecycle is not
+lane-governed; (4) log the evidence (PIDs, CPU/log timestamps, claim age) in the
+activity log at kill time; (5) ambiguous confirmation → escalate to the owner,
+never guess. This relaxes no Tier-C floor: `rm -rf`, force-push and the rest of
+rule 4 above still bind you.
 - **Tier C (ask first):** **deploy to PRODUCTION**, `npm publish`, tag/release
   cuts, force-push or destructive ops on shared history, secrets, production
   data of any kind, anything not in your brief.
@@ -153,7 +167,18 @@ changes via `.ai/handoffs/to-claude/open/`.
 
 ## Cross-CLI activity log — `.ai/activity/log.md`
 
-**Read** at the start of non-trivial work (newest entries at top).
+**Never read this file wholesale.** It is ~600 KB / 2,100+ lines (370+ entries)
+and grows ~5–10 KB/day; a full read costs ~125k tokens on history that is almost
+entirely irrelevant to your task. Newest entries are at the **top**, so what you
+need is in the first few dozen lines.
+
+- **Recent activity** (the "read at the start of non-trivial work" step) → read a
+  **bounded top window only**: `head -40 .ai/activity/log.md`. Unlike Claude Code,
+  you have no hook that pre-injects the log into your context, so this bounded read
+  is your one fetch — keep it bounded.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded read
+  with a limit/offset. Never `cat` the file, never read it end-to-end.
+
 **Prepend** one entry after substantive work:
 
     ## YYYY-MM-DD HH:MM — opencode

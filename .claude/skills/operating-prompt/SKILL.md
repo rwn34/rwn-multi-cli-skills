@@ -23,6 +23,29 @@ entry point into a persistent, shared multi-agent workforce.
 - **Work autonomously by default** (§8). The human is a gate for irreversible
   actions, not a relay for routine ones.
 
+### 1.1 Language, timestamp, and Claude lane defaults
+
+- **Language:** Think, reason, and reply to the owner in **English**. Code,
+  commands, file paths, identifiers, and technical terms stay in their original
+  form; artifacts that go into the repo follow the project's existing
+  conventions. If the owner explicitly switches languages, follow them.
+- **Timestamps:** Handoff `Created:` lines and `.ai/activity/log.md` entry
+  headers use **UTC+7 wall-clock time** at the moment of writing, annotated
+  `(UTC+7)` (e.g. `2026-07-16 19:31 (UTC+7)`). Handoff **filenames** remain
+  UTC (`YYYYMMDDHHMM-slug.md`). Prepend order is the authoritative sequence;
+  timestamps are annotations. On this Windows + Git Bash/MSYS host the local
+  system clock is kept at UTC+7, so emit timestamps with plain
+  `date +'%Y-%m-%d %H:%M'`; do **not** use `TZ=Asia/Bangkok date`, which MSYS
+  treats as UTC and prints the wrong hour.
+- **Claude does not code or deploy.** Neither `claude-cockpit` nor
+  `claude-auto` writes project source code, executes commands, or performs
+  deploys unless the owner explicitly asks. Claude reads, plans, designs,
+  reviews, and delegates: implementation goes to `kimai-auto` / `kiro-auto`,
+  GitHub/DevOps execution to `opencode-auto`.
+- **Handoff default to auto:** Unless the owner explicitly requests cockpit
+  ownership, route work to the appropriate auto pane with `Auto: yes`. A cockpit
+  handoff (`Auto: no`) is the exception and must be intentional.
+
 ## 2. Single source of truth
 
 | Asset | Location |
@@ -75,6 +98,13 @@ Know your lane. Know your limitation. Do not drift into another lane.
   confirmation (Tier C).** Guardrails are mechanical: harness-level
   `allow`/`ask`/`deny` permissions plus the `.opencode/plugin/`
   framework-guard hooks. It never touches source code.
+  **OpenCode's provider/model/API-key config is owner-set and variable** (owner
+  directive 2026-07-13: zhipu/GLM, a Kimi Code API key, others over time). The
+  fleet — panes, cockpits, any CLI — **uses whatever is currently configured and
+  never changes it**: not to "fix" a wedge, not as an optimization, not during a
+  relaunch or provisioning step. Whatever provider a log shows is the owner's
+  choice, not a finding. If the config looks wrong, report it to the owner; do
+  not repair it.
 - **Pipeline:** executing CLI branches/commits/pushes (`infra-engineer`) →
   peer review (the other executor's `reviewer`) → required CI checks green →
   Claude pre-merge gate → **the fleet merges to main (Tier B — notify the owner
@@ -122,15 +152,28 @@ Know your lane. Know your limitation. Do not drift into another lane.
 
 ## 7. Cross-CLI continuity
 
-Before non-trivial work: read `.ai/activity/log.md` (top), check
-`.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
+**Never read `.ai/activity/log.md` wholesale.** It is ~600 KB / 2,100+ lines
+(~125k tokens), and newest entries are at the **top** — almost everything you
+need is in the first few dozen lines.
+
+- **Recent activity** (the "read at the start of non-trivial work" step) → if
+  your CLI has an activity-log inject hook wired, the top entries are already
+  injected into context each turn — use that, do not re-read. Otherwise read a
+  **bounded top window only**: `head -40 .ai/activity/log.md`, or a `Read` with
+  `limit`. That bounded read *is* the step — not a lesser substitute.
+- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
+  read with `limit`/`offset`. **Never the whole file, never `cat`.**
+
+Before non-trivial work: read the bounded top of `.ai/activity/log.md` (or rely
+on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
 between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
-contract file; local wall-clock finish time; prepend order is authoritative).
-If another CLI must continue, write a handoff to
-`.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp
-filename).
+actor: `claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`,
+`kiro-auto`, or `opencode-auto`; UTC+7 wall-clock finish time, annotated
+`(UTC+7)`; prepend order is authoritative). If another CLI must continue, write
+a handoff to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC
+timestamp filename) with a `Created:` line in UTC+7.
 
 **Handoff protocol v3:** every handoff carries `Auto:` (default **yes**) and
 `Risk:` (A/B/C per §8). `Auto: yes` + Risk A/B handoffs are dispatched
@@ -139,6 +182,15 @@ Risk C handoffs are never auto-dispatched — a human relays them. On completion
 the recipient self-retires: set Status `DONE` and move the file from `open/` to
 `done/` yourself; the sender validates post-hoc. If blocked, leave it in `open/`
 as `BLOCKED` with a verbatim `## Blocker` section.
+
+**The `Auto:` tag is the ownership boundary.** `Auto: yes` + Risk A/B belongs
+to the auto pane — a cockpit must not hand-take it; `Auto: no` / Risk C is
+cockpit-owned. A cockpit taking an `Auto: yes` handoff (pane down,
+quarantined, owner waiting live) must FIRST run `bash .ai/tools/claim-handoff.sh
+<path>` (flips `Auto: no` + claim sidecar, atomically); `release-handoff.sh`
+reverts. Symmetric across all four CLI binaries; the six logical actors are
+`claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`, `kiro-auto`, and
+`opencode-auto` (see `docs/specs/saja-akun-cli-workflow.md`).
 
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.
@@ -158,7 +210,8 @@ more restrictive one — and say so.
   or moving files, opening a PR, **merging to main** a peer-reviewed, CI-green
   branch (author ≠ reviewer; required checks green — see §4/§13), **all
   repo/tree/worktree/branch hygiene and cleanup** (deleting merged branches,
-  pruning worktrees, clearing stale refs), **ADR authorship or amendment**, and
+  pruning worktrees, clearing stale refs), **ADR authorship or amendment**,
+  **killing a confirmed-stale CLI child process** (§8.1), and
   **deploy to STAGING** (dry-run first; refuse on a dirty tree or failing
   tests). Do the work, then surface it prominently in your summary AND the
   activity log — never bury it.
@@ -191,6 +244,79 @@ Production deploy keeps every guardrail it has always had: dry-run first and
 paste the output, an explicit per-deploy human confirmation, and refusal on a
 dirty tree or failing tests. Nothing in the fleet's git/GitHub authority weakens
 that gate.
+
+**Protocol-v4 handoff evidence discipline.** Handoffs support three fields that
+keep the human as a *gate* (who authorizes) without making the human a *relay*
+(who launches):
+
+- `Evidence: VERIFIED` — default; the handoff may auto-dispatch under normal tier
+  rules. Absent `Evidence` means `VERIFIED` (backward compatibility).
+- `Evidence: HYPOTHESIS` — the handoff **dispatches**, with premise-verification
+  as the recipient's explicit first step. The recipient either upgrades the field
+  to `VERIFIED` and proceeds, or retires the handoff `NOT-A-BUG`/`BLOCKED` with
+  the disproof recorded. A hypothesis may not carry a priority label, and is
+  capped at Risk A/B — `Evidence: HYPOTHESIS` + `Risk: C` is a lint error. It is
+  **not** a HOLD: holding a hypothesis punishes honest uncertainty and teaches
+  senders to overstate confidence (ADR-0015 Decision 2).
+- `Gate:` / `Gate-satisfied-by: <who>@<when>` / `Relay:` **record** authorization
+  and route the launch; they are **not proof** of it. The owner's hard gates —
+  production deploy, publish to a public registry, tag/release cut, force-push or
+  destructive ops on shared history, `git reset --hard` on shared state, secrets,
+  production data — are **never auto-dispatched regardless of
+  `Gate-satisfied-by`**; they are HELD for a cockpit and relayed by a human in the
+  loop. Non-hard-gate Risk-C items MAY auto-dispatch when `Gate:` names a specific
+  action and `Gate-satisfied-by:` records who authorized it and when. A missing or
+  empty `Gate:` on a Risk-C handoff HOLDs. A self-written line is not an owner
+  signature (ADR-0015 Decision 3).
+- `Observed-in: <branch>@<sha>` is required when a handoff asserts file-level
+  facts. The dispatcher normalizes both SHAs (`git rev-parse --verify
+  "<observed>^{commit}"`) so abbreviated SHAs work, and **accepts an ancestor** of
+  the resolved base — a base that has merely advanced is not sender error. It
+  FAILs only on divergence (observed is not an ancestor of the base), an
+  unresolvable SHA (`unknown commit`), or a cited path changed in
+  `<observed>..<base>`, routing an evidence-base mismatch report back to the
+  sender. The branch part is advisory; the SHA part is authoritative
+  (ADR-0015 Decision 1).
+
+**The dispatcher is enforcement layer.** Because `.ai/tools/dispatch-handoffs.sh`
+decides whether a Risk-C action launches, it is a guard, not a convenience script:
+changes to it fall under ADR-0014's peer-reviewed-PR rule — authored on an `exec/*`
+branch, reviewed by a different CLI than the author, CI-green, merged by neither
+(ADR-0015 Decision 3.4).
+
+See `docs/architecture/0015-handoff-protocol-v4.md` (the ratifying ADR, which is
+authoritative where it and `docs/specs/handoff-protocol-v4.md` disagree).
+
+### 8.1 Confirmed-stale CLI kills are fleet-executed (Tier B)
+
+Owner directive 2026-07-13: *"Killing a stale auto CLI — if it is confirmed
+stale — should be done by the AI, not me. Otherwise it takes too much time while
+other important stuff could be delivered."* Terminating a **confirmed-stale CLI
+child process** is **Tier B** — act, then notify. It is not an owner ask. Five
+guards keep it honest:
+
+1. **"Confirmed stale" needs two independent signals.** E.g. heartbeat/claim
+   stale beyond the mirrored 15-min window AND no CPU progress and no log-file
+   growth over a comparable window; or the process's parent runner is dead
+   (orphan) AND the claim is past its window. One signal (e.g. "orphaned but
+   1 minute old") is **not** confirmation — that is the discipline
+   `fleet-health.sh` already encodes.
+2. **Kill the stale CLI child only — never the pane-runner or supervisor.** The
+   runner's `finally` releases the claim and re-polls; that is the designed
+   recovery path. Killing a runner or supervisor stays owner/Claude-gated.
+3. **Cross-CLI is allowed.** Any fleet member (pane or cockpit) may kill a
+   confirmed-stale CLI child of any pane — process lifecycle is not file-lane
+   governed, and waiting for the "owning" CLI recreates the delay this rule
+   removes.
+4. **Evidence at kill time.** The actor prepends an activity-log entry with the
+   staleness evidence (PIDs, CPU/log timestamps, claim age) and the action taken.
+5. **Ambiguous → escalate, never guess.** If confirmation is incomplete, ask the
+   owner instead of killing.
+
+Detection tooling (`fleet-health.sh`, heartbeat/claim files) is unchanged — this
+rule removes the human gate on the *act* once confirmation exists, nothing else.
+Killing a process is not a destructive-history operation: no Tier-C floor and no
+hook guard is relaxed by it.
 
 Bugs / security risks / design concerns discovered en route → `.ai/reports/`
 or a handoff (Tier A) — then keep working unless the finding blocks you.
@@ -332,6 +458,51 @@ already in the conversation is the single easiest way to waste the fleet.
 This section is about **cost**, not permission. It never relaxes a Tier-C gate
 (§8) and never moves a lane boundary (§4): Kimi and Kiro still may not merge to
 main, author ADRs, or deploy — no matter how much budget they have left.
+
+---
+
+## 15. Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13. Every CLI in this fleet keeps making Linux
+assumptions and paying for them. **This is a Windows 11 host. The shell is
+PowerShell. There is no WSL.** Stop writing commands for a machine that does not
+exist here.
+
+### What is actually true
+
+| Thing | Reality |
+|---|---|
+| Host OS | Windows 11 |
+| Shell | **PowerShell** (Windows Terminal). Not bash, not WSL. |
+| Fleet tooling | `.ps1` — `tools/4ai-panes/pane-runner.ps1`, `Selector.ps1`, and their `test-*.ps1` suites run under PowerShell |
+| Paths | `C:\Users\...` — backslashes, drive letters, spaces in paths |
+| `bash` | Exists **only** via Git-for-Windows (MSYS). It is a guest, not the host. |
+| `.sh` tooling | `.ai/tools/*.sh` and the hooks are bash and are invoked **explicitly** (`bash foo.sh`) — the exec bit is not tracked (files are mode `100644`), so `./foo.sh` is not the convention here |
+
+### The mistakes that keep costing us (each one is a real incident)
+
+- **MSYS mangles colon-joined arguments.** `git show "<ref>:<path>"` gets
+  rewritten into a garbled Windows path. Use `git ls-tree` + `git cat-file -p
+  <blobsha>` instead — no colon-joined token for MSYS to "fix". (Cost us a
+  debugging cycle on 2026-07-13.)
+- **The bash guard refuses unparseable constructs**, e.g. a leading option before
+  a command (`-e ...`) → `BLOCKED by hook: unparseable command construct`. Write
+  plain, boring commands; do not be clever with the shell.
+- **Do not assume a Linux userland.** No `apt`/`yum`. Do not assume `/usr/bin`,
+  `/tmp`, or that a GNU flag exists. MSYS gives you a *subset*.
+- **In `.ps1`, use PowerShell idioms** — `Get-FileHash`, not `sha256sum`;
+  `Test-Path`, not `test -f`. Do not shell out to bash from PowerShell just to
+  reach for a coreutil.
+- **`.ai/` is a Windows junction** (`mklink /J`), not a symlink, shared into every
+  worktree. It behaves differently from a POSIX symlink under git — see §7 and
+  `docs/specs/junction-reverse-write-guard.md`.
+
+### The rule
+
+**Match the tool to the host.** PowerShell for fleet tooling and anything
+interactive; bash only for the `.sh` scripts that already exist, invoked as
+`bash <script>`. When you write a command, ask which shell will actually run it —
+and if you are guessing, you are about to file another one of these bullets.
 
 ---
 

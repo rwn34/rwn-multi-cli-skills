@@ -19,10 +19,10 @@ ones to see what other CLIs did here.
 **Prepend** one entry after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
 
-    ## YYYY-MM-DD HH:MM — kimi-cli
+    ## YYYY-MM-DD HH:MM (UTC+7) - kimi-cli
     - Action: <one-line summary>
-    - Files: <paths, or "—">
-    - Decisions: <non-obvious choices, or "—">
+    - Files: <paths, or "-">
+    - Decisions: <non-obvious choices, or "-">
 
 **Timestamp rule:** use your current local wall-clock time at the moment you prepend
 the entry — i.e. after the work is finished, not when you started. CLIs running in

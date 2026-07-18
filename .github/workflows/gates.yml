@@ -7,17 +7,21 @@ name: gates
 # on PATH), so the three local "git/npm not on PATH" env-fails PASS here.
 #
 # BRANCH PROTECTION (repo setting, not a file): to make this a REQUIRED status
-# check, enable branch protection on `master` in GitHub repo Settings > Branches
+# check, enable branch protection on `main` in GitHub repo Settings > Branches
 # > Branch protection rules > Require status checks to pass > select "gates".
 # This cannot be committed to the repo; it must be set in the GitHub UI/API.
 
 on:
   pull_request:
     branches:
-      - master
+      - main
   push:
     branches:
-      - master
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   gates:
@@ -29,29 +33,76 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node
+        if: github.event_name == 'pull_request'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: tools/multi-cli-install/package-lock.json
 
+      # Cheap change-detection so the Node-heavy installer block (install +
+      # asset drift + typecheck/tests) only runs when installer-related paths
+      # actually changed. The required "gates" status still reports green when
+      # these steps are skipped; they are not required as separate contexts.
+      - name: Detect installer-related changes
+        if: github.event_name == 'pull_request'
+        id: installer
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --depth=1 origin "${{ github.base_ref }}"
+            changed=$(git diff --name-only "origin/${{ github.base_ref }}" HEAD || true)
+          else
+            before="${{ github.event.before }}"
+            if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+              echo "installer_changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            changed=$(git diff --name-only "$before" HEAD || true)
+          fi
+          if echo "$changed" | grep -qE '^(tools/multi-cli-install/|scripts/new-project\.sh|scripts/install-template\.sh|\.github/workflows/gates\.yml)$'; then
+            echo "installer_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installer_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The ONE drift authority is the generator itself: --check regenerates
+      # every replica into a temp tree and diffs. On failure it prints the
+      # copy-pasteable fix (`bash .ai/tools/sync-replicas.sh`) to stderr.
       - name: SSOT drift check
-        run: bash .ai/tools/check-ssot-drift.sh
+        if: github.event_name == 'pull_request'
+        run: bash .ai/tools/sync-replicas.sh --check
+
+      # Landed-blob check: compares the committed blobs of SSOT sources and
+      # replicas, independent of the working tree. Catches the stale-source
+      # laundering pattern that working-tree drift checks missed (ADR-0015
+      # follow-up, 2026-07-17).
+      - name: Landed SSOT blob consistency check
+        if: github.event_name == 'pull_request'
+        run: bash .ai/tools/check-landed-ssot.sh
 
       - name: Claude hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .claude/hooks/test_hooks.sh
 
       - name: Kimi hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .kimi/hooks/test_hooks.sh
 
       - name: Kiro hooks test suite
+        if: github.event_name == 'pull_request'
         run: bash .kiro/hooks/test_hooks.sh
 
       - name: OpenCode guard test suite
+        if: github.event_name == 'pull_request'
         run: node .opencode/plugin/test-guard.mjs
 
       - name: Git pre-commit backstop test (ADR-0005)
+        if: github.event_name == 'pull_request'
         run: bash scripts/git-hooks/test-pre-commit.sh
 
       - name: Installer dependency install
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: npm ci
         working-directory: tools/multi-cli-install
 
@@ -60,12 +111,14 @@ jobs:
         # no committed generated assets, and every asset file byte-matching its
         # source. This is the gate that catches the 2026-07-12 defect class
         # (stale asset AGENTS.md + missing .opencode guard layer).
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: |
           npx tsx scripts/sync-assets.ts
           cd "$GITHUB_WORKSPACE" && bash .ai/tools/check-asset-drift.sh
         working-directory: tools/multi-cli-install
 
       - name: Installer typecheck + tests
+        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: npx tsc --noEmit && npx vitest run
         working-directory: tools/multi-cli-install
 
@@ -85,19 +138,21 @@ jobs:
       # before the repo assertion means a non-compliant tree cannot skip it and
       # hide a checker that has quietly stopped biting.
       - name: Tier restatement checker self-test
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/test-check-tier-restatements.sh
 
       - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
+        if: github.event_name == 'pull_request'
         run: bash .ai/tools/check-tier-restatements.sh
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
-      # branches, so this is a DETECTIVE check on the resulting master push —
-      # comparing the previous master tip (github.event.before) to the new one.
+      # branches, so this is a DETECTIVE check on the resulting main push —
+      # comparing the previous main tip (github.event.before) to the new one.
       # It runs LAST, after every substantive test above (drift / hooks /
       # backstop / installer), so a missing bump can never mask a real failure
       # (the old PR-time placement did exactly that). It is NOT run on PRs:
       # feature branches deliberately do not bump. Making this a REQUIRED status
       # check is branch-protection (a repo setting), out of this file's scope.
-      - name: Framework version-bump check (detective — master push only)
+      - name: Framework version-bump check (detective — main push only)
         if: github.event_name == 'push'
         run: bash scripts/check-version-bump.sh "${{ github.event.before }}"

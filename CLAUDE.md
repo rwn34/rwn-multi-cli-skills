@@ -17,8 +17,10 @@ branch creation, Risk-A/B handoff dispatch); act-then-notify on Tier B —
 tree, merge, cleanup, push, or any activity related to GitHub is yours to make"),
 so opening PRs, merging a peer-reviewed CI-green PR to main, branch deletion and
 repo/tree/worktree cleanup, **ADR authorship or amendment** (author it, then
-surface it prominently — no pre-approval), and **deploy to STAGING** (dry-run
-first; refuse on a dirty tree or failing tests) are all act-then-notify.
+surface it prominently — no pre-approval), **killing a confirmed-stale CLI child
+process** (SSOT §8.1 — two independent staleness signals, child only never the
+pane-runner, log the evidence; ambiguous → ask), and **deploy to STAGING**
+(dry-run first; refuse on a dirty tree or failing tests) are all act-then-notify.
 Hard-gate Tier C: **deploy to PRODUCTION** (the owner's only release-path gate —
 per-deploy confirmation, all guardrails intact), publish, tag/release, destructive
 ops on shared history, secrets, production data. A merge must never auto-trigger a
@@ -52,6 +54,27 @@ with the owner-interaction preference above — don't ask, *do* hand off.
 
 ## Your identity for the activity log: `claude-code`
 
+## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
+
+Owner directive 2026-07-13 (SSOT §15). **This is a Windows 11 host and the shell
+is PowerShell.** There is no WSL. Stop writing commands for a machine that isn't
+here — the fleet keeps paying for Linux assumptions.
+
+- Fleet tooling is `.ps1` (`tools/4ai-panes/*.ps1` + its `test-*.ps1` suites).
+  In PowerShell use PowerShell idioms — `Get-FileHash` not `sha256sum`,
+  `Test-Path` not `test -f`.
+- `bash` exists **only** via Git-for-Windows (MSYS) — a guest, not the host.
+  `.ai/tools/*.sh` and the hooks are bash and are invoked explicitly
+  (`bash foo.sh`); the exec bit is not tracked (mode `100644`), so `./foo.sh` is
+  not the convention.
+- **MSYS mangles colon-joined args**: `git show "<ref>:<path>"` gets garbled. Use
+  `git ls-tree` + `git cat-file -p <blobsha>`.
+- The bash guard refuses unparseable constructs (e.g. a leading option before a
+  command). Write plain, boring commands.
+- No Linux userland — no `apt`, no guaranteed `/usr/bin`, `/tmp`, or GNU flags.
+- `.ai/` is a Windows **junction** (`mklink /J`), not a POSIX symlink, and it
+  behaves differently under git. See `docs/specs/junction-reverse-write-guard.md`.
+
 ## Single source of truth
 
 `.ai/instructions/` is canonical. Your `.claude/skills/...` files are replicas. If they
@@ -59,8 +82,16 @@ disagree, `.ai/instructions/` wins — see `.ai/sync.md` to regenerate.
 
 ## Cross-CLI activity log — `.ai/activity/log.md`
 
-**Read** at the start of non-trivial work. Newest entries are at the top — scan recent
-ones to see what other CLIs did here.
+**Do NOT `Read` this file wholesale.** It is ~600 KB / 2,100+ lines and grows
+~5–10 KB/day; reading it costs ~125k tokens and is almost entirely irrelevant
+history. The `UserPromptSubmit` hook **already injects the newest entries into
+your context on every single turn** — you have them before you ask. A wholesale
+`Read` re-fetches what you were just given.
+
+- **Recent activity** → already in your context. Use it; do not re-read.
+- **Specific history** → `grep` for the term (`grep -n "<topic>" .ai/activity/log.md`),
+  or read a bounded window (`Read` with `limit`/`offset`). Never the whole file.
+- Newest entries are at the top.
 
 **Prepend** one entry after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
@@ -94,6 +125,8 @@ task addressed to you. Re-check between tasks — poll, don't wait to be told.
 When you are the **recipient**, self-retire on completion: set Status `DONE` and
 move the handoff from `open/` to `done/` yourself; the sender validates post-hoc.
 Blocked → leave in `open/` as `BLOCKED` with a verbatim `## Blocker`.
+
+The `Auto:` tag is the ownership boundary: `Auto: yes` + Risk A/B belongs to the auto pane (a cockpit must not hand-take it), `Auto: no` / Risk C is cockpit-owned; a cockpit takes an `Auto: yes` handoff only by first running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` + claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
 
 ## Root file policy
 

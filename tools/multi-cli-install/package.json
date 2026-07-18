@@ -1,13 +1,16 @@
 {
   "name": "@rwn34/multi-cli-install",
-  "version": "0.0.38",
+  "version": "0.0.44",
   "description": "Single-command installer for the multi-CLI AI coordination framework",
   "type": "module",
   "license": "MIT",
   "bin": {
     "multi-cli-install": "dist/bin/multi-cli-install.js"
   },
-  "files": ["dist", "assets"],
+  "files": [
+    "dist",
+    "assets"
+  ],
   "scripts": {
     "prebuild": "npx tsx scripts/sync-assets.ts",
     "build": "tsc",

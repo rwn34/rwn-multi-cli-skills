@@ -232,17 +232,56 @@ pf() {
 
 # mkrepo — materialize a throwaway repo from the current worktree's framework
 # files, wired to the hook, with a synced initial commit. Echoes the repo path.
+#
+# Isolation note (handoff 202607131242): $REPO_ROOT/.ai can be a Windows
+# directory junction (ADR-0004 worktree topology) pointing at the ONE
+# canonical .ai/ shared by every CLI's worktree. A sandbox copy that ever
+# aliased that junction instead of copying it would let this test's marker
+# injections (below) write straight through into live fleet state — silently,
+# since nothing here reads the result back through the junction to notice.
+#
+# -RL forces dereference explicitly (never rely on an unstated cp default —
+# GNU coreutils dereferences a command-line-argument symlink/junction under
+# -R without -P, but that is a default, not a documented contract, and a
+# different cp (BusyBox, an older coreutils, a future flag-default change)
+# could silently regress it into a reparse-point copy). The inode/device
+# assertion below is the actual guard: it does not trust cp's behavior, it
+# VERIFIES the result and aborts the whole run — loudly, before any marker is
+# ever written — if the sandbox and canonical .ai ever turn out to be the same
+# file on disk.
 mkrepo() {
     d="$(mktemp -d)"
-    cp -R "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
-          "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
+    cp -RL "$REPO_ROOT/.ai" "$REPO_ROOT/.claude" "$REPO_ROOT/.kimi" \
+           "$REPO_ROOT/.kiro" "$REPO_ROOT/scripts" "$d/" 2>/dev/null
     cp "$REPO_ROOT/.gitattributes" "$d/" 2>/dev/null
-    git -C "$d" init -q 2>/dev/null
+    # GUARD: assert the sandbox .ai is NOT the same file as canonical .ai.
+    # Compare a real file's (device, inode) pair via `stat -c` rather than
+    # trusting any directory-level "is this a junction" check, since a
+    # dereferencing copy can still alias individual files under some cp/OS
+    # combinations even when the top-level entry itself is a plain directory.
+    _probe_rel=".ai/instructions/karpathy-guidelines/examples.md"
+    if [ -f "$REPO_ROOT/$_probe_rel" ] && [ -f "$d/$_probe_rel" ]; then
+        _canon_id="$(stat -c '%d:%i' "$REPO_ROOT/$_probe_rel" 2>/dev/null)"
+        _sand_id="$(stat -c '%d:%i' "$d/$_probe_rel" 2>/dev/null)"
+        if [ -n "$_canon_id" ] && [ "$_canon_id" = "$_sand_id" ]; then
+            echo "FATAL: sandbox .ai is not isolated from canonical .ai" >&2
+            echo "  $REPO_ROOT/$_probe_rel  ($_canon_id)" >&2
+            echo "  $d/$_probe_rel  ($_sand_id)" >&2
+            echo "  refusing to run marker-injection tests against live fleet state" >&2
+            rm -rf "$d"
+            exit 1
+        fi
+    fi
+
+    git -C "$d" init -q -b main 2>/dev/null
     git -C "$d" config core.hooksPath scripts/git-hooks
     git -C "$d" config user.email test@example.com
     git -C "$d" config user.name claude-code
     git -C "$d" add -A >/dev/null 2>&1
     git -C "$d" commit -q -m init --no-verify >/dev/null 2>&1
+    # Make origin/main resolve for checks that compare against the landed blob.
+    git -C "$d" remote add origin "$d" >/dev/null 2>&1 || true
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
     printf '%s' "$d"
 }
 
@@ -366,6 +405,175 @@ else
     ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
     pf "CI net (check-ssot-drift) goes RED on the bypassed stale tree" \
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== activity-log gate: dropping a main entry is BLOCKED =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # Stage a log missing the 09:00 entry.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    hout="$(cd "$d" && git commit -m "log: drop entry" 2>&1)"; hrc=$?
+    pf "commit dropping a main log entry is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "LOG-SUPERSET FAIL"
+    pf "refusal names the log-superset gate" "$?"
+    rm -rf "$d"
+
+    echo "== activity-log gate: PR #107 repro (superset of main, subset of disk) =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
+    # PR #107 shape: staged candidate is a superset of main (so a naive
+    # additions-only diff against main reads green and git will commit it),
+    # but the working tree still contains an entry the staged candidate omits.
+    # The hook reads the STAGED content as the candidate and compares it against
+    # the working tree, so the commit is blocked.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    # Working tree now has an extra entry not present in the staged candidate.
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 11:00 (UTC+7) — opencode
+- Action: uncommitted on disk only
+
+## 2026-07-17 12:00 (UTC+7) — kiro-cli
+- Action: staged addition C
+
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: entry A
+
+## 2026-07-17 09:00 (UTC+7) — kimi-cli
+- Action: entry B
+
+EOF
+    hout="$(cd "$d" && git commit -m "log: additions-only blind gate" 2>&1)"; hrc=$?
+    pf "PR #107 additions-only blind commit is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "working tree"
+    pf "refusal identifies the working-tree source" "$?"
+    echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
+    d="$(mkrepo)"
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "sync-replicas refuses to run with skip-worktree SSOT source" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    srr_out="$(cd "$d" && bash .ai/tools/sync-replicas.sh 2>&1)"
+    printf '%s' "$srr_out" | grep -q "skip-worktree"
+    pf "refusal message names skip-worktree" "$?"
+    printf '%s' "$srr_out" | grep -q "git update-index --no-skip-worktree"
+    pf "refusal message names the fix" "$?"
+    rm -rf "$d"
+
+    echo "== regression: pre-commit auto-sync fails the commit when sync-replicas aborts =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Stage an SSOT change, then set skip-worktree so the generator refuses.
+    printf '\n<!-- skip-worktree marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && git add .ai/instructions/karpathy-guidelines/principles.md >/dev/null 2>&1 )
+    git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
+    hout="$(cd "$d" && git commit -m "ssot: skip-worktree source" 2>&1)"; hrc=$?
+    pf "claude-code commit is REFUSED when sync-replicas aborts" \
+        "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "sync-replicas.sh refused"
+    pf "refusal surfaces the generator error" "$?"
+    rm -rf "$d"
+
+    echo "== regression: landed-blob check catches stale-source laundering that working-tree drift misses =="
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    # Working tree: edit source + dest consistently; index: only dest is updated.
+    # This reproduces the laundered commit: the stat claims a replica update but
+    # the SSOT source blob in the commit is stale.
+    printf '\n<!-- laundering marker -->\n' >> "$d/.ai/instructions/karpathy-guidelines/principles.md"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    ( cd "$d" && git add .kimi/steering/karpathy-guidelines.md \
+                           .kiro/steering/karpathy-guidelines.md \
+                           .claude/skills/karpathy-guidelines/SKILL.md \
+                           .kiro/skills/karpathy-guidelines/SKILL.md \
+                           .kimi/resource/karpathy-guidelines-examples.md \
+                           .claude/skills/karpathy-guidelines/EXAMPLES.md >/dev/null 2>&1 )
+    # Leave the SSOT source UNSTAGED so the commit's source blob stays old.
+    ( cd "$d" && git commit -q -m "laundered replica update" --no-verify >/dev/null 2>&1 )
+    pf "laundered commit (dest updated, source not) lands with --no-verify" "$?"
+    ( cd "$d" && bash .ai/tools/check-ssot-drift.sh >/dev/null 2>&1 )
+    pf "working-tree drift check is GREEN on the laundered tree" "$?"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "landed-blob check is RED on the laundered tree" \
+        "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: skip-worktree probe failure fails closed =="
+    d="$(mkrepo)"
+    # Remove the git metadata so the probe cannot answer. With the bug, the
+    # generator treats the empty flag as "no bit" and proceeds; fixed, it aborts.
+    rm -rf "$d/.git"
+    ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+    pf "probe failure (no .git) -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    rm -rf "$d"
+
+    echo "== generator: lowercase 's' (skip-worktree + assume-unchanged) fails closed =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    git -C "$d" update-index --skip-worktree "$src"
+    git -C "$d" update-index --assume-unchanged "$src"
+    flag="$(git -C "$d" ls-files -v "$src" | head -n1 | cut -c1)"
+    # git lowercases the tag when both bits are set. Only assert when this host
+    # reproduces that exact condition; otherwise the test is non-hermetic.
+    if [ "$flag" = "s" ]; then
+        ( cd "$d" && bash .ai/tools/sync-replicas.sh >/dev/null 2>&1 )
+        pf "lowercase 's' skip-worktree -> non-zero exit" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+    else
+        echo "SKIP  git version did not produce lowercase 's' for combined skip-worktree+assume-unchanged"
+    fi
+    rm -rf "$d"
+
+    echo "== check-landed-ssot: reads registry from REF, not disk =="
+    d="$(mkrepo)"
+    src="$d/.ai/instructions/karpathy-guidelines/examples.md"
+    # Commit a source→replica drift at HEAD.
+    printf '\n<!-- landed registry drift marker -->\n' >> "$src"
+    git -C "$d" add "$src" >/dev/null 2>&1
+    git -C "$d" commit -q -m "drift source" --no-verify >/dev/null 2>&1
+    # Now hide the drifted pair from the on-disk registry. The old checker read
+    # the disk copy and would pass; the fixed checker reads the landed registry
+    # and must still see the mismatch.
+    awk '!/karpathy-guidelines\/examples\.md/' "$d/.ai/sync.md" > "$d/.ai/sync.md.tmp"
+    mv "$d/.ai/sync.md.tmp" "$d/.ai/sync.md"
+    ( cd "$d" && bash .ai/tools/check-landed-ssot.sh >/dev/null 2>&1 )
+    pf "stale on-disk sync.md does not hide landed mismatch" "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
 fi
 

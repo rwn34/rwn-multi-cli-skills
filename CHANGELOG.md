@@ -20,27 +20,208 @@ promotion happened.
 
 ### Added
 
-- [TODO: new features]
+- [TODO]
 
 ### Changed
 
-- [TODO: changes in existing functionality]
+- Narrowed the shell scope of three agents from "any shell command" to an
+  enumerated command set matching the job each one already claims to do:
+  `refactorer` (test runners), `security-auditor` (security scanners),
+  `data-migrator` (migration tools). **No agent lost `Bash`.** The command sets
+  are now fixed in the agent-catalog SSOT
+  (`.ai/instructions/agent-catalog/principles.md`, "Per-agent shell command
+  sets") so every CLI restricts the same list. Implements
+  `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli) §3–§4.
+- Enforcement strength is stated honestly and is **not uniform**: Kiro is
+  hard-enforced (`toolsSettings.execute_bash.allowedCommands`); Claude and Kimi
+  are **soft / prompt-level only**, because no per-command scoping exists in
+  `.claude/agents/*.md` frontmatter or Kimi's agent config. The three Claude
+  agent prompts carry an explicit `ENFORCEMENT: SOFT` block saying so. Nothing
+  here implies parity between the two.
 
-### Deprecated
+## [0.0.44]
 
-- [TODO: features marked for removal]
+### Changed
 
-### Removed
+- Documented remaining field-report findings S2-6 (peer review is a convention, not a mechanical gate) and S3-2 (framework guidance can embed stale point-in-time specifics) as known limitations in `.ai/known-limitations.md`.
 
-- [TODO: features removed this release]
+## [0.0.43]
+
+### Added
+
+- Added `docs/specs/saja-akun-cli-workflow.md` and `docs/guides/example-handoff-chain.md` documenting the six-actor cockpit/auto handoff workflow, routing table, multi-stage chains, and escalation rules. Updated `.ai/handoffs/README.md` to cross-reference the new docs.
+
+## [0.0.42]
+
+### Changed
+
+- Reduced GitHub Actions minute usage: `gates` now runs the full suite only on pull requests and the version-bump detective on `push:main`; `framework-check` is reduced to the handoff lint that `gates` does not cover; `release` only triggers on `push:main` when `tools/multi-cli-install/package.json` changes.
 
 ### Fixed
 
-- [TODO: bug fixes]
+- [TODO]
 
 ### Security
 
-- [TODO: vulnerabilities addressed]
+- [TODO]
+
+## [0.0.41] - 2026-07-18
+
+### Added
+
+- ADR-0014: enforcement-layer (`.claude/hooks/**`) changes land via peer-reviewed
+  PR (author ≠ reviewer, required CI gates, no self-merge) instead of
+  owner-apply-only, replacing the hand-applied-patch escape hatch that made the
+  owner a relay rather than a gate.
+- Fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`): OS-level scheduled
+  task that detects dead pane-runners via persistent heartbeat files, alerts the
+  owner via Telegram, and relaunches the fleet. Two-level health model: L1
+  (liveness — heartbeat file mtime) and L2 (capability — last CLI invocation
+  outcome distinguishes auth/quota failure from idle-with-empty-queue).
+  ALIVE-but-NOT-CAPABLE alerts only (never relaunches — a dead API key is not
+  fixed by restarting the process). DEAD + open handoffs alerts and relaunches.
+  DEAD + empty queue alerts only (deduped, once per incident).
+- Persistent heartbeat in `pane-runner.ps1`: each pane writes a JSON heartbeat
+  file to `%LOCALAPPDATA%\rwn-auto\fleet-heartbeat\` on every poll (idle, running,
+  claim-blocked) carrying project, CLI, PID, timestamp, state, and last CLI
+  invocation outcome. Outside the repo to avoid `.ai/` coordination-plane churn.
+- CLI output capture (`Tee-Object`) in `pane-runner.ps1`'s `$script:InvokeCli`:
+  tees child CLI output to a temp file so `Get-LastCliOutcome` can classify
+  auth/quota/error patterns for the L2 capability signal.
+- Install/uninstall scripts (`install-fleet-supervisor.ps1` /
+  `uninstall-fleet-supervisor.ps1`): scripted, reversible Task Scheduler
+  registration. Runs "only when user is logged on" + Interactive so the task
+  CAN open Windows Terminal panes (verified empirically).
+- Safety: exponential backoff + max-attempts circuit breaker on relaunch
+  failure; alert dedupe on state transition (not per-poll); a live fleet is
+  NEVER relaunched (false-positive guard — the worst outcome is two fleets
+  racing the same handoff queue).
+- `test-fleet-supervisor.ps1`: 33-test Pester-free harness covering liveness
+  (fresh/stale/missing), false-positive guard, down+handoffs, down+empty-queue,
+  alive-but-not-capable, backoff/circuit-breaker, alert dedupe, install/uninstall.
+- ADR-0016: `.ai/` durability contract — dispatcher commits canonical `.ai/`
+  after every executor sync-back, so handoff retirements, activity-log appends,
+  reports, and steering changes are durable in git history instead of existing
+  only in the working tree.
+- `fleet-health.sh` worktree-hygiene checks: detect junctioned/symlinked `.ai/`
+  (ADR-0016 violation), stale worktrees behind `origin/main`, and shared-state
+  encoding corruption before they cause silent data loss.
+- `test-fleet-health.sh`: 14-test harness covering OK/down-idle, STALL, WEDGED,
+  missing queue dirs, junctioned `.ai/`, stale worktree, and encoding problems.
+- `scripts/sync-4ai-panes-install.ps1`: ancestor guard — a third, independent
+  provenance property on top of the existing primary-checkout + main-branch
+  guard. A local branch literally named `main` is not proof that `HEAD` is
+  reachable from `origin/main`; this closes that gap with
+  `git merge-base --is-ancestor HEAD origin/main` (best-effort `git fetch`
+  first, fails closed if `origin/main` is unresolvable or HEAD is not an
+  ancestor). Chose option (b) from the design brief — main-only by default
+  with an explicit, narrower opt-in escape hatch (`RWN_4AI_ALLOW_UNMERGED=1`,
+  separate from `-Force`/`SYNC_FORCE`) for deliberately dogfooding an
+  in-development pane-runner/launcher change before it merges. Refusal leaves
+  the previously deployed files completely untouched (no partial deploy).
+  `scripts/test-sync-4ai-panes-install.ps1` extended to 52 assertions (was 24),
+  including a live RED proof: an unpushed local `main` commit is refused and
+  a prior real deploy's files are verified byte-identical afterward.
+
+### Changed
+
+- `scripts/check-version-bump.sh` now keeps its versioned-path allowlist in
+  lockstep with the installer ship manifests (`scripts/install-template.sh`,
+  `tools/multi-cli-install/scripts/sync-assets.ts`,
+  `tools/multi-cli-install/src/installer/copy-framework.ts`). A shipped path
+  that is not allowlisted, or an allowlisted path that no installer ships, fails
+  the gate.
+- `scripts/check-version-bump.sh` now verifies that bullets under a new
+  `## [x.y.z]` CHANGELOG heading were promoted from the `## [Unreleased]`
+  bullets that disappeared in the same master push. Bullets invented at merge
+  time, or hand-edited during promotion, fail the gate.
+- **Activity log is now an entry-per-file spool (ADR-0010, Waves 1–2 of 3).**
+  Each CLI writes its own new file in `.ai/activity/entries/` (UTC filename +
+  random suffix); the whole-file prepend race — confirmed with real data loss on
+  2026-07-13 when a `kiro-cli` entry header was clobbered — becomes structurally
+  impossible: unique filename ⇒ no shared write ⇒ no lock ⇒ no clobber.
+  Concurrency demonstrated, not asserted: 40/40 same-second writers survived
+  with intact content. `.ai/activity/log.md` becomes a generated view rendered
+  on demand by the new `.ai/tools/render-activity-log.sh`. The Wave-3 freeze
+  (`git mv` of `log.md` to `archive/log-pre-spool.md` + `.gitignore`) is gated
+  on all three CLIs' inject hooks landing dual-mode on `master`, and is NOT in
+  this release.
+- Kimi hooks (`activity-log-inject`, `activity-log-remind`, `git-dirty-remind`)
+  are dual-mode: read the spool when it has entries, fall back to `log.md` so
+  pre-migration clones keep working.
+- Installers (`scripts/install-template.sh`, `tools/multi-cli-install`)
+  sanitize to an empty spool (`.ai/activity/entries/.gitkeep`) instead of a
+  seeded `log.md`; the manifest already excludes the whole `.ai/activity/`
+  subtree, so spool entries never enter adopter manifests.
+- Dispatch prompts (`dispatch-handoffs.sh`, `pane-runner.ps1`) instruct
+  recipients to "write an activity-log entry" instead of "prepend".
+- `.fleet/activity/log.md` (`scripts/fleet-init.sh`) deliberately stays a
+  single prepended file — one writer per project, so the race does not apply;
+  the decision is documented in the script per ADR-0010 § Migration.
+- Archival protocol (`.ai/activity/archive/README.md`) is now a `git mv` of
+  entry files into `archive/YYYY-MM/`; the cut-and-regroup rollup (itself a
+  whole-file rewrite racing live writers) is retired.
+
+### Removed
+
+- `.ai/tools/activity-append.sh` and `.ai/tests/test-activity-append.sh` — the
+  serializing writer with zero callers (ADR-0010 § Alternatives (A)).
+
+### Fixed
+
+- `pane-runner.ps1` now refuses to start if its worktree branch is behind
+  `origin/main`. A stale branch combined with a junctioned `.ai/` was the
+  reverse-write weapon that caused the 2026-07-13 primary `.ai/` clobber; the
+  guard exits cleanly (supervisor does not respawn) and prints the rebase/recreate
+  fix steps.
+- `wt-bootstrap.sh` now pins each executor worktree's committer identity
+  (`user.name`/`user.email` per `--worktree` config) on every run, create or
+  skip. Worktrees previously inherited the shared repo config's `user.name` —
+  which flips with whichever CLI last set it (observed: 3 of 4 pane worktrees
+  carrying `claude-code`) — and the ADR-0005 pre-commit gate trusts that
+  identity, so a mislabeled commit could inherit another CLI's territory
+  exception. The re-pin is idempotent and repairs drifted trees.
+- Remaining `master`→`main` references in live operational docs/scripts:
+  `.github/workflows/release.yml` comments, `.ai/known-limitations.md`,
+  `tools/4ai-panes/run-pane-supervised.ps1` drift-reminder message, and
+  `CHANGELOG.md`'s own stale `origin/master` reference.
+- `reconcile-done-handoffs.sh` now runs `lint-handoff.sh` before moving a
+  terminal-status handoff to `done/`; a handoff that fails lint (e.g.
+  `Status: DONE` with no evidence) stays in `open/` instead of being retired.
+
+## [0.0.39] - 2026-07-13
+
+### Added
+
+- **Cockpit handoff ownership — the `Auto:` tag is the claim boundary.** New
+  `.ai/tools/claim-handoff.sh` + `.ai/tools/release-handoff.sh`: a cockpit
+  (interactive session) takes an `Auto: yes` handoff ONLY by atomically flipping
+  `Auto:` to `no` and writing a claim sidecar under `.ai/handoffs/.claims/`, so
+  the auto pane skips it on its next poll; the inverse restores pane ownership
+  for "claimed it, changed my mind". Staleness mirrors
+  `pane-runner.ps1 Test-HandoffClaimed` exactly (same-host dead pid → reclaim;
+  15-minute window otherwise; fail-closed on ambiguity). Rule documented in
+  `.ai/handoffs/README.md` (Polling section); the operating-prompt SSOT
+  one-liner and CLAUDE.md/AGENTS.md contract wording route through claude-code
+  (only claude-code may commit cross-CLI SSOT replicas atomically per the
+  ADR-0005 pre-commit policy). Covered by the new sibling suite
+  `tools/4ai-panes/test-claim-handoff.ps1`, which drives the real
+  `Get-QualifyingHandoff` gate. Symmetric across all four CLIs.
+- Fleet pane liveness watchdog (dead-man's switch): `pane-runner.ps1` writes an atomic heartbeat sidecar (`.ai/.heartbeat-<cli>.json`) once per poll cycle; `.ai/tools/fleet-health.sh` cross-checks heartbeat freshness against each pane's open queue and classifies `OK` / `STALL` (queue with nobody watching) / `WEDGED` (polling but not picking up) / `DOWN (idle)` (informational) — exit 1 on STALL/WEDGED so CI and hooks can gate, fail-open on its own errors. Surfaced in `stop-reminder.sh` (STALL/WEDGED lines at session end) and the 4AI-panes Selector badge (`stall:<cli>` marker). Detection and alerting only — no auto-restart. Staleness mirrors the pane-runner claim-lock policy (15-min window, same-host dead pid = stale, foreign host = time window only).
+- `sync-replicas.sh --check` — the replica generator is now the ONE SSOT drift
+  authority (detects **and** repairs); wired into both CI workflows
+  (`framework-check.yml`, `gates.yml`) so an SSOT-changing PR without
+  regenerated replicas fails with a copy-pasteable fix command. In-place
+  regeneration is junction-safe: it refuses writes through any symlink or
+  Windows-junction ancestor and any registry destination under `.ai/`
+  (ADR-0004 reverse-write class).
+
+### Changed
+
+- `check-ssot-drift.sh` is now a thin compatibility shim that execs
+  `sync-replicas.sh --check` (identical output contract and exit codes); the
+  manual copy commands in `.ai/sync.md` are demoted to reference material in
+  favor of the generator.
 
 ## [0.0.38] - 2026-07-13
 
@@ -284,6 +465,7 @@ promotion happened.
   a protocol violation, not a convenience. This mirrors ADR-0011's
   `infra-engineer` fallback-logging rule and for the same reason: an activity log
   filling with unexplained subagent use is the tell that the reflex has returned.
+>>>>>>> origin/main
 - **The version gate now asserts the CHANGELOG section is SUBSTANTIVE, not just
   present.** `scripts/check-version-bump.sh` previously proved only that a
   `## [x.y.z]` heading EXISTED. ADR-0012 moved version assignment to merge time
@@ -300,6 +482,34 @@ promotion happened.
   describing a different PR than the one that bumped the version still pass, and
   a human still reads the entry at release.
 
+<<<<<<< HEAD
+### Security
+
+- Documented two residuals this change explicitly does **not** close
+  (`.ai/known-limitations.md`): (1) a restricted-but-not-removed `Bash` is still
+  evadable via `eval` / `sh -c` / `$(...)` / base64 — accepted, not closed, since
+  closing it would duplicate PR #53's fail-closed logic in a second surface;
+  (2) Kimi and Kiro subagents do not inherit hooks at all, so for them exposure
+  reduction is the ONLY control — a platform limitation no allowlist can fix.
+
+### Deprecated
+
+- [TODO: features marked for removal]
+
+### Removed
+
+- [TODO: features removed this release]
+
+### Fixed
+
+- [TODO: bug fixes]
+
+### Security
+
+- [TODO: vulnerabilities addressed]
+
+=======
+>>>>>>> origin/main
 ## [0.0.31] - 2026-07-12
 
 ### Added
@@ -619,6 +829,52 @@ promotion happened.
   differing only in case (`/PROJ/` next to `/proj/`) would have been folded *inside* the
   project root and its lane paths allowed. Legitimate paths always match case exactly, so
   the strict compare costs nothing and closes the fold.
+
+## [0.0.23] - 2026-07-12
+
+### Fixed
+
+- **All three Kimi enforcement hooks failed to enforce anything on absolute paths.**
+  `.kimi/hooks/worktree-fleet-guard.sh`, `framework-guard.sh`, and `root-guard.sh`
+  compared tool-emitted paths against `pwd` byte-for-byte, but the runtime emits
+  Windows-absolute forms (`C:\...`, `C:/...`) while Git Bash `pwd` yields the MSYS
+  form (`/c/...`). The compare never matched, so: `framework-guard.sh` let every
+  absolute/backslash/`..`-laundered write into `.claude/`, `.kiro/`, `.codegraph/`,
+  `.kimigraph/`, `.kirograph/` fall through to allow; `root-guard.sh`'s
+  "contains a slash ⇒ not at root" test allowed `C:/<repo>/evil.txt` — a write
+  straight at the repo root — unconditionally; `worktree-fleet-guard.sh` read a
+  sibling-prefix escape (`/c/repo-evil/x`) as in-tree and ALLOWED it, while blocking
+  legitimate in-tree writes emitted as `C:/<worktree>/...` as false-positive escapes.
+  The suite was 55/55 green because every fixture it fed was relative — the tests
+  and the runtime disagreed about the input domain. Same defect class Kiro fixed
+  2026-07-09 (T-K2) and Claude fixed on its own side (handoff
+  `202607120020-hook-abspath-bypass`); propagated to Kimi via handoff
+  `202607120059-kimi-guard-abspath-bypass`.
+- **Kimi hook suite was not hermetic.** `test_hooks.sh` passed 55/55 from the primary
+  checkout but failed 2/55 (t32/t35, fleet fixtures) from a worktree cwd — worktree
+  confinement legitimately blocked the absolute fixture paths before the fleet rule
+  ran. Under the ADR-0004 amendment dispatched CLIs run in worktrees, so the suite
+  failed in exactly the environment it now executes in. Fleet fixtures now pin cwd,
+  hook paths resolve from the script's location (not cwd), and path-shape fixtures
+  derive from the session root so the suite is green from both cwds (90/90).
+
+### Added
+
+- **Lexical pure-bash path canonicalizer in all three Kimi guards.** One repo-relative
+  form whether handed relative, `C:\x`, `C:/x`, `/c/x`, mixed separators, `c:` vs
+  `C:`, or `.`/`..` segments. Fail-CLOSED: bare-drive (`C:`) and drive-relative
+  (`C:foo`) shapes block the write. Only paths genuinely under the project root are
+  relativized (case-folded compare with a trailing-`/` boundary, so `/c/repo-evil`
+  is not read as under `/c/repo`); outside paths stay absolute for the
+  worktree/fleet rules. Deliberately NOT `realpath`/`cygpath`: `cygpath -u 'C:'`
+  and `cygpath -u 'C:foo\bar'` succeed (fail-open), and reparse-point resolution
+  would relocate `.ai/` junction writes outside a worktree (ADR-0004).
+- **Absolute-path fixtures for every territorial rule** in `test_hooks.sh` (55 → 90
+  assertions): each guard exercised in MSYS-absolute, Windows forward/backslash,
+  mixed-separator, lowercase-drive, `./`-prefixed and `..`-laundered forms, plus
+  sibling-prefix boundary and fail-closed shape refusals. Anti-tautology-verified:
+  the new fixtures produce 22 distinct failures against the pristine `origin/master`
+  guards.
 
 ## [0.0.21] - 2026-07-12
 

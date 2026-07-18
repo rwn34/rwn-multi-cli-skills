@@ -5,6 +5,20 @@
 `.ai/instructions/` is the source of truth. CLI-native files are replicas. If they
 disagree, regenerate from here. Never edit the replicas directly.
 
+## Regenerate with the tool (authoritative)
+
+```bash
+bash .ai/tools/sync-replicas.sh           # regenerate all replicas in place
+bash .ai/tools/sync-replicas.sh --check   # drift report; exit 1 if any replica is stale
+```
+
+One registry (the map below), one generator — `--check` regenerates into a temp
+tree and diffs, so detection and repair can never disagree. `--check` is wired
+into CI (`framework-check.yml`, `gates.yml`): an SSOT-changing PR without
+regenerated replicas fails there with the fix printed. The manual copy commands
+further down are kept as a reference for what the tool does; the tool is the
+supported path.
+
 ## Source → destination map
 
 | Source | Destination | Role |
@@ -44,7 +58,7 @@ materially changes OpenCode's obligations, update the OpenCode-facing content
 of `AGENTS.md` by hand — it is intentionally a digest, not a byte-identical
 replica, and is excluded from `check-ssot-drift.sh`.
 
-## Copy commands
+## Copy commands (reference — legacy; `sync-replicas.sh` above is the supported path)
 
 ### Bash / Git Bash / macOS / Linux
 

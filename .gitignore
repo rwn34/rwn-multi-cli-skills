@@ -95,6 +95,9 @@ id_ed25519*
 # ---- Per-project claim sidecars (pane-runner; ephemeral runtime state) ----
 .ai/.claim-*.json
 
+# ---- Pane liveness heartbeat sidecars (fleet-health.sh; ephemeral runtime state) ----
+.ai/.heartbeat-*.json
+
 # ---- Per-handoff claim sidecars (ADR-0009 section 3; ephemeral runtime state) ----
 # ignore the sidecars but keep the contract README. Must ignore the dir CONTENTS
 # (dir/*) not the dir itself, else the README negation cannot take effect.

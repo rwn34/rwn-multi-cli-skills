@@ -41,7 +41,9 @@
 #   (z) worktree failure -> WORKTREE_FAIL, CLI NEVER invoked, no fallback to
 #       $ProjectDir (the acceptance assertion for this whole fix)
 #   (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked
-#   (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to origin/master
+#   (ab) Get-DeclaredBase reads a handoff's Base: field; discovers the repo's
+#        default branch offline-first when absent (origin/HEAD, origin/main,
+#        main, HEAD); never hardcodes origin/master.
 #   (ac) parity guard: Ensure-DeclaredBaseBranchReal vs
 #        dispatch-handoffs.sh's ensure_declared_base_branch() behave the same on
 #        a real sandbox repo (branch cut from declared base, not ambient HEAD;
@@ -60,16 +62,22 @@
 #   (al) GUARD: AI_HANDOFF_DISPATCH=1 in source   (fails loudly if ever dropped)
 #   (am) real InvokeCli honors BOTH the worktree cwd AND AI_HANDOFF_DISPATCH=1
 #        in the SAME child invocation (the interleave this rebase must prove)
-#   (av) JUNCTION LANDMINE regression: stale-HEAD worktree + live junctioned
-#        .ai/ — raw `git checkout -b` FAILS (prove-the-bug), then
-#        Ensure-DeclaredBaseBranchReal succeeds, cuts from the declared base,
-#        and preserves the live .ai/ byte-for-byte (prove-the-fix). Real
-#        worktree, real mklink /J junction — no mocks.
-#   (av2) non-.ai dirt with .ai churn present -> still refuses (safety intact)
-#   (av3) PARITY: bash twin (dispatch-handoffs.sh
-#        ensure_declared_base_branch) survives the same landmine state
-#   (av4) wt-bootstrap junction-degradation guard: degraded real-dir .ai with
-#        uncommitted content dies loud; clean real dir re-junctions
+#   (av) ADR-0016 SNAPSHOT-COPY regression: real sandbox worktree, real
+#        SnapshotAi/SyncBackAi hooks — .ai/ is an ordinary directory copy, not
+#        a junction, and a report written into worktree .ai/ syncs back to
+#        canonical.
+#   (ba-be) PANE LIVENESS HEARTBEAT SIDECAR (fleet-health.sh dead-man's switch):
+#     (ba) Write-Heartbeat writes .ai/.heartbeat-<cli>.json w/ contract fields
+#     (bb) atomic temp+rename leaves no .tmp debris
+#     (bc) busy state records the current handoff leaf
+#     (bd) rewrite over an existing sidecar is a clean replace, still valid JSON
+#     (be) anti-rot: Start-PaneRunner calls Write-Heartbeat, fail-open wrapped
+#   (bf) ANTI-ROT: Assert-WorktreeFresh guards Start-PaneRunner before polling
+#   (bg-bj) REGRESSION (handoff 202607140930 - malformed -Cli spawns malformed
+#        supervisors): [ValidateSet] on $Cli rejects an empty string and a
+#        truncated value ('k') at PARAMETER BIND TIME, in a real child process,
+#        for BOTH pane-runner.ps1 (bg/bh) and run-pane-supervised.ps1 (bi/bj) -
+#        before any loop/banner/heartbeat logic runs.
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -154,6 +162,24 @@ $script:EnsureDeclaredBaseBranch = {
     return $true
 }
 
+# Mock .ai/ snapshot/sync-back for tests (a)-(z): the mock worktree is not a real
+# git repo, so shelling out to sync-ai-state.sh would fail. Capture call args.
+$script:snapshotCalls = @()
+$script:syncBackCalls = @()
+$script:SnapshotAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $script:snapshotCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+    return $true
+}
+$script:SyncBackAi = {
+    param([string]$ProjectDir, [string]$WtPath)
+    $script:syncBackCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+}
+
+# Mock base resolution for tests (a)-(z): avoids requiring every temp workspace to be
+# a full git repo. The dedicated (ab) test exercises the real discovery logic.
+$script:GetDeclaredBase = { param([string]$HandoffPath) return 'origin/master' }
+
 # -- (a) done on first run --
 $script:mockCalls = 0; $script:mockDeleteOnCall = 1
 $h = New-TestHandoff -Slug 'a-first'
@@ -162,6 +188,10 @@ $r = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $h -MaxC
 Assert-Equal 'DONE' $r.Result 'a: done on first run -> Result=DONE'
 Assert-Equal 0 $r.Continues 'a: done on first run -> 0 continues'
 Assert-Equal 1 $r.Invocations 'a: done on first run -> 1 invocation'
+Assert-Equal $work $script:snapshotCalls[-1].ProjectDir 'a: SnapshotAi called with ProjectDir'
+Assert-Equal $script:mockWtPath $script:snapshotCalls[-1].WtPath 'a: SnapshotAi called with WtPath'
+Assert-Equal $work $script:syncBackCalls[-1].ProjectDir 'a: SyncBackAi called with ProjectDir'
+Assert-Equal $script:mockWtPath $script:syncBackCalls[-1].WtPath 'a: SyncBackAi called with WtPath'
 
 # -- (b) still-open then done on 2nd run (auto-continue) --
 $script:mockCalls = 0; $script:mockDeleteOnCall = 2
@@ -233,6 +263,12 @@ Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable ->
 Release-Handoff -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
 
+# -- Get-DefaultOwner returns six-actor auto identities --
+Assert-Equal 'claude-auto'   (Get-DefaultOwner -CliName 'claude')   'k: claude owner is claude-auto'
+Assert-Equal 'kimai-auto'    (Get-DefaultOwner -CliName 'kimi')     'k: kimi owner is kimai-auto'
+Assert-Equal 'kiro-auto'     (Get-DefaultOwner -CliName 'kiro')     'k: kiro owner is kiro-auto'
+Assert-Equal 'opencode-auto' (Get-DefaultOwner -CliName 'opencode') 'k: opencode owner is opencode-auto'
+
 # -- poison-pill quarantine (ADR-0008 self-healing safety valve) --
 $kimiOpen = Join-Path $work ".ai/handoffs/to-kimi/open"
 New-Item -ItemType Directory -Path $kimiOpen -Force | Out-Null
@@ -288,6 +324,100 @@ Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk)
 
 # restore the real threshold
 $script:MaxHandoffAttempts = $origMax
+
+# -- (bn-bs) Emit-NextStageHandoff: six-actor identities + Next: fan-out --
+# Use an isolated workspace so earlier tests' leftover queue files do not skew counts.
+$emitWork = Join-Path $env:TEMP ("pane-runner-emit-test-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $emitWork -Force | Out-Null
+
+function New-DoneHandoff {
+    param([string]$CliName, [string]$Slug, [string]$ExtraLines = '')
+    $dir = Join-Path $emitWork ".ai/handoffs/to-$CliName/done"
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $p = Join-Path $dir "$Slug.md"
+    $lines = @(
+        "# Done handoff $Slug",
+        "Status: DONE",
+        "Sender: claude-cockpit",
+        "Recipient: $CliName-auto",
+        "Created: 2026-07-18 00:00",
+        "Auto: yes",
+        "Risk: B"
+    )
+    if ($ExtraLines) { $lines += ($ExtraLines -split "`n") }
+    $lines += @("", "## Goal", "test")
+    $lines -join "`n" | Set-Content -Path $p -Encoding utf8
+    return $p
+}
+
+function Get-EmitCount {
+    param([string]$Queue, [string]$SubDir)
+    $d = Join-Path $emitWork ".ai/handoffs/to-$Queue/$SubDir"
+    if (-not (Test-Path $d)) { return 0 }
+    return (Get-ChildItem -Path $d -Filter '*.md' -File).Count
+}
+
+function Get-EmitFile {
+    param([string]$Queue, [string]$SubDir, [string]$SlugPattern)
+    $d = Join-Path $emitWork ".ai/handoffs/to-$Queue/$SubDir"
+    if (-not (Test-Path $d)) { return $null }
+    return (Get-ChildItem -Path $d -Filter '*.md' -File | Where-Object { $_.Name -like "*$SlugPattern*" } | Select-Object -First 1)
+}
+
+# (bn) ReviewBy: bare cli maps to <cli>-auto, sender is the emitting pane's six-actor identity
+$bnDone = New-DoneHandoff -CliName 'kimi' -Slug 'bn-review' -ExtraLines 'ReviewBy: kiro'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kimi' -HandoffPath $bnDone
+Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'review') 'bn: ReviewBy bare kiro emits one review handoff'
+$bnFile = Get-EmitFile -Queue 'kiro' -SubDir 'review' -SlugPattern 'bn-review'
+Assert-Equal $true ($null -ne $bnFile) 'bn: review file exists'
+$bnContent = Get-Content -Path $bnFile.FullName -Raw
+Assert-Equal $true ($bnContent -match '(?m)^Sender:\s*kimai-auto\s*$') 'bn: review sender is kimai-auto'
+Assert-Equal $true ($bnContent -match '(?m)^Recipient:\s*kiro-auto\s*$') 'bn: review recipient is kiro-auto'
+Assert-Equal $true ($bnContent -match '(?m)^Auto:\s*yes\s*$') 'bn: review handoff is Auto: yes'
+Assert-Equal $true ($bnContent -match 'ReviewOf:\s*bn-review\.md') 'bn: review handoff carries ReviewOf'
+
+# (bo) Next: fans out to multiple actors with correct identities and Auto flags
+$boDone = New-DoneHandoff -CliName 'claude' -Slug 'bo-next' -ExtraLines "Next: kimai-auto, kiro-auto`nFinalReview: claude-auto"
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $boDone
+Assert-Equal 1 (Get-EmitCount -Queue 'kimi' -SubDir 'open') 'bo: Next kimai-auto emits one open handoff'
+Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'open') 'bo: Next kiro-auto emits one open handoff'
+$boKimi = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bo-next'
+Assert-Equal $true ($null -ne $boKimi) 'bo: kimi Next file exists'
+$boKimiContent = Get-Content -Path $boKimi.FullName -Raw
+Assert-Equal $true ($boKimiContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bo: Next sender is claude-auto'
+Assert-Equal $true ($boKimiContent -match '(?m)^Recipient:\s*kimai-auto\s*$') 'bo: Next recipient is kimai-auto'
+Assert-Equal $true ($boKimiContent -match '(?m)^Auto:\s*yes\s*$') 'bo: Next auto recipient is Auto: yes'
+
+# (bp) Next: to a cockpit writes Auto: no so the dispatcher leaves it for the cockpit
+$bpDone = New-DoneHandoff -CliName 'opencode' -Slug 'bp-cockpit' -ExtraLines 'Next: kimai-cockpit'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'opencode' -HandoffPath $bpDone
+$bpFile = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bp-cockpit'
+Assert-Equal $true ($null -ne $bpFile) 'bp: Next cockpit emits a handoff'
+$bpContent = Get-Content -Path $bpFile.FullName -Raw
+Assert-Equal $true ($bpContent -match '(?m)^Recipient:\s*kimai-cockpit\s*$') 'bp: cockpit recipient identity'
+Assert-Equal $true ($bpContent -match '(?m)^Auto:\s*no\s*$') 'bp: cockpit handoff is Auto: no'
+
+# (bq) Deploy: yes emits an opencode-auto handoff
+$bqDone = New-DoneHandoff -CliName 'claude' -Slug 'bq-deploy' -ExtraLines 'Deploy: yes'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $bqDone
+Assert-Equal 1 (Get-EmitCount -Queue 'opencode' -SubDir 'open') 'bq: Deploy emits one open handoff'
+$bqFile = Get-EmitFile -Queue 'opencode' -SubDir 'open' -SlugPattern 'bq-deploy'
+Assert-Equal $true ($null -ne $bqFile) 'bq: deploy file exists'
+$bqContent = Get-Content -Path $bqFile.FullName -Raw
+Assert-Equal $true ($bqContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bq: deploy sender is claude-auto'
+Assert-Equal $true ($bqContent -match '(?m)^Recipient:\s*opencode-auto\s*$') 'bq: deploy recipient is opencode-auto'
+Assert-Equal $true ($bqContent -match '(?m)^Auto:\s*yes\s*$') 'bq: deploy handoff is Auto: yes'
+
+# (br) FinalReview: <actor> emits a review handoff with six-actor identities
+$brDone = New-DoneHandoff -CliName 'kiro' -Slug 'br-final' -ExtraLines 'FinalReview: claude-auto'
+Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kiro' -HandoffPath $brDone
+$brFile = Get-EmitFile -Queue 'claude' -SubDir 'review' -SlugPattern 'br-final'
+Assert-Equal $true ($null -ne $brFile) 'br: final-review file exists'
+$brContent = Get-Content -Path $brFile.FullName -Raw
+Assert-Equal $true ($brContent -match '(?m)^Sender:\s*kiro-auto\s*$') 'br: final-review sender is kiro-auto'
+Assert-Equal $true ($brContent -match '(?m)^Recipient:\s*claude-auto\s*$') 'br: final-review recipient is claude-auto'
+
+Remove-Item -Path $emitWork -Recurse -Force -ErrorAction SilentlyContinue
 
 # -- (p) REAL invoke path: a native child that writes stderr AND exits non-zero --
 #     This is the regression the mocked tests can't see. We drive the actual
@@ -445,18 +575,90 @@ Assert-Equal 0 $raa.Invocations 'aa: declared-base-branch failure -> CLI NEVER i
 Assert-Equal 0 $script:mockCalls 'aa: declared-base-branch failure -> mock InvokeCli call count is 0'
 $script:mockBranchFails = $false
 
-# -- (ab) Get-DeclaredBase reads a handoff's Base: field; defaults to          --
-# -- origin/master when absent (mirrors dispatch-handoffs.sh base_for()).     --
-$hab1 = New-TestHandoff -Slug 'ab-no-base'
-Assert-Equal 'origin/master' (Get-DeclaredBase -HandoffPath $hab1) 'ab: no Base: field -> defaults to origin/master'
-$hab2Path = Join-Path $openDir 'ab-with-base.md'
+# -- (ab) Get-DeclaredBase reads a handoff's Base: field; discovers the repo's  --
+# -- default branch offline-first when absent (origin/HEAD, origin/main, main, --
+# -- HEAD); never hardcodes origin/master.                                     --
+
+# Helper: create a minimal project with a handoff file and a bare remote whose
+# default branch is $DefaultBranch. Returns @{ Project = <path>; Origin = <path> }.
+function New-BaseDiscoveryProject {
+    param([string]$DefaultBranch)
+    $proj = Join-Path $env:TEMP ("pane-runner-base-" + [guid]::NewGuid().ToString('N'))
+    $origin = Join-Path $env:TEMP ("pane-runner-origin-" + [guid]::NewGuid().ToString('N') + '.git')
+    New-Item -ItemType Directory -Path $proj -Force | Out-Null
+    New-Item -ItemType Directory -Path $origin -Force | Out-Null
+    git init --quiet --bare $origin
+    git init --quiet $proj
+    git -C $proj config user.email 'test@example.com'
+    git -C $proj config user.name 'test'
+    New-Item -ItemType Directory -Path (Join-Path $proj '.ai/handoffs/to-claude/open') -Force | Out-Null
+    'seed' | Set-Content -Path (Join-Path $proj 'seed.txt')
+    git -C $proj add -A
+    git -C $proj commit --quiet -m 'seed'
+    git -C $proj branch -M $DefaultBranch
+    git -C $proj remote add origin $origin
+    git -C $proj push --quiet -u origin $DefaultBranch
+    # Set origin/HEAD locally without querying the remote, so the offline-first
+    # resolution path is exercised and the test stays deterministic.
+    git -C $proj remote set-head origin $DefaultBranch *>$null
+    return @{ Project = $proj; Origin = $origin }
+}
+
+# Explicit Base: is always read verbatim.
+$habExplicit = Join-Path $openDir 'ab-with-base.md'
 @(
     "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude-code",
     "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "Base: origin/develop", "", "## Goal", "test"
-) -join "`n" | Set-Content -Path $hab2Path -Encoding utf8
-Assert-Equal 'origin/develop' (Get-DeclaredBase -HandoffPath $hab2Path) 'ab: Base: origin/develop is read verbatim'
-Remove-Item -Path $hab1, $hab2Path -Force -ErrorAction SilentlyContinue
+) -join "`n" | Set-Content -Path $habExplicit -Encoding utf8
+Assert-Equal 'origin/develop' (Get-DeclaredBase-Real -HandoffPath $habExplicit) 'ab: Base: origin/develop is read verbatim'
+
+# Repo whose default branch is master -> resolves to origin/master.
+$infoMaster = New-BaseDiscoveryProject -DefaultBranch 'master'
+$habMaster = Join-Path $infoMaster.Project '.ai/handoffs/to-claude/open/ab-master.md'
+@(
+    "# Test handoff ab-master", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habMaster -Encoding utf8
+Assert-Equal 'origin/master' (Get-DeclaredBase-Real -HandoffPath $habMaster) 'ab: repo default=master -> origin/master'
+
+# Repo whose default branch is main -> resolves to origin/main (the bug we fixed).
+$infoMain = New-BaseDiscoveryProject -DefaultBranch 'main'
+$habMain = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-main.md'
+@(
+    "# Test handoff ab-main", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habMain -Encoding utf8
+Assert-Equal 'origin/main' (Get-DeclaredBase-Real -HandoffPath $habMain) 'ab: repo default=main -> origin/main'
+
+# Stale local refs are refreshed before resolution: push a new commit, rewind
+# the local origin/main ref and break origin/HEAD, then prove Get-DeclaredBase
+# fetches and returns origin/main pointing at the latest commit.
+'second' | Set-Content -Path (Join-Path $infoMain.Project 'second.txt')
+git -C $infoMain.Project add -A
+git -C $infoMain.Project commit --quiet -m 'second on main'
+$latestMainSha = git -C $infoMain.Project rev-parse HEAD
+git -C $infoMain.Project push --quiet origin main
+# Rewind local refs to simulate a stale/missing cache.
+git -C $infoMain.Project update-ref refs/remotes/origin/main "$($latestMainSha.Substring(0,7))~1"
+git -C $infoMain.Project symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/does-not-exist
+
+$habStale = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-stale.md'
+@(
+    "# Test handoff ab-stale", "Status: OPEN", "Sender: claude-code",
+    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "", "## Goal", "test"
+) -join "`n" | Set-Content -Path $habStale -Encoding utf8
+$resolvedStale = Get-DeclaredBase-Real -HandoffPath $habStale
+Assert-Equal 'origin/main' $resolvedStale 'ab-stale: resolves origin/main after fetch'
+$resolvedStaleSha = git -C $infoMain.Project rev-parse "$resolvedStale"
+Assert-Equal $latestMainSha $resolvedStaleSha 'ab-stale: resolved base points at latest commit'
+
+Remove-Item -Path $habExplicit -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $infoMaster.Project, $infoMaster.Origin -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $infoMain.Project, $infoMain.Origin -Recurse -Force -ErrorAction SilentlyContinue
 
 # -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
 # -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --
@@ -678,139 +880,78 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
             return 0
         }
 
-        # -- (av) THE JUNCTION LANDMINE (2026-07-12/13 fleet outage; handoff  --
-        # -- 202607122330): a worktree whose HEAD is STALE and whose only     --
-        # -- dirt is the live, junctioned .ai/ must still get its declared-   --
-        # -- base branch. In this exact state the dirty-check reads "clean"   --
-        # -- (.ai/ filtered by design) but `git checkout` refuses to touch    --
-        # -- the "locally modified" junction files -> WORKTREE_FAIL x3 ->     --
-        # -- quarantine, fleet-wide. Prove the landmine exists (a raw         --
-        # -- checkout FAILS here — if git ever changes, this assertion fails  --
-        # -- loudly instead of the test passing vacuously), then prove the    --
-        # -- fix: Ensure-DeclaredBaseBranchReal succeeds, the live .ai/ is    --
-        # -- preserved byte-for-byte, and everything else converges on the    --
-        # -- base. Uses the REAL sandbox worktree with its REAL mklink /J     --
-        # -- junction — no mocks (mocking the worktree path is how PR #51     --
-        # -- shipped this bug).                                               --
-        # EAP=Continue for the block: raw `git fetch` here writes ordinary
-        # progress to STDERR, which the suite's script-level EAP=Stop would
-        # promote to a terminating NativeCommandError (same hazard
-        # Ensure-DeclaredBaseBranchReal guards internally — test code is not
-        # inside that guard).
-        $avPrevEAP = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        $seedSha = git -C $primary rev-parse HEAD
-
-        # Advance origin/master behind the worktree's back: v2 of the
-        # junctioned log (committed at the base) + a non-.ai change.
-        $avClone = Join-Path $sandboxParent 'av-mover'
-        git clone --quiet $originBare $avClone
-        Push-Location $avClone
-        git config user.email 'test@example.com'
-        git config user.name 'test'
-        'log v2 (committed at base)' | Set-Content -Path (Join-Path $avClone '.ai/activity/log.md')
-        'seed v2' | Set-Content -Path (Join-Path $avClone 'seed.txt')
-        git add -A
-        git commit --quiet -m 'advance base: .ai log v2 + seed v2'
-        git push --quiet origin master
-        Pop-Location
-
-        # Stale-HEAD worktree + LIVE uncommitted .ai churn: detach the kiro
-        # worktree at the seed commit, then append an uncommitted line to the
-        # canonical log. Through the junction the worktree sees
-        # .ai/activity/log.md as locally modified AND different at the base —
-        # the exact 2026-07-12/13 outage state.
-        Remove-Item -Path (Join-Path $realWt1 'marker-kiro.txt') -Force -ErrorAction SilentlyContinue
-        git -C $realWt1 checkout --quiet --detach $seedSha 2>$null
-        Add-Content -Path (Join-Path $primary '.ai/activity/log.md') -Value 'log v3 (LIVE, uncommitted — appended by another CLI)'
-        $logLiveBefore = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-
-        git -C $realWt1 fetch origin *> $null
-        git -C $realWt1 checkout --quiet -b 'av-raw-probe' 'origin/master' *> $null
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av: PROVE-THE-BUG - raw git checkout -b FAILS in the stale-HEAD + live-.ai state (the landmine)'
-
-        $avOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av-junction' -Base 'origin/master'
-        Assert-Equal $true $avOk 'av: PROVE-THE-FIX - Ensure-DeclaredBaseBranchReal succeeds in the landmine state'
-        $avBranch = git -C $realWt1 branch --show-current
-        Assert-Equal 'exec/kiro/av-junction' $avBranch 'av: HEAD is on exec/<cli>/<slug>'
-        $avHead = git -C $realWt1 rev-parse HEAD
-        $avBase = git -C $realWt1 rev-parse origin/master
-        Assert-Equal $avBase $avHead 'av: branch tip == origin/master (cut from the DECLARED base)'
-        $logLiveAfter = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-        Assert-Equal $logLiveBefore $logLiveAfter 'av: live junctioned .ai/activity/log.md preserved byte-for-byte (git never writes it)'
-        $seedTxt = Get-Content -Path (Join-Path $realWt1 'seed.txt') -Raw
-        Assert-Equal 'seed v2' ($seedTxt.Trim()) 'av: non-.ai files converged onto the base (seed.txt v2)'
-        $avDirt = git -C $realWt1 status --porcelain | Where-Object { $_ -notmatch '\s\.ai/' }
-        Assert-Equal $null $avDirt 'av: no phantom non-.ai dirt after the cut (only live .ai churn remains)'
-
-        # (av2) the safety must NOT weaken with the tolerance: genuine non-.ai
-        # dirt still refuses the cut even while .ai churn is present.
-        Add-Content -Path (Join-Path $realWt1 'seed.txt') -Value 'local uncommitted work'
-        $av2Ok = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'av2-should-not-cut' -Base 'origin/master'
-        Assert-Equal $true $av2Ok 'av2: non-.ai dirt -> WARN-and-reuse (returns true)'
-        $av2Branch = git -C $realWt1 branch --show-current
-        Assert-Equal 'exec/kiro/av-junction' $av2Branch 'av2: branch NOT changed over uncommitted non-.ai work'
-        git -C $realWt1 show-ref --verify --quiet 'refs/heads/exec/kiro/av2-should-not-cut' *> $null
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av2: no new branch was cut over non-.ai dirt'
-        git -C $realWt1 checkout --quiet -- seed.txt 2>$null
-
-        # (av3) PARITY: the bash twin (dispatch-handoffs.sh
-        # ensure_declared_base_branch) must survive the SAME landmine state.
-        # Drive the REAL script end-to-end: a stub 'kimi' binary on PATH
-        # satisfies bin_for()/command -v (the real headless CLI is never
-        # launched — the stub exits 0 instantly); the branch cut happens
-        # BEFORE the invocation. Assert on OUTCOME (branch + preserved log),
-        # not exit code (post-launch bookkeeping varies).
-        $av3Tools = Join-Path $primary '.ai/tools'
-        New-Item -ItemType Directory -Path $av3Tools -Force | Out-Null
-        Copy-Item -Path (Join-Path $here '..\..\.ai\tools\dispatch-handoffs.sh') -Destination $av3Tools
-        $av3Scripts = Join-Path $primary 'scripts'
-        New-Item -ItemType Directory -Path $av3Scripts -Force | Out-Null
-        Copy-Item -Path $wtBootstrapPath -Destination $av3Scripts
-        $av3Open = Join-Path $primary '.ai/handoffs/to-kimi/open'
-        New-Item -ItemType Directory -Path $av3Open -Force | Out-Null
-        $av3Handoff = Join-Path $av3Open 'av3-parity.md'
-        @("# av3-parity", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-13 00:00", "Auto: yes", "Risk: A", "", "## Goal", "parity probe") -join "`n" | Set-Content -Path $av3Handoff -Encoding utf8
-        $av3StubDir = Join-Path $sandboxParent 'bin-stub'
-        New-Item -ItemType Directory -Path $av3StubDir -Force | Out-Null
-        "#!/bin/sh`nexit 0" | Set-Content -Path (Join-Path $av3StubDir 'kimi') -Encoding ascii -NoNewline
-        $av3OldPath = $env:PATH
-        $env:PATH = "$av3StubDir;$av3OldPath"
-        $av3Dispatch = Join-Path $primary '.ai/tools/dispatch-handoffs.sh'
-        Push-Location $primary
-        try {
-            $av3Out = & $bashCmd $av3Dispatch --exec --only kimi 2>&1 | Out-String
-        } finally {
-            Pop-Location
-            $env:PATH = $av3OldPath
+        # -- (av) ADR-0016 SNAPSHOT-COPY REGRESSION: the dispatcher copies canonical
+        # .ai/ into the worktree as ordinary files and syncs changes back. There
+        # is NO junction, so git cannot follow a reparse point and destroy
+        # canonical .ai/ state. Use the real sandbox worktree and the real
+        # SnapshotAi/SyncBackAi hooks.
+        $script:SnapshotAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $bash = Resolve-GitBash
+            $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+            & $bash $sync snapshot "$ProjectDir/.ai" "$WtPath/.ai" 2>&1 | ForEach-Object { Write-Host "  [snapshot-ai] $_" -ForegroundColor DarkGray }
+            return ($LASTEXITCODE -eq 0)
         }
-        $av3Wt = Join-Path $sandboxParent '.wt/proj/kimi'
-        $av3Branch = git -C $av3Wt branch --show-current
-        Assert-Equal 'exec/kimi/av3-parity' $av3Branch 'av3: PARITY - bash twin cut the declared-base branch in the same landmine state'
-        Assert-Equal $false ($av3Out -match 'could not establish declared-base branch') 'av3: bash twin did NOT hit the declared-base failure'
-        $logLiveAfterAv3 = Get-Content -Path (Join-Path $primary '.ai/activity/log.md') -Raw
-        Assert-Equal $logLiveBefore $logLiveAfterAv3 'av3: bash twin preserved the live junctioned log'
+        $script:SyncBackAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $bash = Resolve-GitBash
+            $sync = Join-Path $ProjectDir '.ai/tools/sync-ai-state.sh'
+            & $bash $sync sync-back "$WtPath" "$ProjectDir" 2>&1 | ForEach-Object { Write-Host "  [sync-back-ai] $_" -ForegroundColor DarkGray }
+        }
 
-        # (av4) wt-bootstrap.sh junction-degradation guard: a worktree whose
-        # .ai/ has degraded into a REAL directory holding uncommitted content
-        # must make the bootstrap DIE LOUD (a CLI reading the wrong queue is a
-        # coordination-plane split-brain); a clean real dir (the fresh
-        # worktree-add state) must re-junction without complaint.
-        $av4Ai = Join-Path $realWt1 '.ai'
-        cmd /c rmdir "$av4Ai" *> $null
-        New-Item -ItemType Directory -Path $av4Ai -Force | Out-Null
-        'live state that exists only here' | Set-Content -Path (Join-Path $av4Ai 'orphaned-report.md')
-        $av4Out = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
-        Assert-Equal $true ($LASTEXITCODE -ne 0) 'av4: DEGRADED .ai (real dir + uncommitted content) -> wt-bootstrap dies loud'
-        Assert-Equal $true ($av4Out -match 'DEGRADED') 'av4: failure message names the degradation'
-        Remove-Item -Path $av4Ai -Recurse -Force
-        git -C $realWt1 checkout --quiet -- .ai 2>$null   # clean real dir matching the index
-        $av4Out2 = & $bashCmd $wtBootstrapPath $primary 'kiro' 2>&1 | Out-String
-        Assert-Equal 0 $LASTEXITCODE 'av4: clean real dir -> re-junction succeeds'
-        Assert-Equal $true ($av4Out2 -match 'Done\.') 'av4: bootstrap completed'
-        $av4Relinked = (Get-Item $av4Ai).Attributes -band [System.IO.FileAttributes]::ReparsePoint
-        Assert-Equal $true ($av4Relinked -ne 0) 'av4: .ai is a reparse point (junction) again'
-        $ErrorActionPreference = $avPrevEAP
+        # Ensure the sync-ai-state.sh tool exists in the sandbox project so the
+        # real hooks can find it.
+        $avTools = Join-Path $primary '.ai/tools'
+        New-Item -ItemType Directory -Path $avTools -Force | Out-Null
+        Copy-Item -Path (Join-Path $here '../../.ai/tools/sync-ai-state.sh') -Destination $avTools
+        $avOpen = Join-Path $primary '.ai/handoffs/to-kimi/open'
+        New-Item -ItemType Directory -Path $avOpen -Force | Out-Null
+        $avHandoff = Join-Path $avOpen 'av-snapshot.md'
+        @("# av-snapshot", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-17 00:00", "Auto: yes", "Risk: A", "", "## Goal", "snapshot-copy probe") -join "`n" | Set-Content -Path $avHandoff -Encoding utf8
+
+        # Mock CLI writes a report into the worktree's snapshot .ai/ and deletes
+        # the canonical handoff.
+        $script:InvokeCli = {
+            param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+            New-Item -ItemType Directory -Path (Join-Path $Cwd '.ai/reports') -Force | Out-Null
+            'synced report from worktree' | Set-Content -Path (Join-Path $Cwd '.ai/reports/av-synced.md')
+            Remove-Item -Path $avHandoff -Force -ErrorAction SilentlyContinue
+            return 0
+        }
+
+        # Use the real worktree and branch-cut functions for this regression test.
+        $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+
+        $avWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'kimi'
+        $avResult = Invoke-HandoffRun -ProjectDir $primary -CliName 'kimi' -HandoffPath $avHandoff -MaxContinues 1
+        Assert-Equal 'DONE' $avResult.Result 'av: snapshot-copy handoff completes DONE'
+        Assert-Equal $true (Test-Path (Join-Path $primary '.ai/reports/av-synced.md')) 'av: report written in worktree .ai/ synced back to canonical'
+        Assert-Equal $false (Test-Path (Join-Path $avWt '.ai')) 'av: worktree .ai/ removed after sync-back'
+
+        # Restore the (a-x) mocks.
+        $script:GetCliWorktreePath = {
+            param([string]$ProjectDir, [string]$CliName)
+            $script:lastWtCliName = $CliName
+            if ($script:mockWtFails) { return $null }
+            return $script:mockWtPath
+        }
+        $script:EnsureDeclaredBaseBranch = {
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            if ($script:mockBranchFails) { return $false }
+            return $true
+        }
+        $script:SnapshotAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $script:snapshotCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+            return $true
+        }
+        $script:SyncBackAi = {
+            param([string]$ProjectDir, [string]$WtPath)
+            $script:syncBackCalls += @{ ProjectDir = $ProjectDir; WtPath = $WtPath }
+        }
+
     } finally {
         Pop-Location
         try { git -C $primary worktree prune 2>$null | Out-Null } catch {}
@@ -922,6 +1063,17 @@ try {
 } finally {
     Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# -- (an) REAL invoke path: the spawned child inherits UTF-8 locale env vars (S3-1) --
+#     Guards the root-cause fix for cp1252 em-dash corruption: any bash/PowerShell
+#     subprocess the CLI spawns must see C.UTF-8 so non-ASCII chars are UTF-8.
+$origHeadlessAn = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%LC_ALL%"=="C.UTF-8" if "%LANG%"=="C.UTF-8" (exit 7) else (exit 9)') }
+$anCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
+${function:Get-HeadlessCmd} = $origHeadlessAn
+Assert-Equal 7 $anCode 'an: child spawned by real InvokeCli sees LC_ALL=C.UTF-8 and LANG=C.UTF-8 (exit 7)'
+Assert-Equal $false (Test-Path Env:\LC_ALL) 'an: LC_ALL removed from runner env after the call'
+Assert-Equal $false (Test-Path Env:\LANG) 'an: LANG removed from runner env after the call'
 
 # -- (an-at) FLAT-INSTALL TOPOLOGY: the deployed shape, which was NEVER tested. --
 #
@@ -1113,6 +1265,131 @@ Assert-Equal $true ($wtSrc2 -match 'Resolve-GitBash') `
     'ay: anti-rot - InvokeWtBootstrap resolves bash via Resolve-GitBash'
 Assert-Equal $false ($wtSrc2 -match 'Get-Command\s+bash') `
     'ay2: anti-rot - the unguarded `Get-Command bash` is gone from InvokeWtBootstrap'
+
+# ---------------------------------------------------------------------------
+# (ba-be) PANE LIVENESS HEARTBEAT SIDECAR — fleet-health.sh's dead-man's switch.
+# The supervisor loop writes .ai/.heartbeat-<cli>.json once per poll cycle;
+# fleet-health.sh treats a missing/stale file as "queue unwatched" (STALL).
+# ---------------------------------------------------------------------------
+
+# (ba) Write-Heartbeat writes the sidecar with the full contract field set.
+$hbPath = Get-HeartbeatPath -ProjectDir $work -CliName 'kimi'
+Write-Heartbeat -ProjectDir $work -CliName 'kimi' -MyPid $PID -CurrentHandoff 'idle'
+Assert-Equal $true (Test-Path $hbPath) 'ba: Write-Heartbeat writes .ai/.heartbeat-<cli>.json'
+$hb = Get-Content -Path $hbPath -Raw | ConvertFrom-Json
+Assert-Equal 'kimi' $hb.cli 'ba2: sidecar carries cli'
+Assert-Equal $PID $hb.pid 'ba3: sidecar carries the writer pid'
+Assert-Equal ([System.Net.Dns]::GetHostName()) $hb.host 'ba4: sidecar carries the host'
+Assert-Equal 'idle' $hb.handoff 'ba5: idle cycle records handoff=''idle'''
+$hbTs = [datetime]::MinValue
+Assert-Equal $true ([datetime]::TryParse([string]$hb.ts, [ref]$hbTs)) 'ba6: ts parses as a datetime'
+Assert-Equal $true (((Get-Date).ToUniversalTime() - $hbTs.ToUniversalTime()).TotalMinutes -lt 1) 'ba7: ts is current (UTC)'
+
+# (bb) atomic write: temp+rename leaves NO .tmp.<pid> debris — the half-written
+#      file a concurrent reader (fleet-health.sh) could catch is the entire
+#      point of the Write-Claim pattern this mirrors.
+$hbDir = Split-Path -Parent $hbPath
+$tmpLeftovers = @(Get-ChildItem -Path $hbDir -Filter '.heartbeat-kimi.json.tmp.*' -File -ErrorAction SilentlyContinue)
+Assert-Equal 0 $tmpLeftovers.Count 'bb: atomic temp+rename leaves no .tmp debris'
+
+# (bc) a busy cycle records the current handoff leaf.
+Write-Heartbeat -ProjectDir $work -CliName 'kimi' -MyPid $PID -CurrentHandoff '202607130251-pane-liveness-watchdog.md'
+$hb2 = Get-Content -Path $hbPath -Raw | ConvertFrom-Json
+Assert-Equal '202607130251-pane-liveness-watchdog.md' $hb2.handoff 'bc: busy cycle records the handoff leaf'
+
+# (bd) rewriting over an existing sidecar is a clean replace (Move-Item -Force):
+#      still valid JSON afterwards, still no debris.
+$tmpLeftovers2 = @(Get-ChildItem -Path $hbDir -Filter '.heartbeat-kimi.json.tmp.*' -File -ErrorAction SilentlyContinue)
+Assert-Equal 0 $tmpLeftovers2.Count 'bd: rewrite over an existing sidecar leaves no debris'
+Assert-Equal $true ($null -ne $hb2.ts) 'bd2: rewritten sidecar is still valid JSON'
+
+# (be) ANTI-ROT WIRING GUARD: the supervisor loop must write the heartbeat once
+#      per poll cycle, fail-open — source-level, same technique as (at)/(ay).
+#      Without this, deleting the call makes fleet-health.sh blind while this
+#      suite stays green.
+$loopSrc = (Get-Command Start-PaneRunner).Definition
+Assert-Equal $true ($loopSrc -match 'Write-Heartbeat') 'be: anti-rot - Start-PaneRunner calls Write-Heartbeat'
+Assert-Equal $true ($loopSrc -match 'try\s*\{[\s\S]*?Write-Heartbeat[\s\S]*?\}\s*catch') 'be2: anti-rot - the heartbeat write is fail-open (try/catch)'
+
+# (bf) ANTI-ROT WIRING GUARD: stale worktree fail-fast (ADR-0004 disarm).
+#      A pane whose branch is behind the resolved default branch must refuse to
+#      start, because a junctioned .ai/ lets any checkout/restore/stash write stale
+#      blobs back into the primary.
+$freshSrc = (Get-Command Assert-WorktreeFresh).Definition
+Assert-Equal $true ($freshSrc -match 'Resolve-DefaultBase') 'bf: Assert-WorktreeFresh resolves the default base instead of hardcoding origin/master'
+Assert-Equal $true ($freshSrc -match 'HEAD\.\.\$base') 'bf1: Assert-WorktreeFresh measures HEAD..$base'
+Assert-Equal $true ($loopSrc -match 'Assert-WorktreeFresh') 'bf2: Start-PaneRunner invokes the freshness guard before polling'
+
+# (bf3) FAIL-CLOSED: when the default base cannot be resolved, Assert-WorktreeFresh
+#       refuses to start rather than silently allowing an unverifiable worktree.
+$emptyProj = Join-Path $env:TEMP ("pane-runner-empty-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $emptyProj -Force | Out-Null
+git init --quiet $emptyProj
+Assert-Equal $false (Assert-WorktreeFresh -ProjectDir $emptyProj) 'bf3: unresolvable default base -> Assert-WorktreeFresh returns $false'
+
+# (bg-bi) REGRESSION for handoff 202607140930 (malformed -Cli spawns malformed
+#         supervisors): [ValidateSet('claude','kimi','kiro','opencode')] on
+#         pane-runner.ps1's $Cli parameter must reject an empty string and a
+#         truncated value ('k') at PARAMETER BIND TIME, in a REAL child process
+#         -- before Start-PaneRunner's loop, before any handoff logic runs, and
+#         before a heartbeat/claim file is ever written. This is the "second
+#         layer" defensive guard the handoff asked for; the array-unroll fix
+#         (fleet-supervisor.ps1, commit f9c6536) closed the construction-site
+#         root cause, but nothing previously proved the bind-time guard itself
+#         actually rejects a malformed value instead of silently accepting it.
+$bgWork = Join-Path ([System.IO.Path]::GetTempPath()) "pr-cli-bind-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+New-Item -ItemType Directory -Path $bgWork -Force | Out-Null
+
+# Helper: run a script as a REAL child process with the given -Cli value and
+# return (exit code, combined stdout+stderr text). Uses -File + an argument
+# array (not -Command) so no nested-quoting fragility on Windows paths. Always
+# quotes the -Cli value explicitly so an EMPTY string survives ProcessStartInfo
+# argument-string construction instead of vanishing (which would silently turn
+# "-Cli ''" into "-Cli -ProjectDir ...", the exact malformed-argv shape this
+# regression exists to probe).
+function Invoke-CliBindProbe {
+    param([string]$ScriptPath, [string]$CliValue, [string[]]$ExtraArgs = @())
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell'
+    $quotedCli = "`"$CliValue`""
+    $argList = @('-NoProfile', '-NonInteractive', '-File', "`"$ScriptPath`"", '-Cli', $quotedCli, '-ProjectDir', "`"$bgWork`"") + $ExtraArgs
+    $psi.Arguments = $argList -join ' '
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+    return @{ ExitCode = $proc.ExitCode; Output = "$stdout`n$stderr" }
+}
+
+# (bg) empty string -> bind-time rejection, non-zero exit, no pane-runner output.
+$bg = Invoke-CliBindProbe -ScriptPath $runner -CliValue '' -ExtraArgs @('-NoRun')
+Assert-Equal $true ($bg.ExitCode -ne 0) 'bg: pane-runner rejects empty -Cli at bind time (non-zero exit)'
+Assert-Equal $true ($bg.Output -match 'ValidateSet|Cannot validate argument') 'bg2: rejection is a ValidateSet parameter-binding error, not a runtime crash'
+Assert-Equal $false ($bg.Output -match 'pane-runner\s+project=') 'bg3: the pane-runner banner never printed - rejected before any loop logic ran'
+
+# (bh) truncated single-char value ('k', the exact byte the scalar-unroll bug
+#      produced for 'kimi'/'kiro') -> same bind-time rejection.
+$bh = Invoke-CliBindProbe -ScriptPath $runner -CliValue 'k' -ExtraArgs @('-NoRun')
+Assert-Equal $true ($bh.ExitCode -ne 0) 'bh: pane-runner rejects truncated -Cli ''k'' at bind time (non-zero exit)'
+Assert-Equal $true ($bh.Output -match 'ValidateSet|Cannot validate argument') 'bh2: rejection is a ValidateSet parameter-binding error'
+
+# (bi) same two cases against run-pane-supervised.ps1 -- the process the
+#      handoff's evidence (PID 75960 CLI='k', PID 46512 empty -Cli) actually
+#      named.
+$supervisorPath = Join-Path $here 'run-pane-supervised.ps1'
+$bi = Invoke-CliBindProbe -ScriptPath $supervisorPath -CliValue ''
+Assert-Equal $true ($bi.ExitCode -ne 0) 'bi: run-pane-supervised rejects empty -Cli at bind time (non-zero exit)'
+Assert-Equal $true ($bi.Output -match 'ValidateSet|Cannot validate argument') 'bi2: rejection is a ValidateSet parameter-binding error'
+Assert-Equal $false ($bi.Output -match 'supervisor up:') 'bi3: the supervisor banner never printed - rejected before any respawn logic ran'
+
+$bj = Invoke-CliBindProbe -ScriptPath $supervisorPath -CliValue 'k'
+Assert-Equal $true ($bj.ExitCode -ne 0) 'bj: run-pane-supervised rejects truncated -Cli ''k'' at bind time (non-zero exit)'
+Assert-Equal $true ($bj.Output -match 'ValidateSet|Cannot validate argument') 'bj2: rejection is a ValidateSet parameter-binding error'
+
+Remove-Item -Path $bgWork -Recurse -Force -ErrorAction SilentlyContinue
 
 # -- cleanup + summary --
 Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
