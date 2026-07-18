@@ -1196,11 +1196,13 @@ function Clear-HandoffAttempts {
 # the two Claude instances never double-process a to-claude handoff.
 function Get-DefaultOwner {
     param([string]$CliName)
+    # Six-actor model: the auto pane is the default owner for every dispatchable
+    # CLI. Cockpit ownership is explicit only (claim-handoff.sh / Auto: no).
     switch ($CliName) {
         'claude'   { return 'claude-auto' }
-        'kimi'     { return 'kimi-cli' }
-        'kiro'     { return 'kiro-cli' }
-        'opencode' { return 'opencode' }
+        'kimi'     { return 'kimai-auto' }
+        'kiro'     { return 'kiro-auto' }
+        'opencode' { return 'opencode-auto' }
         default    { throw "Unknown CLI: $CliName" }
     }
 }
