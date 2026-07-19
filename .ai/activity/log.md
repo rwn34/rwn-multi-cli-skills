@@ -1,3 +1,8 @@
+## 2026-07-19 08:31 (UTC+7) - kimai-cockpit
+- Action: Added pure-awk fallback for activity/log.md merge in sync-ai-state.sh, plus test cases for both python and awk fallback paths. Verified sync-ai-state suite passes with python (31 pass) and with python hidden (31 pass).
+- Files: .ai/tools/sync-ai-state.sh, .ai/tests/test-sync-ai-state.sh
+- Decisions: awk -v variables must precede the program; trailing -v assignments are treated as input filenames. Updated test 3 to use proper ## headers so the merge semantics are meaningful.
+
 ## 2026-07-19 08:22 (UTC+7) - kimai-cockpit
 - Action: Hardened sync-ai-state.sh against activity-log truncation: merge activity/log.md on sync-back instead of overwriting, preserving canonical history when an executor drops entries. Added regression test case 11. Verified sync-ai-state (27 pass), dispatch-worktree (79 pass), and check-log-superset (9 pass) suites.
 - Files: .ai/tools/sync-ai-state.sh, .ai/tests/test-sync-ai-state.sh

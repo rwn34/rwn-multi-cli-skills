@@ -29,7 +29,11 @@ mkdir -p "$CANON/.ai" "$WT"
 setup_canon() {
     rm -rf "$CANON/.ai"
     mkdir -p "$CANON/.ai/activity" "$CANON/.ai/handoffs/to-kimi/open" "$CANON/.ai/handoffs/to-kimi/done" "$CANON/.ai/reports"
-    echo 'log entry' > "$CANON/.ai/activity/log.md"
+    cat > "$CANON/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) - test
+- Action: canonical log entry
+
+EOF
     echo 'handoff open' > "$CANON/.ai/handoffs/to-kimi/open/h1.md"
     echo 'report' > "$CANON/.ai/reports/r1.md"
 }
@@ -50,13 +54,18 @@ out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
 check "sync-back new file exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 check "sync-back copies new report to canonical" "$([ -f "$CANON/.ai/reports/r2.md" ] && echo 0 || echo 1)"
 
-# 3. sync-back updates a modified file.
+# 3. sync-back merges a modified activity/log.md entry.
 setup_canon
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
-echo 'modified log' > "$WT/.ai/activity/log.md"
+cat > "$WT/.ai/activity/log.md" <<'EOF'
+## 2026-07-19 11:00 (UTC+7) - test
+- Action: modified log entry
+
+EOF
 out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
 check "sync-back modified file exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "sync-back overwrites modified file" "$(grep -q 'modified log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+check "sync-back merges new log entry" "$(grep -q 'modified log entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+check "sync-back keeps old log entry" "$(grep -q 'canonical log entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 
 # 4. sync-back replays a handoff move (open -> done).
 setup_canon
@@ -151,6 +160,24 @@ check "sync-back log merge exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 check "sync-back preserves canonical log history" "$(grep -qF 'canonical history entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 check "sync-back prepends executor log entry" "$(grep -qF 'executor overwrote the log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 check "sync-back log has no duplicate headers" "$( [ "$(grep -c '^## ' "$CANON/.ai/activity/log.md")" -eq 2 ] && echo 0 || echo 1)"
+
+# 12. log merge also works via the pure-awk fallback when python is not on PATH.
+setup_canon
+cat > "$CANON/.ai/activity/log.md" <<'EOF'
+## 2026-07-18 09:00 (UTC+7) - kimi-cli
+- Action: canonical history entry
+
+EOF
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+cat > "$WT/.ai/activity/log.md" <<'EOF'
+## 2026-07-19 08:00 (UTC+7) - opencode-auto
+- Action: executor overwrote the log with only its own entry
+
+EOF
+out="$(env PATH=/usr/bin:/bin bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
+check "sync-back awk fallback exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "awk fallback preserves canonical history" "$(grep -qF 'canonical history entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+check "awk fallback prepends executor entry" "$(grep -qF 'executor overwrote the log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="

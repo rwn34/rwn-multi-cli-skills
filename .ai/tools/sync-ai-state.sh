@@ -72,9 +72,48 @@ if out and not out.endswith('\n'):
 sys.stdout.write(out)
 PY
     else
-        # No python available: fall back to overwrite. This is unsafe for the
-        # log but preserves behavior on minimal hosts.
-        cat "$wt"
+        # Pure-awk fallback for hosts without python. Same semantics: prepend
+        # worktree entries whose headers are not already in canonical, then emit
+        # the full canonical log.
+        awk -v canon="$canon" -v wt="$wt" '
+            function read_file(path,    line, h, in_e, body, n) {
+                n = 0
+                while ((getline line < path) > 0) {
+                    if (line ~ /^## /) {
+                        if (in_e) { entries[h] = body; order[++n] = h }
+                        h = line; in_e = 1; body = ""
+                    } else if (in_e) {
+                        body = body line "\n"
+                    }
+                }
+                if (in_e) { entries[h] = body; order[++n] = h }
+                close(path)
+                return n
+            }
+            BEGIN {
+                n_canon = read_file(canon)
+                for (i = 1; i <= n_canon; i++) {
+                    canon_headers[order[i]] = 1
+                    delete order[i]
+                }
+                n_wt = read_file(wt)
+                for (i = 1; i <= n_wt; i++) {
+                    h = order[i]
+                    if (!canon_headers[h]) {
+                        print h
+                        printf "%s", entries[h]
+                    }
+                    delete order[i]
+                }
+                n_canon = read_file(canon)
+                for (i = 1; i <= n_canon; i++) {
+                    h = order[i]
+                    print h
+                    printf "%s", entries[h]
+                }
+            }
+        '
+        # TODO: warn on truncation in awk fallback if needed.
     fi
 }
 
