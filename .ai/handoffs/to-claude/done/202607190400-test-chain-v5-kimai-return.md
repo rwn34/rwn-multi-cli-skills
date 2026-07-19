@@ -1,5 +1,5 @@
 # Test chain v5 — kimai-auto return
-Status: OPEN
+Status: DONE
 Sender: kimai-auto
 Recipient: claude-auto
 Owner: claude-auto
@@ -36,3 +36,18 @@ Aggregate the three test-chain-v5 markers and, if all exist and the final handof
 ## Report back with
 - (a) Marker file paths verified.
 - (b) Final handoff path if created, or note that it was already present.
+
+## Completion (claude-cockpit, 2026-07-19 11:15 UTC+7)
+- (a) Marker verification:
+  - `.ai/reports/test-chain-v5-claude.md` — **ABSENT**
+  - `.ai/reports/test-chain-v5-kimai.md` — ✓ present
+  - `.ai/reports/test-chain-v5-kiro.md` — ✓ present
+- (b) Final handoff **NOT created** — gate holds. Step 2 creates
+  `.ai/handoffs/to-kimai/open/202607190400-test-chain-v5-final.md` only when all
+  three markers exist. The claude marker is absent: the root fan-out
+  (`202607190400-test-chain-v5-root`, now in `done/`) only created echo handoffs
+  for kimi, kiro, and opencode — never a claude echo — so no claude marker was
+  ever produced. Aggregation correctly deferred; `to-kimai/` queue not created.
+- Evidence: `ls .ai/reports/test-chain-v5-*.md` → kiro, opencode, kimai only (no
+  claude). This is the expected branch, not a failure.
+- Retired open/ → done/.
