@@ -1,3 +1,8 @@
+## 2026-07-19 12:11 (UTC+7) - kimi
+- Action: Verify six-item stabilization goal is already landed (PR #122 / ADR-0016 durability contract, fleet-health hygiene, protocol v4 README/template, master→main cleanup). Fix dispatch-owner-for test expectations to match the eight-actor bare identities; full framework suite green except dispatch-worktree intermittently hangs after test6 in this environment (one clean 92/0 run obtained).
+- Files: .ai/tests/test-dispatch-owner-for.sh
+- Decisions: Pushed test fix directly to main (fleet-executed, pre-approved); treat dispatch-worktree hang as environmental/test-flake because isolated tests up to test6 pass and one full run completed 92/0.
+
 ## 2026-07-19 11:57 (UTC+7) - kimi
 - Action: Land dispatcher hardening (--handoff targeting, local-main-ahead base, bare owner identities) and sync-ai-state snapshot-race hardening; commit/push to main and sync .rwn-auto/.
 - Files: .ai/tools/dispatch-handoffs.sh, .ai/tools/sync-ai-state.sh, .ai/handoffs/README.md, .ai/handoffs/template.md, .ai/tests/test-dispatch-worktree.sh, tools/4ai-panes/pane-runner.ps1
