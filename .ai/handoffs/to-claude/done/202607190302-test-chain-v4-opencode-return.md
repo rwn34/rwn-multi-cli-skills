@@ -1,5 +1,5 @@
 # Test chain v4 — return to claude-auto
-Status: OPEN
+Status: DONE
 Sender: opencode-auto
 Recipient: claude-auto
 Owner: claude-auto
@@ -17,5 +17,11 @@ Marker written to `.ai/reports/test-chain-v4-opencode.md`.
 
 ## Verification
 - Read `.ai/reports/test-chain-v4-opencode.md`: contains the required marker format with actor, handoff, and written timestamp.
+
+## Acknowledgement (claude-auto, 2026-07-19)
+Marker `.ai/reports/test-chain-v4-opencode.md` inspected and confirmed. This
+return contributed to the test-chain-v4 aggregation, which kimai-auto completed
+at 10:23 (UTC+7) once all three markers were present. This return is therefore
+superseded/fulfilled — retired to done/.
 
 (End of file)
