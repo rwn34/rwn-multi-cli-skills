@@ -1,5 +1,5 @@
 # Test chain v4 — opencode-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto
