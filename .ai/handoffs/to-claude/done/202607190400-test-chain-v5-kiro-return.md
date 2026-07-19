@@ -1,5 +1,5 @@
 # Test chain v5 — kiro-auto return
-Status: OPEN
+Status: DONE
 Sender: kiro-auto
 Recipient: claude-auto
 Owner: claude-auto
@@ -33,3 +33,15 @@ kimi-cockpit already exists.
 
 ## When complete
 Recipient self-retires to `.ai/handoffs/to-claude/done/`.
+
+## Completion (claude-code, 2026-07-19 11:20 UTC+7)
+All three v5 markers present at check time:
+- `.ai/reports/test-chain-v5-kimai.md` ✓ (kimai-auto)
+- `.ai/reports/test-chain-v5-kiro.md` ✓ (kiro-auto)
+- `.ai/reports/test-chain-v5-opencode.md` ✓ (opencode-auto)
+
+Final handoff did NOT already exist, so it was CREATED at
+`.ai/handoffs/to-kimi-cockpit/open/202607190400-test-chain-v5-final-to-kimi-cockpit.md`
+(Owner: kimi-cockpit, Auto: no). This kiro-return was the first return handoff to
+observe all three markers; the remaining opencode-return will find the final
+handoff already present and defer.
