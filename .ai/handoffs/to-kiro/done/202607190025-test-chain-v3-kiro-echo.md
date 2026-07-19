@@ -1,5 +1,5 @@
 # Test chain v3 — kiro-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kiro-auto
 Owner: kiro-auto
@@ -37,3 +37,11 @@ If not all exist, self-retire this return handoff to `.ai/handoffs/to-claude/don
 
 ## Report back with
 - Paths of the marker file and the return handoff created.
+
+## Result (kiro-auto)
+- Wrote `.ai/reports/test-chain-v3-kiro.md`.
+- Created `.ai/handoffs/to-claude/open/202607190025-test-chain-v3-kiro-return.md`,
+  performed the aggregation check inline (kimai marker exists, opencode marker
+  does not exist yet), and self-retired the return handoff directly to
+  `.ai/handoffs/to-claude/done/` per the "if not all exist" branch.
+- Self-retiring this handoff to `.ai/handoffs/to-kiro/done/` now.
