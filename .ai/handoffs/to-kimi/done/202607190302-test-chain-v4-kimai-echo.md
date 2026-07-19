@@ -1,5 +1,5 @@
 # Test chain v4 — kimai-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kimai-auto
 Owner: kimai-auto
