@@ -55,6 +55,14 @@ Rule of thumb: if it's reversible, clearly beneficial, and covered by the
 framework's existing guardrails, do it and report — don't ask. This reinforces
 operating-prompt §8; it does not relax the Tier-C floor.
 
+**No approval prompts for Tier B.** When preconditions are satisfied (clean
+tree, required checks green, dry-run done where applicable), execute the Tier B
+action and notify the owner afterward. An owner message such as "deploy",
+"approved", or "do it" for a Tier B action is a go-ahead, not a request for
+permission — do not answer with another approval prompt. The only release-path
+question to the owner is **production deploy (Tier C)** and the other Tier-C
+items listed above.
+
 ## Shared framework
 
 - `.ai/README.md` — full layout explanation
