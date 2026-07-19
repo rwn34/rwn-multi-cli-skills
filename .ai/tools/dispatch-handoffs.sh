@@ -8,10 +8,12 @@
 # regardless of Auto: — those stay human-relayed. `Auto: no` also stays manual.
 #
 # Usage (from repo root):
-#   bash .ai/tools/dispatch-handoffs.sh                    # dry-run: list what would dispatch
-#   bash .ai/tools/dispatch-handoffs.sh --exec             # launch recipient CLIs (all queues)
+#   bash .ai/tools/dispatch-handoffs.sh                       # dry-run: list what would dispatch
+#   bash .ai/tools/dispatch-handoffs.sh --exec                # launch recipient CLIs (all queues)
 #   bash .ai/tools/dispatch-handoffs.sh --exec --only claude  # scope to one queue (to-claude)
 #   bash .ai/tools/dispatch-handoffs.sh --exec --one          # dispatch exactly one handoff and exit
+#   bash .ai/tools/dispatch-handoffs.sh --exec --only opencode --handoff .ai/handoffs/to-opencode/open/YYYYMMDDHMM-slug.md
+#                                                            # dispatch exactly that handoff
 #   bash .ai/tools/dispatch-handoffs.sh --exec --reuse-dirty  # reuse worktrees on a different branch or with uncommitted non-.ai changes
 #
 # Recursion guard: in --exec mode each spawned CLI child inherits
@@ -54,6 +56,7 @@ set -u
 
 MODE="dry-run"
 ONLY=""
+HANDOFF=""
 REUSE_DIRTY=0
 ONE=0
 while [ $# -gt 0 ]; do
@@ -62,6 +65,8 @@ while [ $# -gt 0 ]; do
         --reuse-dirty) REUSE_DIRTY=1 ;;
         --only)        ONLY="${2:-}"; shift ;;
         --only=*)      ONLY="${1#--only=}" ;;
+        --handoff)     HANDOFF="${2:-}"; shift ;;
+        --handoff=*)   HANDOFF="${1#--handoff=}" ;;
         --one)         ONE=1 ;;
         *)             echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -101,19 +106,19 @@ command -v fleet_notify >/dev/null 2>&1 || fleet_notify() { :; }
 project_name="$(basename "$root")"
 
 # The recipient CLI's activity-log identity (mirrors pane-runner.ps1 Get-DefaultOwner).
-# Six-actor model: auto panes are the default recipients; cockpit queues are
-# non-dispatchable and exist only for explicit human routing.
+# Eight-actor model: bare names are auto panes; -cockpit suffixes are interactive
+# sessions. Cockpit queues are non-dispatchable and exist only for human routing.
 owner_for() {
     case "$1" in
-        claude|claude-auto)       echo "claude-auto" ;;
-        claude-cockpit)           echo "claude-cockpit" ;;
-        kimi|kimi-auto|kimi-executor) echo "kimai-auto" ;;
-        kimi-cockpit)             echo "kimai-cockpit" ;;
-        kiro|kiro-auto|kiro-executor) echo "kiro-auto" ;;
-        kiro-cockpit)             echo "kiro-cockpit" ;;
-        opencode|opencode-auto)   echo "opencode-auto" ;;
-        opencode-cockpit)         echo "opencode-cockpit" ;;
-        *)                        echo "$1" ;;
+        claude|claude-auto)           echo "claude" ;;
+        claude-cockpit)               echo "claude-cockpit" ;;
+        kimi|kimi-auto|kimi-executor) echo "kimi" ;;
+        kimi-cockpit)                 echo "kimi-cockpit" ;;
+        kiro|kiro-auto|kiro-executor) echo "kiro" ;;
+        kiro-cockpit)                 echo "kiro-cockpit" ;;
+        opencode|opencode-auto)       echo "opencode" ;;
+        opencode-cockpit)             echo "opencode-cockpit" ;;
+        *)                            echo "$1" ;;
     esac
 }
 
@@ -357,12 +362,19 @@ ensure_declared_base_branch() {
         echo "WARN: git fetch origin failed in $root — using cached '$base'" >&2
     fi
 
-    # Resolve the base ref. If it can't be resolved at all (no network AND no
-    # local cache), that's a hard failure — there is no declared base to cut
-    # from, and cutting from ambient HEAD is exactly what this function exists
-    # to prevent.
-    if ! git -C "$wt_path" rev-parse --verify --quiet "$base" >/dev/null; then
-        echo "ERROR: declared base '$base' does not resolve in $wt_path (no network + no local cache?)" >&2
+    # Resolve the base ref in the PRIMARY checkout. Worktrees share
+    # remote-tracking refs but NOT local branches; a local 'main' may exist in
+    # $root (e.g. sync-ai-state auto-commits advanced it past origin/main) but
+    # not in $wt_path. Use the commit SHA for all worktree operations so the
+    # branch is cut from the exact declared base regardless of local-branch
+    # visibility inside the worktree.
+    base_sha="$(git -C "$root" rev-parse --verify --quiet "$base^{commit}" 2>/dev/null || true)"
+    if [ -z "$base_sha" ]; then
+        echo "ERROR: declared base '$base' does not resolve in $root (no network + no local cache?)" >&2
+        return 1
+    fi
+    if ! git -C "$wt_path" rev-parse --verify --quiet "$base_sha^{commit}" >/dev/null; then
+        echo "ERROR: declared base '$base' ($base_sha) is not reachable in $wt_path" >&2
         return 1
     fi
 
@@ -371,15 +383,15 @@ ensure_declared_base_branch() {
     # entangle concurrent dispatches. symbolic-ref moves HEAD without rewriting
     # a single file; the restore then converges worktree+index onto the branch
     # tip for everything EXCEPT .ai/. .ai/ is a snapshot copy populated by
-    # snapshot_ai() and must not be touched by git — the snapshot is the
-    # authoritative coordination-plane state for this dispatch.
+    # snapshot_ai() before each dispatch. It is intentionally mutable (activity
+    # log, handoff queues, reports) and is synced back after the CLI exits.
     # `git restore` with an explicit --source defaults to --no-overlay: files
     # absent on the branch are removed from the worktree too (verified
     # empirically). Keep in lockstep with
     # tools/4ai-panes/pane-runner.ps1 Ensure-DeclaredBaseBranchReal.
     if ! git -C "$wt_path" show-ref --verify --quiet "refs/heads/$branch"; then
-        if ! git -C "$wt_path" branch "$branch" "$base" 2>/dev/null; then
-            echo "ERROR: could not create branch $branch at $base in $wt_path" >&2
+        if ! git -C "$wt_path" branch "$branch" "$base_sha" 2>/dev/null; then
+            echo "ERROR: could not create branch $branch at $base ($base_sha) in $wt_path" >&2
             return 1
         fi
     fi
@@ -485,6 +497,21 @@ is_hard_gate() {
 }
 
 # base_for <file> -> echoes the declared base ref for a handoff. Reads an
+# If the local `main` branch is strictly ahead of `origin/main`, echo `main`;
+# otherwise echo nothing. This keeps dispatch bases aligned with
+# Observed-in: main@HEAD when sync-ai-state auto-commits have advanced local
+# main past the remote (no push required).
+prefer_local_main_if_ahead() {
+    local local_main_sha origin_main_sha
+    local_main_sha="$(git -C "$root" rev-parse --verify --quiet 'main^{commit}' 2>/dev/null || true)"
+    origin_main_sha="$(git -C "$root" rev-parse --verify --quiet 'origin/main^{commit}' 2>/dev/null || true)"
+    if [ -n "$local_main_sha" ] && [ -n "$origin_main_sha" ] && \
+       [ "$local_main_sha" != "$origin_main_sha" ] && \
+       git -C "$root" merge-base --is-ancestor "$origin_main_sha" "$local_main_sha" 2>/dev/null; then
+        echo "main"
+    fi
+}
+
 # optional `Base:` line from the status block (first 20 lines, mirrors the
 # Auto:/Risk: scan below); if absent, discovers the repo's default branch
 # offline-first so the dispatcher never hardcodes `origin/master`.
@@ -506,7 +533,7 @@ base_for() {
     #      as fresh as possible before we choose. A failed fetch is not fatal.
     #   2. Remote default branch head (origin/HEAD), offline first.
     #   3. If origin/HEAD is not cached, best-effort auto-detect over network.
-    #   4. origin/main.
+    #   4. origin/main (with local-main-ahead override).
     #   5. Local main.
     #   6. HEAD.
     # Each candidate is validated with `git rev-parse --verify --quiet` so a
@@ -517,6 +544,15 @@ base_for() {
 
     sym="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
     if [ -n "$sym" ] && git -C "$root" rev-parse --verify --quiet "$sym^{commit}" >/dev/null 2>&1; then
+        # If origin/HEAD points to origin/main but the local main branch is strictly
+        # ahead of it, dispatch from local main so Observed-in: main@HEAD and the cut
+        # base agree. Otherwise the worktree would be cut behind the evidence.
+        if [ "$sym" = "origin/main" ]; then
+            if [ -n "$(prefer_local_main_if_ahead)" ]; then
+                echo "main"
+                return 0
+            fi
+        fi
         echo "$sym"
         return 0
     fi
@@ -526,12 +562,24 @@ base_for() {
     git -C "$root" remote set-head origin -a >/dev/null 2>&1 || true
     sym="$(git -C "$root" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||')"
     if [ -n "$sym" ] && git -C "$root" rev-parse --verify --quiet "$sym^{commit}" >/dev/null 2>&1; then
+        if [ "$sym" = "origin/main" ]; then
+            if [ -n "$(prefer_local_main_if_ahead)" ]; then
+                echo "main"
+                return 0
+            fi
+        fi
         echo "$sym"
         return 0
     fi
 
     for candidate in origin/main main HEAD; do
         if git -C "$root" rev-parse --verify --quiet "$candidate^{commit}" >/dev/null 2>&1; then
+            if [ "$candidate" = "origin/main" ]; then
+                if [ -n "$(prefer_local_main_if_ahead)" ]; then
+                    echo "main"
+                    return 0
+                fi
+            fi
             echo "$candidate"
             return 0
         fi
@@ -627,6 +675,18 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             [ -f "$f" ] || continue
             rel="${f#$root/}"
             slug=$(basename "$f" .md)
+
+            # --handoff scoping: if a specific handoff path was requested, skip
+            # every other file. Accepts either a project-relative path
+            # (.ai/handoffs/to-<cli>/open/...) or just the basename.
+            if [ -n "$HANDOFF" ]; then
+                case "$HANDOFF" in
+                    .ai/handoffs/*)
+                        [ "$rel" = "$HANDOFF" ] || continue ;;
+                    *)
+                        [ "$(basename "$f")" = "$HANDOFF" ] || continue ;;
+                esac
+            fi
 
             # Ghost-handoff refusal (belt-and-braces, handoff 202607131035): even
             # though reconcile-done-handoffs.sh already ran at the top of this
@@ -813,8 +873,11 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 continue
             fi
             # Observed-in evidence-base check (protocol v4, ADR-0015): normalize the
-            # sender's SHA and accept an ancestor of the resolved base. Equality fails
-            # whenever the base advances; ancestor check keeps the field useful.
+            # sender's SHA and accept an ancestor of (or equal to) the resolved base.
+            # Equality handles the common case; ancestor check keeps the field useful
+            # when the base has advanced past the observation. Descendants are rejected
+            # because evidence observed ahead of the cut base is not present in the
+            # worktree the recipient will run in.
             observed_sha="$(observed_in_sha "$f")"
             if [ -n "$observed_sha" ]; then
                 observed_full="$(git -C "$root" rev-parse --verify --quiet "$observed_sha^{commit}" 2>/dev/null || true)"
@@ -867,8 +930,9 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     rm -f "$claim"
                     continue
                 fi
-                if [ "$observed_full" != "$base_full" ] && ! git -C "$root" merge-base --is-ancestor "$observed_full" "$base_full" 2>/dev/null; then
-                    echo "FAIL  [$cli] $rel — evidence-base mismatch (Observed-in: $observed_sha [$observed_full], base $base: $base_full; not an ancestor)"
+                if [ "$observed_full" != "$base_full" ] && \
+                   ! git -C "$root" merge-base --is-ancestor "$observed_full" "$base_full" 2>/dev/null; then
+                    echo "FAIL  [$cli] $rel — evidence-base mismatch (Observed-in: $observed_sha [$observed_full], base $base: $base_full; not an ancestor of the cut base)"
                     EXEC_FAILED=$((EXEC_FAILED+1))
                     ts=$(date -u +%Y%m%d%H%M%S)
                     report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"

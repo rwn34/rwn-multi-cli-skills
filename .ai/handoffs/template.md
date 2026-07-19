@@ -1,8 +1,8 @@
 # <Task title — one short clear line>
 Status: OPEN
-Sender: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
-Recipient: <claude-cockpit | kimai-cockpit | claude-auto | kimai-auto | kiro-auto | opencode-auto>
-Owner: <same six-actor identity>  # optional but recommended: who currently owns this handoff
+Sender: <claude-cockpit | kimi-cockpit | kiro-cockpit | opencode-cockpit | claude | kimi | kiro | opencode>
+Recipient: <claude-cockpit | kimi-cockpit | kiro-cockpit | opencode-cockpit | claude | kimi | kiro | opencode>
+Owner: <same eight-actor identity>  # optional but recommended: who currently owns this handoff
 Created: YYYY-MM-DD HH:MM (UTC+7)
 Auto: yes
 Risk: <A | B | C>
@@ -35,13 +35,13 @@ Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
                   Missing Risk = treated as C.
      Evidence:  = VERIFIED (default) or HYPOTHESIS. HYPOTHESIS holds auto-dispatch.
      Observed-in: = <branch>@<sha>; required when asserting file-level facts.
-     Sender/Recipient/Owner use the six-actor identity (claude-cockpit,
-     kimai-cockpit, claude-auto, kimai-auto, kiro-auto, opencode-auto).
+     Sender/Recipient/Owner use the eight-actor identity (claude-cockpit,
+     kimi-cockpit, kiro-cockpit, opencode-cockpit, claude, kimi, kiro, opencode).
      Parallel fan-out: do NOT put aggregation logic inside child return
      handoffs. Each child writes its result and returns to the aggregator's
-     open queue (Status: OPEN). A separate aggregator handoff then collects
-     all returns and decides the next step. Inline aggregation in children
-     causes race-to-done when children run in parallel.
+     own open queue (Status: OPEN). A separate aggregator handoff then collects
+     all returns from that queue and decides the next step. Inline aggregation
+     in children causes race-to-done when children run in parallel.
 -->
 
 <!--
@@ -82,7 +82,7 @@ conventions. Delete this section if not applicable.>
 if the surrounding system changes. 1-2 sentences.>
 
 ## Activity log template
-    ## YYYY-MM-DD HH:MM (UTC+7) - <six-actor identity, e.g. kimai-auto>
+    ## YYYY-MM-DD HH:MM (UTC+7) - <eight-actor identity, e.g. kimi>
     - Action: <summary — include the handoff filename, e.g. "per handoff 202607081200-slug">
     - Files: <paths touched, or "-">
     - Decisions: <non-obvious choices, or "-">

@@ -333,11 +333,12 @@ race hazard and is prohibited.
 2. **Child handoffs** (e.g. `to-kimi/open/…-echo.md`,
    `to-kiro/open/…-echo.md`, `to-opencode/open/…-echo.md`) do ONE
    thing, write their result, and return a simple handoff to
-   `to-<aggregator>/open/` (usually `to-claude/open/`). They do NOT wait
-   for siblings and do NOT decide what happens next.
+   `to-<aggregator>/open/` — the **aggregator's own queue**, not a fixed
+   `to-claude/` default. They do NOT wait for siblings and do NOT decide what
+   happens next.
 3. **Aggregator handoff** (e.g. `to-opencode/open/…-aggregate.md`) reads all
-   child returns, decides the next step, and emits the final handoff to the
-   target cockpit/auto actor.
+   child returns from its own `open/` queue, decides the next step, and emits
+   the final handoff to the target cockpit/auto actor.
 
 Why this shape: if two children both try to emit the "final" handoff, one
 overwrites the other or the dispatcher queues conflicting next steps. Keeping

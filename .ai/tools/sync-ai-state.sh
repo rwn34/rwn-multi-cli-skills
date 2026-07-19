@@ -160,11 +160,27 @@ PY
 }
 
 # Compute a stable manifest: one line per file, "<sha256>  <rel-path>".
-# Output is sorted by path.
+# Output is sorted by path. Files that disappear or become unreadable between
+# find and hash (Windows lock/race during concurrent snapshots, antivirus, or
+# a CLI child still writing) are skipped with a warning rather than producing
+# a corrupt manifest line or aborting the whole snapshot/sync-back.
 manifest_for() {
     local dir="$1"
     ( cd "$dir" && while IFS= read -r -d '' f; do
-        printf '%s  %s\n' "$(sha256sum "$f" | awk '{print $1}')" "${f#./}"
+        if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+            warn "manifest skipped unreadable file: ${f#./}"
+            continue
+        fi
+        local hash
+        hash="$(sha256sum "$f" 2>/dev/null | awk '{print $1}')" || {
+            warn "manifest skipped unhashable file: ${f#./}"
+            continue
+        }
+        if [ -z "$hash" ]; then
+            warn "manifest skipped empty hash: ${f#./}"
+            continue
+        fi
+        printf '%s  %s\n' "$hash" "${f#./}"
     done < <(find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null) | LC_ALL=C sort -k2 )
 }
 
@@ -204,7 +220,8 @@ cmd_snapshot() {
         fi
         if grep -q "file changed as we read it" "$tarerr" 2>/dev/null; then
             warn "snapshot tar race on attempt $attempt; retrying..."
-            rm -rf "$tmpdst"/* 2>/dev/null || true
+            safe_rm_rf "$tmpdst"
+            mkdir -p "$tmpdst"
             sleep 1
             continue
         fi

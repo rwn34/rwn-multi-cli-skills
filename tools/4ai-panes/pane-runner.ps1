@@ -372,6 +372,20 @@ function Resolve-DefaultBase {
     param([string]$ProjectDir)
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+
+    # If local main is strictly ahead of origin/main, prefer it so that
+    # Observed-in: main@HEAD works after sync-ai-state auto-commits advance
+    # local main past the remote (no push required).
+    function Local-Main-If-Ahead {
+        $localMain = git -C $ProjectDir rev-parse --verify --quiet 'main^{commit}' 2>$null
+        $originMain = git -C $ProjectDir rev-parse --verify --quiet 'origin/main^{commit}' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $localMain -and $originMain -and ($localMain -ne $originMain)) {
+            git -C $ProjectDir merge-base --is-ancestor $originMain $localMain *>$null
+            if ($LASTEXITCODE -eq 0) { return 'main' }
+        }
+        return $null
+    }
+
     try {
         git -C $ProjectDir fetch origin *>$null
         # Fetch failure is not fatal — stale cached refs are still declared bases.
@@ -381,7 +395,13 @@ function Resolve-DefaultBase {
         if ($rc -eq 0 -and $sym) {
             $sym = $sym -replace '^refs/remotes/', ''
             git -C $ProjectDir rev-parse --verify --quiet "$sym^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $sym }
+            if ($LASTEXITCODE -eq 0) {
+                if ($sym -eq 'origin/main') {
+                    $ahead = Local-Main-If-Ahead
+                    if ($ahead) { return $ahead }
+                }
+                return $sym
+            }
         }
 
         # No cached origin/HEAD. Best-effort auto-detect over the network, but never
@@ -392,12 +412,24 @@ function Resolve-DefaultBase {
         if ($rc -eq 0 -and $sym) {
             $sym = $sym -replace '^refs/remotes/', ''
             git -C $ProjectDir rev-parse --verify --quiet "$sym^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $sym }
+            if ($LASTEXITCODE -eq 0) {
+                if ($sym -eq 'origin/main') {
+                    $ahead = Local-Main-If-Ahead
+                    if ($ahead) { return $ahead }
+                }
+                return $sym
+            }
         }
 
         foreach ($candidate in @('origin/main', 'main', 'HEAD')) {
             git -C $ProjectDir rev-parse --verify --quiet "$candidate^{commit}" *>$null
-            if ($LASTEXITCODE -eq 0) { return $candidate }
+            if ($LASTEXITCODE -eq 0) {
+                if ($candidate -eq 'origin/main') {
+                    $ahead = Local-Main-If-Ahead
+                    if ($ahead) { return $ahead }
+                }
+                return $candidate
+            }
         }
     } finally {
         $ErrorActionPreference = $prevEAP
@@ -488,9 +520,23 @@ function Ensure-DeclaredBaseBranchReal {
             Write-Host "  WARN: git fetch origin failed in $WtPath - using cached '$Base'" -ForegroundColor Yellow
         }
 
-        git rev-parse --verify --quiet $Base *> $null
+        # Resolve the base ref in the PRIMARY checkout. Worktrees share
+        # remote-tracking refs but local branch visibility can vary; a local
+        # 'main' may resolve in the project root but not inside the worktree.
+        # Use the commit SHA for all worktree operations so the branch is cut
+        # from the exact declared base.
+        $wtContainer = Split-Path -Parent $WtPath           # .../.wt/<project>
+        $projectName = Split-Path -Leaf $wtContainer        # <project>
+        $parentDir = Split-Path -Parent $wtContainer        # parent of .wt
+        $projectDir = Join-Path $parentDir $projectName     # primary checkout
+        $baseSha = git -C $projectDir rev-parse --verify --quiet "$Base^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $baseSha) {
+            Write-Host "  ERROR: declared base '$Base' does not resolve in $projectDir (no network + no local cache?)" -ForegroundColor Red
+            return $false
+        }
+        git rev-parse --verify --quiet "$baseSha^{commit}" *> $null
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  ERROR: declared base '$Base' does not resolve in $WtPath (no network + no local cache?)" -ForegroundColor Red
+            Write-Host "  ERROR: declared base '$Base' ($baseSha) is not reachable in $WtPath" -ForegroundColor Red
             return $false
         }
 
@@ -506,9 +552,9 @@ function Ensure-DeclaredBaseBranchReal {
         # too (verified empirically).
         git show-ref --verify --quiet "refs/heads/$branch" *> $null
         if ($LASTEXITCODE -ne 0) {
-            git branch $branch $Base *> $null
+            git branch $branch $baseSha *> $null
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "  ERROR: could not create branch $branch at $Base in $WtPath" -ForegroundColor Red
+                Write-Host "  ERROR: could not create branch $branch at $Base ($baseSha) in $WtPath" -ForegroundColor Red
                 return $false
             }
         }

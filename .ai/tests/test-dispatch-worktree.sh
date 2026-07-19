@@ -194,7 +194,8 @@ rm -f "$WORK/.wt/project/opencode"   # clear the induced failure for later tests
 rm -f "$PROJECT/.ai/handoffs/to-opencode/open/202607110003-t3.md"  # don't let it dispatch in later tests
 
 # ======================================================================
-# 4. Branch is cut from the DECLARED base (origin/main), not ambient HEAD.
+# 4. Branch is cut from the DECLARED base (origin/main or local main if ahead),
+# not ambient HEAD.
 # ======================================================================
 # Put a decoy commit on a decoy branch and check it out in the PRIMARY
 # checkout, simulating "whatever HEAD happens to be" at dispatch time.
@@ -210,6 +211,9 @@ DECOY_SHA="$(git -C "$PROJECT" rev-parse HEAD)"
 git -C "$PROJECT" checkout --quiet main
 
 mk_handoff kimi 202607110004-t4
+# Capture local main BEFORE dispatch: sync-back may auto-commit .ai/ changes
+# and advance local main while the dispatcher runs.
+LOCAL_MAIN_BEFORE_T4="$(git -C "$PROJECT" rev-parse main 2>/dev/null)"
 run_dispatcher --only kimi >/dev/null 2>&1
 
 wt_kimi="$WORK/.wt/project/kimi"
@@ -217,7 +221,10 @@ if [ -d "$wt_kimi" ]; then
     branch_head="$(git -C "$wt_kimi" rev-parse "exec/kimi/202607110004-t4" 2>/dev/null)"
     main_head="$(git -C "$PROJECT" rev-parse origin/main 2>/dev/null)"
     check "test4: exec/kimi/<slug> branch exists" "$([ -n "$branch_head" ] && echo 0 || echo 1)"
-    check "test4: exec/kimi/<slug> was cut from origin/main, not the decoy branch" "$([ "$branch_head" = "$main_head" ] && echo 0 || echo 1)"
+    # The dispatcher may cut from origin/main or from local main when local main
+    # has advanced past origin/main (e.g. sync-ai-state auto-commits). The
+    # invariant is that the branch is NOT cut from the decoy ambient HEAD.
+    check "test4: exec/kimi/<slug> was cut from main-line base, not the decoy branch" "$([ "$branch_head" = "$main_head" ] || [ "$branch_head" = "$LOCAL_MAIN_BEFORE_T4" ] && echo 0 || echo 1)"
     check "test4: decoy commit is NOT an ancestor of the dispatched branch" "$(git -C "$wt_kimi" merge-base --is-ancestor "$DECOY_SHA" "exec/kimi/202607110004-t4" 2>/dev/null; [ $? -ne 0 ] && echo 0 || echo 1)"
 else
     check "test4: kimi worktree exists" 1
@@ -332,7 +339,7 @@ git -C "$PROJECT_MAIN" push --quiet origin main
 git -C "$PROJECT_MAIN" update-ref refs/remotes/origin/main "${LATEST_MAIN}~1"
 git -C "$PROJECT_MAIN" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/does-not-exist
 
-mk_handoff_for "$PROJECT_MAIN" kimi 202607110004-t4d
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110004-t4d "Base: origin/main"
 (
     cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
 ) >"$LOGS/t4d-dispatcher.out" 2>&1
@@ -663,6 +670,29 @@ check "v4-4c: dispatcher reports no evidence-base mismatch" "$(echo "$out_v44c" 
 check "v4-4c: kimi stub was invoked" "$(grep -q '202607110014c-v4-observed-ancestor' "$LOGS/kimi.log" && echo 0 || echo 1)"
 rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014c-v4-observed-ancestor.md"
 
+# ---- v4-4d. Observed-in main@HEAD dispatches when local main is ahead of origin/main ----
+# Regression for the sync-ai-state auto-commit case: local main advances past origin/main
+# and the sender records Observed-in: main@HEAD. The dispatcher must cut from local main,
+# not origin/main, so the evidence base matches without requiring a push first.
+git -C "$PROJECT_MAIN" checkout --quiet main
+LOCAL_AHEAD_SHA_BEFORE="$(git -C "$PROJECT_MAIN" rev-parse main)"
+echo "local ahead content" > "$PROJECT_MAIN/local-ahead.txt"
+git -C "$PROJECT_MAIN" add local-ahead.txt
+git -C "$PROJECT_MAIN" commit --quiet -m "advance local main past origin/main for v4-4d"
+mk_handoff_for "$PROJECT_MAIN" kimi 202607110014d-v4-observed-local-ahead "Observed-in: main@HEAD"
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kimi
+) >"$LOGS/t4-v44d-dispatcher.out" 2>&1
+rc_v44d=$?
+out_v44d="$(cat "$LOGS/t4-v44d-dispatcher.out")"
+check "v4-4d: local-main-ahead Observed-in dispatches (exit 0)" "$([ "$rc_v44d" -eq 0 ] && echo 0 || echo 1)"
+check "v4-4d: dispatcher reports no evidence-base mismatch" "$(echo "$out_v44d" | grep -qv 'evidence-base mismatch' && echo 0 || echo 1)"
+check "v4-4d: dispatcher cut from local main, not origin/main" "$(echo "$out_v44d" | grep -q 'base: main)' && echo 0 || echo 1)"
+check "v4-4d: kimi stub was invoked" "$(grep -q '202607110014d-v4-observed-local-ahead' "$LOGS/kimi.log" && echo 0 || echo 1)"
+rm -f "$PROJECT_MAIN/.ai/handoffs/to-kimi/open/202607110014d-v4-observed-local-ahead.md"
+# Push the local-ahead commit so later tests start from a clean synced state.
+git -C "$PROJECT_MAIN" push --quiet origin main
+
 # ---- v4-5. Evidence: HYPOTHESIS + Risk: C is a lint error ----
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md" <<'EOF'
 # HYPOTHESIS + Risk C lint test
@@ -742,6 +772,46 @@ check "--one: second handoff stays OPEN" "$([ -f "$PROJECT/.ai/handoffs/to-kimi/
 # Clean up.
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110021-one-a.md" \
       "$PROJECT/.ai/handoffs/to-kimi/open/202607110021-one-b.md"
+
+# ==============================================================================
+# --handoff mode: dispatch a specific handoff by path when multiple are open.
+# ==============================================================================
+rm -f "$LOGS/kimi.log"
+mk_handoff kimi 202607110022-handoff-a
+mk_handoff kimi 202607110022-handoff-b
+out_handoff="$(run_dispatcher --only kimi --handoff .ai/handoffs/to-kimi/open/202607110022-handoff-b.md 2>&1)"
+rc_handoff=$?
+check "--handoff: dispatcher exits 0" "$([ "$rc_handoff" -eq 0 ] && echo 0 || echo 1)"
+if [ -f "$LOGS/kimi.log" ]; then
+    handoff_count="$(grep -cE '^args=.*202607110022-handoff-b' "$LOGS/kimi.log")"
+else
+    handoff_count=0
+fi
+check "--handoff: only the requested handoff dispatched (count=$handoff_count)" "$([ "$handoff_count" -eq 1 ] && echo 0 || echo 1)"
+check "--handoff: other handoff stays OPEN" "$([ -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110022-handoff-a.md" ] && echo 0 || echo 1)"
+# Clean up.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110022-handoff-a.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110022-handoff-b.md"
+
+# ==============================================================================
+# --handoff basename mode: dispatch a specific handoff by basename.
+# ==============================================================================
+rm -f "$LOGS/kimi.log"
+mk_handoff kimi 202607110023-base-a
+mk_handoff kimi 202607110023-base-b
+out_base="$(run_dispatcher --only kimi --handoff 202607110023-base-a.md 2>&1)"
+rc_base=$?
+check "--handoff basename: dispatcher exits 0" "$([ "$rc_base" -eq 0 ] && echo 0 || echo 1)"
+if [ -f "$LOGS/kimi.log" ]; then
+    base_count="$(grep -cE '^args=.*202607110023-base-a' "$LOGS/kimi.log")"
+else
+    base_count=0
+fi
+check "--handoff basename: only the requested handoff dispatched (count=$base_count)" "$([ "$base_count" -eq 1 ] && echo 0 || echo 1)"
+check "--handoff basename: other handoff stays OPEN" "$([ -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110023-base-b.md" ] && echo 0 || echo 1)"
+# Clean up.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110023-base-a.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110023-base-b.md"
 
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
