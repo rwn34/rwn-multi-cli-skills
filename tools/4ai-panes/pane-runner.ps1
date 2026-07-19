@@ -631,7 +631,7 @@ function Restore-DispatchGuardEnv {
 # onto the pipeline, so the CLI's chatter never leaks into a caller's return
 # value; only the exit code below is returned. Returns the child's exit code.
 $script:InvokeCli = {
-    param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path)
+    param([string]$CliName, [string]$Prompt, [string]$Cwd = (Get-Location).Path, [int]$TimeoutSeconds = 0)
     # argv array: [0] = exe, [1..] = args. The untrusted $Prompt is one element,
     # invoked via the call operator (& $exe @args) so it is NEVER re-parsed as a
     # command string (was Invoke-Expression - a filename-to-RCE hole).
@@ -639,6 +639,86 @@ $script:InvokeCli = {
     $exe  = $argv[0]
     $rest = @($argv | Select-Object -Skip 1)
     Write-Host "  > (cwd=$Cwd) $exe $($rest -join ' ')" -ForegroundColor DarkGray
+
+    # -- Timeout path: some CLIs (opencode run --auto) do not self-exit after one
+    # prompt. Without a hard cap the pane runner blocks forever and stops polling.
+    if ($TimeoutSeconds -gt 0) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        Push-Location $Cwd
+        $prevLC_ALL = $env:LC_ALL
+        $prevLANG = $env:LANG
+        $env:LC_ALL = 'C.UTF-8'
+        $env:LANG = 'C.UTF-8'
+        $prevDispatch = Enable-DispatchGuardEnv
+        $capturePath = $script:CliOutputCapturePath
+        $outJob = $null
+        $errJob = $null
+        $proc = $null
+        try {
+            # Redirect stdout/stderr to separate temp files (PowerShell's
+            # Start-Process rejects the same path for both). Stream each file
+            # to the host in a background job so the pane stays visible, then
+            # merge stderr into stdout so L2 outcome classification can read
+            # the combined tail.
+            $outPath = [System.IO.Path]::GetTempFileName()
+            $errPath = "$outPath.err"
+            if (-not $capturePath) { $capturePath = $outPath }
+            $proc = Start-Process -FilePath $exe -ArgumentList $rest -WorkingDirectory $Cwd `
+                -NoNewWindow -PassThru -RedirectStandardOutput $outPath -RedirectStandardError $errPath
+            $outJob = Start-Job -ScriptBlock {
+                param($Path)
+                Get-Content -Path $Path -Wait -Tail 1000 | ForEach-Object { Write-Host $_ }
+            } -ArgumentList $outPath
+            $errJob = Start-Job -ScriptBlock {
+                param($Path)
+                Get-Content -Path $Path -Wait -Tail 1000 | ForEach-Object { Write-Host $_ }
+            } -ArgumentList $errPath
+            $timeoutMs = $TimeoutSeconds * 1000
+            $exited = $proc.WaitForExit($timeoutMs)
+            if (-not $exited) {
+                Write-Host "  == TIMEOUT [$CliName] invocation exceeded ${TimeoutSeconds}s; terminating child tree ==" -ForegroundColor Yellow
+                Stop-CliProcessTree -RootPid $proc.Id
+                return $script:CliTimeoutExitCode
+            }
+            # Brief pause so the stream jobs can emit the final lines.
+            Start-Sleep -Milliseconds 500
+            return $proc.ExitCode
+        } finally {
+            if ($outJob) {
+                Stop-Job $outJob -ErrorAction SilentlyContinue
+                Remove-Job $outJob -ErrorAction SilentlyContinue
+            }
+            if ($errJob) {
+                Stop-Job $errJob -ErrorAction SilentlyContinue
+                Remove-Job $errJob -ErrorAction SilentlyContinue
+            }
+            Restore-DispatchGuardEnv -Previous $prevDispatch
+            Pop-Location
+            $ErrorActionPreference = $prevEAP
+            $env:LC_ALL = $prevLC_ALL
+            $env:LANG = $prevLANG
+            # Merge stderr into stdout capture so the tail classifier sees both.
+            if ($errPath -and (Test-Path $errPath)) {
+                try {
+                    Get-Content -Path $errPath -Raw -ErrorAction SilentlyContinue | `
+                        Add-Content -Path $outPath -Encoding utf8 -ErrorAction SilentlyContinue
+                } catch {}
+            }
+            if ($capturePath -and $outPath -and $capturePath -ne $outPath -and (Test-Path $outPath)) {
+                Move-Item -Path $outPath -Destination $capturePath -Force -ErrorAction SilentlyContinue
+            }
+            if ($errPath -and (Test-Path $errPath)) {
+                Remove-Item -Path $errPath -Force -ErrorAction SilentlyContinue
+            }
+            # Clean up the temp capture if the pane-runner did not request one.
+            if ($capturePath -eq $outPath -and (Test-Path $outPath)) {
+                Remove-Item -Path $outPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    # -- Non-timeout path: keep the original behavior exactly. --
     # A native CLI's stderr is normal progress streaming, not a fatal error. Under
     # $ErrorActionPreference='Stop' the 2>&1-merged stderr record is promoted to a
     # terminating NativeCommandError, which would unwind the whole supervisor loop
@@ -1417,8 +1497,9 @@ function Invoke-HandoffRun {
             # exceed the supervisor's stale threshold and a stale heartbeat triggers a
             # duplicate-pane relaunch.
             $hbJob = Start-FleetHeartbeatJob -ProjectDir $ProjectDir -CliName $CliName -State 'running'
+            $invokeTimeout = Get-CliInvocationTimeoutSeconds -CliName $CliName
             try {
-                $cliExit = & $script:InvokeCli $CliName $prompt $wtPath
+                $cliExit = & $script:InvokeCli $CliName $prompt $wtPath $invokeTimeout
             } finally {
                 Stop-FleetHeartbeatJob
             }
@@ -1531,6 +1612,43 @@ function Assert-WorktreeFresh {
 $script:FleetHeartbeatStaleSeconds = 90   # 3x default 10s poll + generous margin
 $script:CliOutputCapturePath = $null       # set by Start-PaneRunner; $null disables tee
 $script:LastCliExitCode = 0                # set by Invoke-HandoffRun after each CLI invocation
+
+# Per-CLI invocation timeout (seconds). 0 = no timeout (backward compatible).
+# The pane runner blocks synchronously on the CLI; a CLI that enters an
+# interactive loop (e.g. opencode run --auto) would stall polling forever.
+# A timeout kills the child tree, returns a sentinel exit code, and lets
+# the continue mechanism retry.
+$script:CliInvocationTimeoutSeconds = 0
+$script:CliInvocationTimeoutDefaults = @{
+    # opencode run --auto does not self-exit after one prompt; cap it so the
+    # pane can poll again. The continue prompt resumes unfinished work.
+    'opencode' = 600
+    # Claude, Kimi and Kiro headless commands exit reliably after the prompt.
+    'claude'   = 0
+    'kimi'     = 0
+    'kiro'     = 0
+}
+$script:CliTimeoutExitCode = 124
+
+function Get-CliInvocationTimeoutSeconds {
+    param([string]$CliName)
+    if ($script:CliInvocationTimeoutSeconds -gt 0) { return $script:CliInvocationTimeoutSeconds }
+    $def = $script:CliInvocationTimeoutDefaults[$CliName]
+    if ($def -and $def -gt 0) { return $def }
+    return 0
+}
+
+function Stop-CliProcessTree {
+    param([int]$RootPid)
+    # Recursively terminate descendant processes first so children are not
+    # left orphaned when the parent dies.
+    try {
+        Get-WmiObject Win32_Process -Filter "ParentProcessId=$RootPid" -ErrorAction SilentlyContinue | ForEach-Object {
+            Stop-CliProcessTree -RootPid $_.ProcessId
+        }
+        Stop-Process -Id $RootPid -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
 
 function Get-FleetHeartbeatDir {
     $localAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $HOME 'AppData\Local' }

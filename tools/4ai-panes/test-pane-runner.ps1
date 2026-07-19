@@ -417,7 +417,11 @@ $brContent = Get-Content -Path $brFile.FullName -Raw
 Assert-Equal $true ($brContent -match '(?m)^Sender:\s*kiro-auto\s*$') 'br: final-review sender is kiro-auto'
 Assert-Equal $true ($brContent -match '(?m)^Recipient:\s*claude-auto\s*$') 'br: final-review recipient is claude-auto'
 
-Remove-Item -Path $emitWork -Recurse -Force -ErrorAction SilentlyContinue
+try {
+    Remove-Item -Path $emitWork -Recurse -Force -ErrorAction SilentlyContinue
+} catch {
+    Write-Warning "Could not remove test emit workspace '$emitWork': $_"
+}
 
 # -- (p) REAL invoke path: a native child that writes stderr AND exits non-zero --
 #     This is the regression the mocked tests can't see. We drive the actual
@@ -1074,6 +1078,26 @@ ${function:Get-HeadlessCmd} = $origHeadlessAn
 Assert-Equal 7 $anCode 'an: child spawned by real InvokeCli sees LC_ALL=C.UTF-8 and LANG=C.UTF-8 (exit 7)'
 Assert-Equal $false (Test-Path Env:\LC_ALL) 'an: LC_ALL removed from runner env after the call'
 Assert-Equal $false (Test-Path Env:\LANG) 'an: LANG removed from runner env after the call'
+
+# -- (ao) REAL invoke path: timeout kills a hung child and returns sentinel 124. --
+#     opencode run --auto does not self-exit after one prompt; without a hard cap
+#     the pane runner would block forever and never poll again.
+$origHeadlessAo = ${function:Get-HeadlessCmd}
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('powershell', '-NoProfile', '-Command', 'Start-Sleep -Seconds 10') }
+$aoStart = Get-Date
+$aoCapture = Join-Path $env:TEMP ("pane-runner-ao-capture-" + [guid]::NewGuid().ToString('N') + ".log")
+$script:CliOutputCapturePath = $aoCapture
+try {
+    $aoCode = & $script:RealInvokeCli 'opencode' 'ignored-prompt' (Get-Location).Path 2
+    $aoElapsed = (Get-Date) - $aoStart
+    Assert-Equal $script:CliTimeoutExitCode $aoCode 'ao: timeout path returns sentinel 124'
+    Assert-Equal $true ($aoElapsed.TotalSeconds -lt 8) 'ao: timeout killed child before 10s elapsed'
+    Assert-Equal $true (Test-Path $aoCapture) 'ao: capture file was written'
+} finally {
+    $script:CliOutputCapturePath = $null
+    Remove-Item -Path $aoCapture -Force -ErrorAction SilentlyContinue
+    ${function:Get-HeadlessCmd} = $origHeadlessAo
+}
 
 # -- (an-at) FLAT-INSTALL TOPOLOGY: the deployed shape, which was NEVER tested. --
 #
