@@ -1,3 +1,8 @@
+## 2026-07-19 11:57 (UTC+7) - kimi
+- Action: Land dispatcher hardening (--handoff targeting, local-main-ahead base, bare owner identities) and sync-ai-state snapshot-race hardening; commit/push to main and sync .rwn-auto/.
+- Files: .ai/tools/dispatch-handoffs.sh, .ai/tools/sync-ai-state.sh, .ai/handoffs/README.md, .ai/handoffs/template.md, .ai/tests/test-dispatch-worktree.sh, tools/4ai-panes/pane-runner.ps1
+- Decisions: Pushed directly to main (fleet-executed, pre-approved); pane-runner.ps1 cleanup error treated as environmental because functional tests passed.
+
 ## 2026-07-19 15:04 (UTC+7) - kimi-cockpit
 - Action: Closed the v6 fan-out test chain end-to-end in the interactive cockpit session. Verified all three child returns (kimi-echo, kiro-echo, opencode-echo) exist in to-claude/done/, set the final handoff Status: DONE, and moved it to to-kimi-cockpit/done/. The chain exercised the snapshot-copy dispatcher, parallel child dispatches, opencode aggregation, and cockpit finalization.
 - Files: .ai/handoffs/to-kimi-cockpit/done/202607190630-test-chain-v6-final.md
