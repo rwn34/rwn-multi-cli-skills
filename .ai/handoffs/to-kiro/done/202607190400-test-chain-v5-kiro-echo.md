@@ -1,5 +1,5 @@
 # Test chain v5 — kiro-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kiro-auto
 Owner: kiro-auto
@@ -25,3 +25,10 @@ Write your marker file, then return to claude-auto for aggregation.
    - Observed-in: main@06178f5, Evidence: VERIFIED
    - Body instructing claude-auto to check all three markers and create the final handoff to kimi-cockpit if all markers exist and the final handoff is absent.
 3. Self-retire this original handoff to `.ai/handoffs/to-kiro/done/`.
+
+## Completion
+- Wrote `.ai/reports/test-chain-v5-kiro.md`.
+- Created return handoff `.ai/handoffs/to-claude/open/202607190400-test-chain-v5-kiro-return.md`.
+- At check time only the kiro marker existed (kimai/opencode markers absent),
+  so the return handoff defers final-handoff creation per its own branching
+  logic.
