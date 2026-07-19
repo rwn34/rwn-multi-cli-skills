@@ -1,5 +1,5 @@
 # Test chain v5 — final aggregation for kimi-cockpit
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kimi-cockpit
 Owner: kimi-cockpit

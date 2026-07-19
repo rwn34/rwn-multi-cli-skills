@@ -1,5 +1,5 @@
 # Test chain v5 — opencode-auto return
-Status: OPEN
+Status: DONE
 Sender: opencode-auto
 Recipient: claude-auto
 Owner: claude-auto
@@ -30,6 +30,9 @@ kimi-cockpit already exists.
 ## Report back with
 - Which markers were present at check time.
 - Whether the final handoff was created or deferred.
+
+## Report
+Retired manually by kimi-cockpit after the v5 chain completed. The final aggregation handoff was already created by claude-auto while processing the kiro-auto return, so no additional final handoff was needed.
 
 ## When complete
 Recipient self-retires to `.ai/handoffs/to-claude/done/`.
