@@ -1,3 +1,33 @@
+## 2026-07-19 07:09 (UTC+7) — claude-code
+- Action: Processed to-claude handoff 202607182359-test-chain-v2-root (claude-auto role). Created three sibling echo child handoffs (ts=202607190001) to kimi/kiro/opencode, self-retired root to done/, dispatcher dry-run listed all three. Ran `dispatch-handoffs.sh --exec` to execute the chain live — this REPRODUCED the very regression the test names: kimi's worktree sync-back deleted the still-pending to-kiro and to-opencode open echo handoffs ("handoff retirement") before either was dispatched. Verified against the live tree (both gone; kimi marker + return survived). Filed bug handoff to kimai and annotated the retired root with the failed-verification result.
+- Files: .ai/handoffs/to-kimi/open/202607190001-test-chain-v2-kimai-echo.md, .ai/handoffs/to-kiro/open/202607190001-test-chain-v2-kiro-echo.md (deleted by sync-back), .ai/handoffs/to-opencode/open/202607190001-test-chain-v2-opencode-echo.md (deleted by sync-back), .ai/handoffs/to-claude/done/202607182359-test-chain-v2-root.md (moved+annotated), .ai/handoffs/to-kimi/open/202607190008-fix-syncback-cross-recipient-deletion.md
+- Decisions: 06:58 hash-guard fix is incomplete — it protects handoffs CHANGED since snapshot but not unchanged in-flight handoffs addressed to OTHER recipients; sync-back retirement must be scoped to the executor's own to-<self>/ queues. Delegated the fix to kimai (owns sync-ai-state.sh, wrote the fix) as Risk-B; kept Status DONE on the root since assigned steps completed, but flagged the verification as FAILED.
+
+## 2026-07-19 07:04 (UTC+7) - kimi-cli
+- Action: Processed handoff 202607190001-test-chain-v2-kimai-echo and returned aggregation task to claude-auto.
+- Files: .ai/reports/test-chain-v2-kimai.md, .ai/handoffs/to-claude/open/202607190001-test-chain-v2-kimai-return.md, .ai/handoffs/to-kimi/done/202607190001-test-chain-v2-kimai-echo.md
+- Decisions: Logged as kimi-cli per contract; self-retired handoff per v4 protocol.
+
+## 2026-07-19 06:58 (UTC+7) - kimai-cockpit
+- Action: Verified repo is on main with no master default refs; fixed sync-ai-state.sh so worktree sync-back no longer deletes canonical open/review handoffs that changed since the snapshot (closes the caveat where opencode sync-back removed kimai/kiro return handoffs). Added regression test and ran sync-ai-state + dispatch-worktree suites green.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tests/test-sync-ai-state.sh
+- Decisions: Hash-guard the deletion path: only remove a canonical handoff file when its sha256 matches the snapshot manifest, so another actor in-flight handoffs survive.
+
+## 2026-07-19 06:51 (UTC+7) - kimai-cockpit
+- Action: Acknowledged and self-retired closing handoff from claude-cockpit (202607190640-test-chain-close-to-kimi-cockpit). Test chain is now fully closed.
+- Files: .ai/handoffs/to-kimi-cockpit/done/202607190640-test-chain-close-to-kimi-cockpit.md
+- Decisions: No blockers; all three auto markers verified and final claude-cockpit handoff was already DONE.
+
+## 2026-07-19 06:52 (UTC+7) - claude-cockpit
+- Action: Processed final aggregation handoff 202607182336-test-chain-final-to-cockpit: verified all three marker files exist and are correctly formatted, filed closing handoff to kimai-cockpit, self-retired to done/.
+- Files: .ai/reports/test-chain-opencode.md, .ai/reports/test-chain-kiro.md, .ai/reports/test-chain-kimai.md, .ai/handoffs/to-kimi-cockpit/open/202607190640-test-chain-close-to-kimi-cockpit.md, .ai/handoffs/to-claude-cockpit/done/202607182336-test-chain-final-to-cockpit.md (moved from open/)
+- Decisions: -
+
+## 2026-07-19 06:47 (UTC+7) - kimai-cockpit
+- Action: Restored Selector.ps1 "i" install-framework shortcut by syncing tools/4ai-panes/ to ~/.rwn-auto/rwn-4AI-panes/; deleted stale ai-template-install branch; launched end-to-end six-actor test chain.
+- Files: ~/.rwn-auto/rwn-4AI-panes/Selector.ps1, .ai/handoffs/to-claude/open/202607182332-test-chain-root.md, .ai/handoffs/to-claude-cockpit/open/202607182336-test-chain-final-to-cockpit.md, .ai/reports/test-chain-*.md
+- Decisions: Let opencode-auto emit the final claude-cockpit handoff because all three markers were present; left Auto:no final handoff for manual cockpit trigger to kimai-cockpit.
+
 ## 2026-07-19 06:39 (UTC+7) - kimai-auto
 - Action: Processed handoff 202607182336-test-chain-kimai-echo: wrote marker file and return handoff, self-retired.
 - Files: .ai/reports/test-chain-kimai.md, .ai/handoffs/to-claude/open/202607182336-test-chain-kimai-return.md, .ai/handoffs/to-kimi/done/202607182336-test-chain-kimai-echo.md

@@ -1,4 +1,4 @@
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: claude-cockpit
 Owner: claude-auto
@@ -9,7 +9,8 @@ Observed-in: main@3af1e03
 Evidence: VERIFIED
 
 ## Goal
-Aggregate the three framework routing marker files for final verification.
+Aggregate the three framework routing marker files and manually relay the closing
+handoff to `kimai-cockpit`.
 
 ## Steps
 1. Review the three marker files to verify their content matches expectations:
@@ -17,7 +18,13 @@ Aggregate the three framework routing marker files for final verification.
    - `.ai/reports/test-chain-kiro.md` — marker written by kiro-auto
    - `.ai/reports/test-chain-kimai.md` — marker written by kimai-auto
 2. Confirm all markers are present and properly formatted.
-3. Self-retire this handoff to `.ai/handoffs/to-claude/done/` after verification.
+3. Create the closing handoff in `.ai/handoffs/to-kimi-cockpit/open/`:
+   - `Recipient: kimai-cockpit`
+   - `Sender: claude-cockpit`
+   - `Auto: no`
+   - `Risk: A`
+   - Goal: acknowledge completion of the test chain and close the loop.
+4. Self-retire this handoff to `.ai/handoffs/to-claude-cockpit/done/` after step 3.
 
 ## Verification
 - Confirm all three marker files exist and contain expected headers.
@@ -35,6 +42,6 @@ Aggregate the three framework routing marker files for final verification.
 
 ## When complete
 Recipient self-retires: set Status to `DONE`, then move this file to
-`.ai/handoffs/to-claude/done/` yourself once the steps are executed.
+`.ai/handoffs/to-claude-cockpit/done/` yourself once the steps are executed.
 If blocked, leave the file in `open/`, change Status to `BLOCKED`, and append a
 `## Blocker` section with verbatim error messages.

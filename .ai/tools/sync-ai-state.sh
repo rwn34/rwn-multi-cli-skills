@@ -98,11 +98,17 @@ cmd_sync_back() {
     # moves). Never delete .gitkeep files, done/ history, reports, logs, etc.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
-        local rel
+        local rel old_hash canon_hash
+        old_hash="${line%%  *}"
         rel="${line#*  }"
         case "$rel" in
             handoffs/to-*/open/*.md|handoffs/to-*/review/*.md)
                 if [ -e "$canon_ai/$rel" ]; then
+                    canon_hash="$(sha256sum "$canon_ai/$rel" | awk '{print $1}')"
+                    if [ "$canon_hash" != "$old_hash" ]; then
+                        log "sync-back skip delete: $rel (canonical changed since snapshot; not our retirement)"
+                        continue
+                    fi
                     rm -f "$canon_ai/$rel"
                     log "sync-back removed: $rel (handoff retirement)"
                 fi

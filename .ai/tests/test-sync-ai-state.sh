@@ -100,6 +100,21 @@ bash "$SYNC" sync-back "$WT" "$CANON" >/dev/null 2>&1
 out="$(bash "$CHECK" "$CANON/.ai/activity/log.md" 2>&1)"; rc=$?
 check "canonical log passes encoding check after sync-back" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 
+# 9. sync-back does NOT delete a canonical open/review handoff that changed
+#    since the snapshot (prevents one executor from wiping another actor's
+#    in-flight handoff during its own sync-back).
+setup_canon
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+# Another actor changes the open handoff while this executor runs.
+echo 'changed by another actor' > "$CANON/.ai/handoffs/to-kimi/open/h1.md"
+# This executor retires its own copy.
+mkdir -p "$WT/.ai/handoffs/to-kimi/done"
+mv "$WT/.ai/handoffs/to-kimi/open/h1.md" "$WT/.ai/handoffs/to-kimi/done/h1.md"
+out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
+check "sync-back skip-delete changed open handoff exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back preserves changed canonical open handoff" "$([ -f "$CANON/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
+check "sync-back still creates done handoff in canonical" "$([ -f "$CANON/.ai/handoffs/to-kimi/done/h1.md" ] && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1
