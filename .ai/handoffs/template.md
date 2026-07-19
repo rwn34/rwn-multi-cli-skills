@@ -37,6 +37,11 @@ Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
      Observed-in: = <branch>@<sha>; required when asserting file-level facts.
      Sender/Recipient/Owner use the six-actor identity (claude-cockpit,
      kimai-cockpit, claude-auto, kimai-auto, kiro-auto, opencode-auto).
+     Parallel fan-out: do NOT put aggregation logic inside child return
+     handoffs. Each child writes its result and returns to the aggregator's
+     open queue (Status: OPEN). A separate aggregator handoff then collects
+     all returns and decides the next step. Inline aggregation in children
+     causes race-to-done when children run in parallel.
 -->
 
 <!--

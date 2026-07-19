@@ -1,3 +1,28 @@
+## 2026-07-19 08:05 (UTC+7) - kimai-cockpit
+- Action: Acknowledged and self-retired closing handoff 202607190755-test-chain-v3-close-to-kimi-cockpit. The v3 six-actor handoff chain (kimai/kiro/opencode autos → claude-auto → claude-cockpit → kimi-cockpit) is complete.
+- Files: .ai/handoffs/to-kimi-cockpit/done/202607190755-test-chain-v3-close-to-kimi-cockpit.md
+- Decisions: -
+
+## 2026-07-19 07:56 (UTC+7) - claude-cockpit
+- Action: Processed v3 final aggregation handoff 202607190025-test-chain-v3-final-to-cockpit: re-verified all three v3 marker files exist and are correctly formatted (no drift vs summary), filed closing handoff to kimai-cockpit, self-retired to done/.
+- Files: .ai/reports/test-chain-v3-{kimai,kiro,opencode}.md, .ai/handoffs/to-kimi-cockpit/open/202607190755-test-chain-v3-close-to-kimi-cockpit.md, .ai/handoffs/to-claude-cockpit/done/202607190025-test-chain-v3-final-to-cockpit.md (moved from open/)
+- Decisions: -
+
+## 2026-07-19 07:48 (UTC+7) - claude-code
+- Action: Processed test-chain-v3-opencode-return handoff (sibling of the kimai-return already handled at 07:40). Re-verified all three v3 markers exist (kimai/kiro/opencode) by glob and confirmed the final aggregation handoff already exists at to-claude-cockpit/open/. Aggregation already satisfied — did NOT create a duplicate final handoff. Set the return handoff Status DONE with a report section and self-retired it to to-claude/done/ (plain mv delegated to infra-engineer — file was untracked, no history to preserve, no git mv possible).
+- Files: .ai/handoffs/to-claude/done/202607190025-test-chain-v3-opencode-return.md
+- Decisions: Took the "all exist" branch's no-op path — the earlier kimai-return processing already created the final claude-cockpit handoff, so creating a second would be a duplicate. Preserved Observed-in main@3af1e03 (marker existence only, verified by glob).
+
+## 2026-07-19 07:40 (UTC+7) - claude-code
+- Action: Processed test-chain-v3-kimai-return handoff. Verified all three v3 markers exist (kimai/kiro/opencode), took the "all exist" branch: created final aggregation handoff to claude-cockpit, set the return handoff DONE with a report section, and self-retired it to to-claude/done/ (move delegated to infra-engineer — I have no shell).
+- Files: .ai/handoffs/to-claude-cockpit/open/202607190025-test-chain-v3-final-to-cockpit.md, .ai/handoffs/to-claude/done/202607190025-test-chain-v3-kimai-return.md
+- Decisions: Preserved Observed-in main@3af1e03 (test chain, only marker existence asserted, verified by glob+read). Final handoff set Auto:no Risk:B to route to claude-cockpit interactive per the return handoff's instruction to have the cockpit manually create the closing handoff to kimai-cockpit.
+
+## 2026-07-19 07:25 (UTC+7) - opencode-auto
+- Action: Processed test-chain-v3-opencode-echo handoff: wrote marker file, created return handoff to claude-auto, self-retired to done/.
+- Files: .ai/reports/test-chain-v3-opencode.md, .ai/handoffs/to-claude/open/202607190025-test-chain-v3-opencode-return.md, .ai/handoffs/to-opencode/done/202607190025-test-chain-v3-opencode-echo.md
+- Decisions: Preserved Observed-in `main@3af1e03` because this is a simple marker echo; no file-level facts asserted beyond marker existence.
+
 ## 2026-07-19 07:32 (UTC+7) - kiro-auto
 - Action: Processed test-chain-v3-kiro-echo handoff: wrote marker file, ran aggregation check inline (kimai marker exists, opencode v3 marker missing), self-retired the return handoff directly to to-claude/done/ per the "not all exist" branch, self-retired the original handoff to to-kiro/done/.
 - Files: .ai/reports/test-chain-v3-kiro.md, .ai/handoffs/to-claude/done/202607190025-test-chain-v3-kiro-return.md, .ai/handoffs/to-kiro/done/202607190025-test-chain-v3-kiro-echo.md
@@ -429,6 +454,7 @@
 - Action: Completed handoff 202607151138-push-master-review-pipeline (pushed master to origin/master). Cleaned staged changes that blocked the push (files were incorrectly staged), pushed master from the master worktree via git push (bypassed 2 status checks), verified master is now up to date with origin/master, and left .claude/hooks/stop-reminder.sh unstaged as required. Handoff self-retired (Status=DONE, moved to done/).
 - Files: .ai/handoffs/to-opencode/open/202607151138-push-master-review-pipeline.md → .ai/handoffs/to-opencode/done/202607151138-push-master-review-pipeline.md
 - Decisions: Unstaged 6 incorrectly staged files using git reset; pushed master from master worktree using cd to that worktree to execute git push origin master; the push succeeded from 1c6ca08..204c9fe on master, fast-forwarding origin/master. The exec worktree has uncommitted changes but those are unrelated to the stop-reminder hook and not part of this handoff's scope. Verified master worktree has only .claude/hooks/stop-reminder.sh unstaged, matching the handoff requirement.
+
 ## 2026-07-15 18:44 — claude-code
 - Action: Processed handoff 202607151137-update-stop-reminder-for-review-queues. The stop-reminder.sh patch (surface open/+review/ queue counts) is correct and applies clean, but I cannot apply it — .claude/hooks/ is owner-apply-only per path-policy.sh Rule 1.5, which blocks the Edit tool, subagent Write/Edit, AND bash write-commands (git apply) identically, so no delegation route works. Marked the handoff BLOCKED with a verbatim ## Blocker and an owner-action resolution.
 - Files: .ai/handoffs/to-claude/open/202607151137-update-stop-reminder-for-review-queues.md
@@ -571,7 +597,6 @@
 - Decisions: Left `.ai/instructions/operating-prompt/principles.md`'s pre-existing, now-un-hidden drift (23 lines, the log-read-discipline + OpenCode-provider-config content) **uncommitted and untouched** in this worktree — it is real, valuable, unrelated work belonging to the separate open handoff `to-kimi/open/202607131900-skip-worktree-guard-ate-your-ssot-edit`, and committing it here would be scope creep into another CLI's assigned recovery task. Corrected the handoff's own headline evidence where it was already self-corrected (the `principles.md` "work the guard ate" claim) — did not re-litigate; used the handoff's own later evidence (the `av4` regression + the real invisible-edit incident) as the actual basis for removal, which stands on its own.
 - Verification: `powershell.exe -File tools/4ai-panes/test-pane-runner.ps1` → `pane-runner tests: 151 passed, 0 failed`; `bash .claude/hooks/test_hooks.sh` → `write-edit suite: PASS 102/102` + `PASS: 66/66` + `ALL SUITES PASS`; `bash .ai/tools/reverse-write-detector.sh` → `Checked: 39 stable paths, Reverse-writes: 0`; `bash .ai/tools/check-ssot-drift.sh` → `Checked: 24 replicas, Drift: 3` (all 3 are the pre-existing, out-of-scope `operating-prompt/principles.md` drift, reproduced identically with my changes stashed out — not caused by this branch); `git ls-files -v .ai | grep -c "^S"` → `0` in every one of 7 checked worktrees (primary, this worktree, kimi, kiro, opencode, `.wt/claude/claude`, `.wt/claude/opencode`).
 
-
 - Action: Processed handoff `to-claude/202607130451-opencode-provider-config-is-owner-set` → **already DONE; the `open/` entry was a ghost**. The rule (OpenCode's provider/model/API-key config is owner-set and variable — follow it, never switch it) had been landed at 04:05 by an earlier claude-code run and self-retired to `done/`; a stale pre-claim copy (`Status: OPEN`, `Auto: yes`, no `## Completion` block) had reappeared untracked at the `open/` path, so the queue was falsely advertising work. Verified the rule is live in all three landing sites, deleted the ghost, and committed + pushed the two replicas that were still sitting uncommitted on branch `exec/claude/202607130451-…` (`583ed2f`, 4 files, +73/-33 — new remote branch, no PR, master untouched).
 - Files: deleted `.ai/handoffs/to-claude/open/202607130451-…md` (ghost); committed `.claude/skills/operating-prompt/SKILL.md`, `.opencode/contract.md`, handoff `open/`→`done/` rename; `.ai/activity/log.md`
 - Decisions: Deleted rather than re-processed — diff against the `done/` copy showed the ghost's only delta was the stale `Status:`/`Auto:` header and the missing `## Completion` section, i.e. zero unique content; re-executing would have re-landed an already-present rule. Committed **by pathspec**, not from the index, because the index carried an out-of-scope staged deletion from a prior session (`202607130142-deploy-pin…`) that a plain `git commit` would have swept in. Left that staged deletion untouched for its owner. **⚠️ The SSOT itself did not reach git**: `.ai/instructions/operating-prompt/principles.md` carries the skip-worktree bit (`git ls-files -v` → `S`), so its edit is invisible to git and is NOT in the commit or on origin — the two *replicas* are now published asserting a rule whose canonical source is absent from the repo, which inverts CLAUDE.md's "`.ai/instructions/` wins" rule. Did not hand-unset the bit (that is the exact defect the guard-removal work owns); this is the same failure as `to-kimi/open/202607131900-skip-worktree-guard-ate-your-ssot-edit` and closes only when `to-kiro/open/202607131819` lands. Generalized hazard: **any** agent editing one of the ~39 skip-worktree `.ai/` files will see a clean `git status`, believe the change landed, and produce a silently-empty commit for that path.
@@ -693,6 +718,7 @@
 - Action: Processed test handoff 202607142009-test-opencode.md as BLOCKED due to ADR-0004 worktree confinement � the handoff requires writing to C:\Users\rwn34\AppData\Local\Temp\test-handoff-opencode-202607142009.txt, which is outside the executor worktree.
 - Files: �
 - Decisions: The guardrail correctly blocks cross-tree writes � this is a PASS for confinement, not a failure. Left the handoff in open/ with status BLOCKED and a verbatim blocker note per protocol v3.
+
 ## 2026-07-14 20:24 � opencode
 - Action: Attempted to execute test handoff step 1 (write to .ai/tmp/test-handoff-opencode-202607142009.txt) but was blocked by framework-guard � the target path is outside OpenCode's writable lane (.ai/tmp/** is not in the lane; only .ai/activity/log.md, .ai/activity/entries/**, .ai/reports/**, .ai/handoffs/**, .github/** are allowed).
 - Files: .ai/handoffs/to-opencode/open/202607142009-test-opencode.md

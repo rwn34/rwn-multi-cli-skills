@@ -50,6 +50,24 @@ You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
 folders. Outbound handoffs follow the same protocol v3 lifecycle; the recipient
 self-retires on completion.
 
+## Owner delegation — act, don't ask
+
+Owner directive 2026-07-19: the owner is not a software developer and wants the
+framework to reduce their cognitive load, not add confirmation prompts. Routine
+git/GitHub operations are pre-approved for fleet execution without per-action
+owner confirmation: commit, push, PR open/merge, branch creation/deletion,
+worktree removal, tag/version bumps, CI workflow edits, and repo/tree cleanup.
+Do them, then notify the owner concisely after the fact.
+
+Still gate explicitly with the owner:
+- Production deploy / publish / release (Tier C per ADR-0011).
+- Destructive ops on shared history (`push --force`, `reset --hard` on main).
+- Secrets or production-data changes.
+- Genuine blockers or product/design forks where the answer changes the work.
+
+If it's reversible, clearly beneficial, and covered by existing guardrails, do
+it and report — don't ask.
+
 ## Root file policy
 
 The project enforces a strict root-file policy with documented exceptions. See

@@ -1,5 +1,8 @@
 # Test chain v3 — opencode-auto echo marker
-Status: OPEN
+Status: DONE
+Evidence: VERIFIED
+- Marker file created: .ai/reports/test-chain-v3-opencode.md
+- Return handoff created: .ai/handoffs/to-claude/open/202607190025-test-chain-v3-opencode-return.md
 Sender: claude-auto
 Recipient: opencode-auto
 Owner: opencode-auto

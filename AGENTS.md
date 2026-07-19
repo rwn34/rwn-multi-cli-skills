@@ -35,6 +35,26 @@ making Linux assumptions and keeps paying for them — stop.
 **Rule: match the tool to the host.** If you're guessing which shell will run your
 command, you're about to file another incident.
 
+## Owner delegation — git/GitHub mechanics are fleet-executed
+
+Owner directive 2026-07-19: the owner is not a software developer and is
+optimizing answering time, not token spend. Routine git/GitHub operations are
+pre-approved for fleet execution **without per-action owner confirmation**:
+commit, push, PR open/merge, branch creation/deletion, worktree removal,
+tag/version bumps, CI workflow edits, and repo/tree cleanup. Do them, then
+notify the owner concisely after the fact.
+
+What still requires an explicit human gate:
+- **Tier C / production deploy** (per ADR-0011), publish/release of artifacts,
+  destructive ops on shared history (`push --force`, `reset --hard` on main),
+  secrets changes, production data changes.
+- A genuine blocker, a real product/design fork, or anything the owner has
+  explicitly asked to gate.
+
+Rule of thumb: if it's reversible, clearly beneficial, and covered by the
+framework's existing guardrails, do it and report — don't ask. This reinforces
+operating-prompt §8; it does not relax the Tier-C floor.
+
 ## Shared framework
 
 - `.ai/README.md` — full layout explanation
