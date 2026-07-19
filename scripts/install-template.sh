@@ -214,12 +214,43 @@ exclude_runtime_sidecars() {
   fi
 }
 
+# When the installer is launched from inside a now-removed executor worktree,
+# the parent shell may have GIT_DIR / GIT_WORK_TREE / GIT_COMMON_DIR set to the
+# missing worktree gitdir. Those variables override the target repo's .git and
+# make every target git command fail with "not a git repository". Sanitize them
+# as the first thing after entering the target directory.
+sanitize_git_env() {
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_PREFIX
+}
+
+# Remove any nested .git file or directory that cp -R copied from a source
+# directory. Source framework dirs (.ai, .claude, .kimi, .kiro, .opencode)
+# should never contain git repos, but when the installer runs from a worktree
+# whose per-CLI dirs are junctions/symlinks, a nested git worktree can be
+# present (e.g. .claude/worktrees/<name>/.git). If left in place, `git add -A`
+# stages it as a submodule gitlink and corrupts the target repo.
+strip_nested_git() {
+  local dir="$1"
+  [ -d "$dir" ] || return 0
+  local found=0
+  local g
+  # -prune avoids recursing into matched .git dirs; -mindepth 1 keeps us from
+  # removing the target repo root .git if someone accidentally passed it.
+  while IFS= read -r -d '' g; do
+    rm -rf "$g"
+    log "Removed nested git entry from copied tree: ${g#$TARGET/}"
+    found=1
+  done < <(find "$dir" -mindepth 1 -name ".git" -print0 2>/dev/null)
+  [ "$found" -eq 1 ] || true
+}
+
 # ==========================================================================
 # PHASE 0 — Pre-flight
 # ==========================================================================
 phase0() {
   log "=== Phase 0: pre-flight ==="
   cd "$TARGET"
+  sanitize_git_env
 
   # A4: detect update vs fresh install BEFORE any copy touches .ai. An existing
   # .ai/.framework-version means this project was already onboarded — preserve its
@@ -302,6 +333,8 @@ copy_dir() {
   rm -rf "$dst"
   mkdir -p "$(dirname "$dst")"
   cp -R "$src" "$dst"
+  # Nested git repos/worktrees must never become gitlinks in the target.
+  strip_nested_git "$dst"
   track "$rel"
   log "Copied dir: $rel"
 }
@@ -1566,11 +1599,13 @@ EOF
 # ==========================================================================
 # Main
 # ==========================================================================
-phase0
-phase1
-phase2
-phase3
-phase4
-phase5
-phase6
-print_summary
+if [ "${INSTALL_TEMPLATE_LIB:-0}" != "1" ]; then
+  phase0
+  phase1
+  phase2
+  phase3
+  phase4
+  phase5
+  phase6
+  print_summary
+fi
