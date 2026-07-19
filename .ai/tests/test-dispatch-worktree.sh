@@ -716,6 +716,33 @@ check "ADR-0016: new report created in worktree .ai/ synced back to canonical" "
 # Restore the original kimi stub.
 make_stub "kimi" "$LOGS/kimi.log"
 
+# ==============================================================================
+# --one mode: dispatch exactly one handoff even when multiple are open.
+# ==============================================================================
+# Remove the ADR-0016 handoff so it is not picked up before the --one targets.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110020-adr0016-sync.md"
+rm -f "$LOGS/kimi.log"
+mk_handoff kimi 202607110021-one-a
+mk_handoff kimi 202607110021-one-b
+out_one="$(run_dispatcher --only kimi --one 2>&1)"
+rc_one=$?
+check "--one: dispatcher exits 0" "$([ "$rc_one" -eq 0 ] && echo 0 || echo 1)"
+# Exactly one of the two slugs should appear in the log.
+# Count via the args= line so we don't also match branch=.
+if [ -f "$LOGS/kimi.log" ]; then
+    one_count="$(grep -cE '^args=.*202607110021-one-[ab]' "$LOGS/kimi.log")"
+else
+    one_count=0
+fi
+check "--one: exactly one handoff dispatched (count=$one_count)" "$([ "$one_count" -eq 1 ] && echo 0 || echo 1)"
+# The undispatched handoff must remain in open/.
+# (The dispatched handoff also stays open unless the recipient moves it; we
+# only require that one-b was not consumed.)
+check "--one: second handoff stays OPEN" "$([ -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110021-one-b.md" ] && echo 0 || echo 1)"
+# Clean up.
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110021-one-a.md" \
+      "$PROJECT/.ai/handoffs/to-kimi/open/202607110021-one-b.md"
+
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
 # invocation `cd "$root"` must be GONE from the dispatch execution path.

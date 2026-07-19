@@ -18,8 +18,45 @@ set -euo pipefail
 MANIFEST_NAME=".snapshot-manifest"
 
 log()  { echo "[sync-ai-state] $*"; }
+warn() { echo "[sync-ai-state] WARN: $*" >&2; }
 err()  { echo "[sync-ai-state] ERROR: $*" >&2; }
 die()  { err "$*"; exit 1; }
+
+# Remove a path, tolerating the Windows "Device or resource busy" condition
+# that occurs when a dispatched CLI child still holds a handle on the
+# snapshot-copy .ai/ directory after exiting. On failure we rename the path
+# to a stale name and continue; stale names are cleaned up opportunistically.
+safe_rm_rf() {
+    local path="$1"
+    [ -e "$path" ] || return 0
+    local rmerr
+    rmerr="$(mktemp)"
+    if rm -rf "$path" 2>"$rmerr"; then
+        rm -f "$rmerr"
+        return 0
+    fi
+    # Windows lock: rename out of the way so the dispatch can continue.
+    if grep -qi "device or resource busy" "$rmerr" 2>/dev/null; then
+        local stale
+        stale="${path}.stale-$$-$(date -u +%Y%m%d%H%M%S)"
+        warn "$path is busy; renaming to $stale for later cleanup"
+        mv "$path" "$stale" || { cat "$rmerr" >&2; rm -f "$rmerr"; return 1; }
+        rm -f "$rmerr"
+        return 0
+    fi
+    cat "$rmerr" >&2
+    rm -f "$rmerr"
+    return 1
+}
+
+# Opportunistically clean stale directories left by safe_rm_rf. Never fatal.
+cleanup_stale_dirs() {
+    local parent
+    parent="$(dirname "$1")"
+    find "$parent" -maxdepth 1 -type d -name '.ai.stale-*' 2>/dev/null | while IFS= read -r d; do
+        rm -rf "$d" 2>/dev/null || true
+    done
+}
 
 # Merge a worktree activity/log.md into the canonical log. If the worktree
 # dropped canonical history (executor overwrite, encoding round-trip, etc.),
@@ -140,17 +177,47 @@ cmd_snapshot() {
     fi
     [ -d "$src" ] || die "canonical .ai/ missing: $src"
 
-    # Remove any existing worktree .ai/ (junction, dir, stale copy) and recreate.
-    rm -rf "$dst"
-    mkdir -p "$dst"
+    # Clean up any stale dirs left by a previous Windows lock.
+    cleanup_stale_dirs "$dst"
 
-    # Copy all files in one stream. The per-file cp loop used earlier was
-    # pathologically slow on Windows Git-Bash (likely real-time protection
-    # scanning each tiny cp -a invocation) and could hang the dispatcher.
-    # .gitkeep files are omitted: they exist only to keep empty queue dirs in
-    # git, and the worktree snapshot does not need them (directories are still
-    # created; only the empty sentinel files are skipped).
-    tar -C "$src" -cf - --exclude='.gitkeep' . | tar -C "$dst" -xf -
+    # Remove any existing worktree .ai/ (junction, dir, stale copy). If a
+    # Windows process still holds the dir open, safe_rm_rf renames it out of
+    # the way rather than aborting the dispatch.
+    safe_rm_rf "$dst"
+    mkdir -p "$(dirname "$dst")"
+
+    # Stage into a temp dir next to the target and retry if concurrent writers
+    # cause tar to complain. This shortens the critical window and tolerates
+    # the brief races that happen when another executor syncs back at the same
+    # minute. The final mv atomically swaps the temp dir into place.
+    local tmpdst attempt tarerr
+    tmpdst="${dst}.tmp-$$"
+    safe_rm_rf "$tmpdst"
+    mkdir -p "$tmpdst"
+    tarerr="$(mktemp)"
+    attempt=0
+    while [ "$attempt" -lt 3 ]; do
+        attempt=$((attempt+1))
+        rm -f "$tarerr"
+        if tar -C "$src" -cf - --exclude='.gitkeep' . 2>"$tarerr" | tar -C "$tmpdst" -xf - 2>/dev/null; then
+            break
+        fi
+        if grep -q "file changed as we read it" "$tarerr" 2>/dev/null; then
+            warn "snapshot tar race on attempt $attempt; retrying..."
+            rm -rf "$tmpdst"/* 2>/dev/null || true
+            sleep 1
+            continue
+        fi
+        cat "$tarerr" >&2
+        rm -f "$tarerr"
+        safe_rm_rf "$tmpdst"
+        return 1
+    done
+    rm -f "$tarerr"
+    if ! mv "$tmpdst" "$dst"; then
+        safe_rm_rf "$tmpdst"
+        return 1
+    fi
 
     # Record manifest inside the snapshot so it travels with the worktree .ai/.
     manifest_for "$dst" > "$dst/$MANIFEST_NAME"
@@ -240,8 +307,12 @@ cmd_sync_back() {
             log "WARN: could not commit canonical .ai/ changes; they remain in the working tree"
     fi
 
-    # Remove worktree .ai/ completely.
-    rm -rf "$wt_ai"
+    # Remove worktree .ai/ completely. Tolerate Windows locks by renaming to a
+    # stale dir; the next snapshot will clean it up.
+    cleanup_stale_dirs "$wt_ai"
+    if ! safe_rm_rf "$wt_ai"; then
+        warn "could not remove $wt_ai immediately; left for later cleanup"
+    fi
     log "removed $wt_ai after sync-back"
 }
 

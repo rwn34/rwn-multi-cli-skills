@@ -199,6 +199,40 @@ check "sync-back UTF-8 merge exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 check "sync-back UTF-8 merge preserves canonical arrow" "$(grep -qF '→' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 check "sync-back UTF-8 merge preserves executor arrow" "$(grep -q 'executor entry with arrow' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 
+# 14. snapshot tolerates concurrent canonical modifications (tar: file changed).
+setup_canon
+# Start a background writer that appends to canonical activity/log.md every
+# 50ms while the snapshot runs, to trigger tar's "file changed as we read it".
+writer_pid=""
+(
+    for i in $(seq 1 100); do
+        printf '## 2026-07-19 12:%02d (UTC+7) - concurrent-writer\n- Action: line %d\n\n' "$i" "$i" >> "$CANON/.ai/activity/log.md"
+        sleep 0.05 2>/dev/null || sleep 1
+    done
+) &
+writer_pid=$!
+out14="$(bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" 2>&1)"; rc14=$?
+kill "$writer_pid" 2>/dev/null || true
+wait "$writer_pid" 2>/dev/null || true
+check "snapshot concurrent-write exits 0" "$([ "$rc14" -eq 0 ] && echo 0 || echo 1)"
+check "snapshot concurrent-write produces non-empty manifest" "$([ -s "$WT/.ai/.snapshot-manifest" ] && echo 0 || echo 1)"
+check "snapshot concurrent-write copies log.md" "$([ -f "$WT/.ai/activity/log.md" ] && echo 0 || echo 1)"
+
+# 15. safe_rm_rf renames a busy .ai/ directory instead of hanging forever.
+setup_canon
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+# Hold the directory open with a subshell whose cwd is inside .ai/.
+(
+    cd "$WT/.ai" && sleep 5
+) &
+busy_pid=$!
+sleep 0.2
+out15="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc15=$?
+kill "$busy_pid" 2>/dev/null || true
+wait "$busy_pid" 2>/dev/null || true
+check "sync-back busy dir exits 0" "$([ "$rc15" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back busy dir removes or renames worktree .ai" "$( ([ ! -e "$WT/.ai" ] || [ -e "$WT/.ai.stale"* ]) && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1

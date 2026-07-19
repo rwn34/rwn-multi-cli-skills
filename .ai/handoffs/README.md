@@ -26,29 +26,59 @@ Claude to update something in `.claude/` or in Claude's portion of the shared do
 
 ## Layout
 
+There are two queues per CLI:
+
+- `to-<cli>/` — the **auto pane** (headless dispatcher target). This is the
+  default destination for `Auto: yes` + Risk A/B handoffs.
+- `to-<cli>-cockpit/` — the **interactive cockpit** session. Use this when
+  `Auto: no`, Risk C, or the task explicitly needs a human in the loop.
+
+Current queues:
+
     .ai/handoffs/
     ├── README.md                    this file
     ├── template.md                  copy-paste starting shape for new handoffs
-    ├── to-claude/
-    │   ├── open/                    handoffs for Claude Code to process
-    │   ├── review/                  verification handoffs routed to Claude Code
-    │   └── done/                    handoffs Claude has completed + sender has validated
-    ├── to-kimi/
+    ├── to-claude/                   headless Claude auto pane
     │   ├── open/
     │   ├── review/
     │   └── done/
-    ├── to-kiro/
+    ├── to-claude-cockpit/           interactive Claude Code session
     │   ├── open/
     │   ├── review/
     │   └── done/
-    └── to-opencode/            (renamed from to-crush/ 2026-07-09; done/ history preserved)
+    ├── to-kimi/                     headless Kimi auto pane
+    │   ├── open/
+    │   ├── review/
+    │   └── done/
+    ├── to-kimi-cockpit/             interactive Kimi CLI session
+    │   ├── open/
+    │   ├── review/
+    │   └── done/
+    ├── to-kiro/                     headless Kiro auto pane
+    │   ├── open/
+    │   ├── review/
+    │   └── done/
+    ├── to-kiro-cockpit/             interactive Kiro CLI session
+    │   ├── open/
+    │   ├── review/
+    │   └── done/
+    ├── to-opencode/                 headless OpenCode auto pane
+    │   ├── open/                    (renamed from to-crush/ 2026-07-09)
+    │   ├── review/
+    │   └── done/
+    └── to-opencode-cockpit/         interactive OpenCode session
         ├── open/
         ├── review/
         └── done/
 
-`open/` and `review/` are both polled by the auto panes. `review/` holds
-verification work produced by an executor after it finishes a task — for example,
-a Kiro task may result in a `to-kimi/review/` handoff so Kimi checks Kiro's work.
+Legacy directories (`to-kimi-executor/`, `to-kiro-executor/`) are preserved
+for historical `done/` entries; do not file new handoffs there.
+
+`open/` and `review/` under `to-<cli>/` are polled by the auto panes.
+`review/` holds verification work produced by an executor after it finishes a
+task — for example, a Kiro task may result in a `to-kimi/review/` handoff so
+Kimi checks Kiro's work. The `-cockpit/` trees are read only by the interactive
+session; the dispatcher ignores them.
 
 ## Filename convention
 
@@ -87,23 +117,26 @@ formats present.
 
 ## Six-actor cockpit / auto model — 2026-07-18
 
-The queue directories are still named after the four CLIs (`to-claude/`,
-`to-kimi/`, `to-kiro/`, `to-opencode/`), but a handoff's `Sender:`,
-`Recipient:`, and `Owner:` lines use the six-actor identity that includes the
-mode:
+The framework has six logical actors, but only four CLI binaries. Each CLI has
+two queues: the bare `to-<cli>/` directory for its headless auto pane, and
+`to-<cli>-cockpit/` for its interactive cockpit session.
 
-| Identity | Mode | Role |
-|----------|------|------|
-| `claude-cockpit` | interactive cockpit | architecture, orchestration, final review, human relay |
-| `kimai-cockpit` | interactive cockpit | executor/tester, dispatcher to auto |
-| `claude-auto` | headless auto pane | spec/plan design, final review |
-| `kimai-auto` | headless auto pane | backend + shell package implementation |
-| `kiro-auto` | headless auto pane | frontend implementation |
-| `opencode-auto` | headless auto pane | deploy, GitHub ops |
+| Identity | Queue directory | Mode | Role |
+|----------|-----------------|------|------|
+| `claude-cockpit` | `to-claude-cockpit/` | interactive cockpit | architecture, orchestration, final review, human relay |
+| `kimi-cockpit` | `to-kimi-cockpit/` | interactive cockpit | executor/tester, dispatcher to auto |
+| `claude` | `to-claude/` | headless auto pane | spec/plan design, final review |
+| `kimi` | `to-kimi/` | headless auto pane | backend + shell package implementation |
+| `kiro` | `to-kiro/` | headless auto pane | frontend implementation |
+| `opencode` | `to-opencode/` | headless auto pane | deploy, GitHub ops |
 
-- `Auto: yes` + `Risk: A/B` routes to the recipient's `-auto` pane.
+A handoff's `Sender:`, `Recipient:`, and `Owner:` lines use the six-actor
+identity. The bare CLI name (`kimi`, `kiro`, `opencode`, `claude`) is the
+auto-pane identity; the `-cockpit` suffix is the interactive identity.
+
+- `Auto: yes` + `Risk: A/B` routes to the bare `to-<cli>/` auto-pane queue.
 - `Auto: no`, hard-gate `Risk: C`, or a `Next:` pointing at a cockpit routes to
-the recipient's `-cockpit` interactive session.
+  the `to-<cli>-cockpit/` queue.
 
 See `docs/specs/saja-akun-cli-workflow.md` for the routing table, multi-stage
 chains, visibility model, and escalation rules, and
@@ -288,6 +321,32 @@ Typical flow:
 A reviewer may reject by moving the handoff back to the original executor's
 `open/` queue with `Status: BLOCKED` and a `## Blocker` section explaining what
 must be fixed.
+
+### Fan-out: root → children → aggregator → next
+
+When one handoff must split into parallel work for several executors, use a
+**strict three-stage pattern**. Inline aggregation inside a child return is a
+race hazard and is prohibited.
+
+1. **Root handoff** (e.g. `to-claude-auto/open/…-root.md`) decides the fan-out
+   and emits one child handoff per parallel executor to the appropriate `open/`
+   queues. The root then self-retires.
+2. **Child handoffs** (e.g. `to-kimai-auto/open/…-echo.md`,
+   `to-kiro-auto/open/…-echo.md`, `to-opencode-auto/open/…-echo.md`) do ONE
+   thing, write their result, and return a simple handoff to
+   `to-<aggregator>/open/` (usually `to-claude-auto/open/`). They do NOT wait
+   for siblings and do NOT decide what happens next.
+3. **Aggregator handoff** (e.g. `to-claude-auto/open/…-aggregate.md`) reads all
+   child returns, decides the next step, and emits the final handoff to the
+   target cockpit/auto actor.
+
+Why this shape: if two children both try to emit the "final" handoff, one
+overwrites the other or the dispatcher queues conflicting next steps. Keeping
+decision logic in a dedicated aggregator handoff guarantees exactly one actor
+plans the continuation. When dispatching children in parallel, run the
+dispatcher with `--one` per child if you want ordered, single-item processing;
+the default loop will still dispatch all open children safely, but the
+aggregator must not run until every child return is present.
 
 Review handoffs use the same status block as regular handoffs (`Auto:`, `Risk:`,
 `Status:`). Optional routing fields in the status block:

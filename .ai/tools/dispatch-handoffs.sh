@@ -11,6 +11,7 @@
 #   bash .ai/tools/dispatch-handoffs.sh                    # dry-run: list what would dispatch
 #   bash .ai/tools/dispatch-handoffs.sh --exec             # launch recipient CLIs (all queues)
 #   bash .ai/tools/dispatch-handoffs.sh --exec --only claude  # scope to one queue (to-claude)
+#   bash .ai/tools/dispatch-handoffs.sh --exec --one          # dispatch exactly one handoff and exit
 #   bash .ai/tools/dispatch-handoffs.sh --exec --reuse-dirty  # reuse worktrees on a different branch or with uncommitted non-.ai changes
 #
 # Recursion guard: in --exec mode each spawned CLI child inherits
@@ -54,12 +55,14 @@ set -u
 MODE="dry-run"
 ONLY=""
 REUSE_DIRTY=0
+ONE=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --exec)        MODE="exec" ;;
         --reuse-dirty) REUSE_DIRTY=1 ;;
         --only)        ONLY="${2:-}"; shift ;;
         --only=*)      ONLY="${1#--only=}" ;;
+        --one)         ONE=1 ;;
         *)             echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
@@ -979,9 +982,20 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             # to done/) or leaves it OPEN/BLOCKED. Either way our lease is over —
             # drop the sidecar so a re-run (or a pane) can reclaim if still OPEN.
             rm -f "$claim"
+
+            # --one mode: dispatch a single handoff and exit. This lets a
+            # supervisor apply a per-handoff timeout instead of timing out a
+            # long invocation that processes an entire queue.
+            if [ "$ONE" = "1" ]; then
+                break 3
+            fi
         else
             echo "WOULD DISPATCH [$cli] $rel"
             echo "    $cmd"
+            # In dry-run --one mode, report the single selected handoff and stop.
+            if [ "$ONE" = "1" ]; then
+                break 3
+            fi
         fi
         done
     done
