@@ -231,6 +231,14 @@ housekeeping action are fleet actions — Tier A or Tier B per the lists above,
 never an owner ask. On the release path the owner gates exactly one thing: the
 **production deploy**.
 
+**Do not ask the owner before Tier B actions.** If the preconditions are met
+(clean tree, required checks green, dry-run completed where applicable), execute
+the Tier B action and notify the owner afterward. An owner message such as
+"deploy", "approved", or "do it" for a Tier B action is a go-ahead to execute,
+not a request for permission — do not answer with another approval prompt. The
+only release-path question that goes to the owner is **production deploy (Tier
+C)** and the handful of other Tier-C items listed above.
+
 **Two couplings are prohibited — each is what keeps its tier honest:**
 
 1. **A merge must never auto-trigger a deploy.** Merge is Tier B *because* it is
