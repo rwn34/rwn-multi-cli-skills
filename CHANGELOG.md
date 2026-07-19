@@ -24,6 +24,12 @@ promotion happened.
 
 ### Changed
 
+- [TODO]
+
+## [0.0.46] - 2026-07-19
+
+### Changed
+
 - `sync-replicas.sh` / `check-ssot-drift.sh` are now cwd-independent: the repo
   root is derived from `$0` by pure string manipulation (no `cd`, no
   `git rev-parse --show-toplevel`, no junction-following `pwd -P`). Registry,
@@ -31,6 +37,11 @@ promotion happened.
   drift checker by absolute path from a different directory measures the script's
   own tree, not the caller's CWD. `--dest-root` remains caller-relative. Closes
   the false-pass path reported in PR #72.
+- `gates` push-to-main runs now skip commits that only touch non-versioned
+  coordination-plane paths (activity log, handoff queues, reports, etc.), saving
+  one billed minute per skipped push. The skipped paths match the denylist in
+  `scripts/check-version-bump.sh`, so the version-bump detective gate is not
+  weakened.
 
 ## [0.0.45] - 2026-07-18
 

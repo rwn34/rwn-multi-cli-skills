@@ -18,6 +18,21 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      # Non-versioned coordination-plane churn. The version-bump detective
+      # check (ADR-0012) only cares about shipped framework content; these
+      # paths are denylisted by scripts/check-version-bump.sh, so skipping
+      # the workflow for commits that touch ONLY them does not weaken the
+      # gate. Each skipped push saves one billed minute.
+      - '.ai/activity/**'
+      - '.ai/reports/**'
+      - '.ai/research/**'
+      - '.ai/.claim*'
+      - '.ai/.scratch/**'
+      - '.ai/handoffs/to-*/**'
+      - '.ai/handoffs/.claims/**'
+      - '.ai/handoffs/.quarantine/**'
+      - '.claude/settings.local.json'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
