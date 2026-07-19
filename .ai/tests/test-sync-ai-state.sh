@@ -179,6 +179,26 @@ check "sync-back awk fallback exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 check "awk fallback preserves canonical history" "$(grep -qF 'canonical history entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 check "awk fallback prepends executor entry" "$(grep -qF 'executor overwrote the log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
 
+# 13. log merge preserves non-ASCII characters (e.g. UTF-8 arrows) on Windows
+#     hosts where Python defaults stdout to cp1252. Regression for the
+#     UnicodeEncodeError that truncated sync-back.
+setup_canon
+cat > "$CANON/.ai/activity/log.md" <<'EOF'
+## 2026-07-18 09:00 (UTC+7) - kimi-cli
+- Action: canonical entry with arrow →
+
+EOF
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+cat > "$WT/.ai/activity/log.md" <<'EOF'
+## 2026-07-19 08:00 (UTC+7) - opencode-auto
+- Action: executor entry with arrow →
+
+EOF
+out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
+check "sync-back UTF-8 merge exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back UTF-8 merge preserves canonical arrow" "$(grep -qF '→' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+check "sync-back UTF-8 merge preserves executor arrow" "$(grep -q 'executor entry with arrow' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1

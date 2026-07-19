@@ -34,6 +34,11 @@ merge_activity_log() {
     if command -v python >/dev/null 2>&1; then
         python - "$canon" "$wt" <<'PY'
 import sys
+# Force UTF-8 for stdout so non-ASCII characters in merged log entries do not
+# crash with UnicodeEncodeError on Windows hosts where the default console
+# encoding is cp1252.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 canon_path, wt_path = sys.argv[1], sys.argv[2]
 
 def parse(path):
