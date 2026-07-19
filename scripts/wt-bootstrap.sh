@@ -153,6 +153,43 @@ exclude_ai() {
   fi
 }
 
+# Remove a path that may be a symlink or Windows junction/reparse point WITHOUT
+# following it. Falls back to rm -rf for ordinary directories/files. This is the
+# belt-and-suspenders guard against the ADR-0004 reverse-write hazard: if a
+# worktree's .ai/ is still a junction/symlink to the canonical coordination plane,
+# `rm -rf` would follow it and destroy shared state.
+safe_unlink_or_remove() {
+  local path="$1"
+  [ -e "$path" ] || return 0
+
+  # POSIX symlink: rm removes the link, not the target.
+  if [ -L "$path" ]; then
+    rm -f "$path"
+    return 0
+  fi
+
+  # Windows junction / reparse point: do NOT follow it.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      local winpath
+      winpath="$(cygpath -w "$path" 2>/dev/null || echo "$path")"
+      if powershell -NoProfile -Command "try { \$p = Get-Item -Path '$winpath' -Force -ErrorAction Stop; exit [int](-not (\$p.Attributes -match 'ReparsePoint')) } catch { exit 1 }" 2>/dev/null; then
+        # It's a reparse point; remove the junction/symlink only.
+        if cmd //c "rmdir \"$winpath\"" >/dev/null 2>&1; then
+          return 0
+        fi
+        if powershell -NoProfile -Command "Remove-Item -Path '$winpath' -Force -ErrorAction Stop" 2>/dev/null; then
+          return 0
+        fi
+        die "Could not safely remove Windows reparse point: $path"
+      fi
+      ;;
+  esac
+
+  # Ordinary directory/file.
+  rm -rf "$path"
+}
+
 # Remove a single executor worktree. With .ai/ now an ordinary directory (not a
 # junction), this is a normal git worktree remove. We still remove the worktree's
 # .ai/ first as a belt-and-suspenders guard against any future re-introduction of
@@ -171,9 +208,9 @@ remove_worktree() {
 
   # Belt-and-suspenders: remove the worktree's .ai/ BEFORE git worktree remove.
   # Under the snapshot-copy model this is an ordinary directory; under the old
-  # junction model this would have been fatal. Keeping the removal here makes
-  # --remove safe even if a worktree was created before the snapshot-copy rollout.
-  rm -rf "$wt_path/.ai"
+  # junction model this would have been fatal. safe_unlink_or_remove ensures that
+  # even if .ai/ is still a junction/symlink, we unlink it rather than following it.
+  safe_unlink_or_remove "$wt_path/.ai"
 
   git -C "$PROJECT_DIR" worktree remove --force "$wt_path" \
     || die "git worktree remove failed for $wt_path"

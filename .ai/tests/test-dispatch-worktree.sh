@@ -813,6 +813,58 @@ check "--handoff basename: other handoff stays OPEN" "$([ -f "$PROJECT/.ai/hando
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110023-base-a.md" \
       "$PROJECT/.ai/handoffs/to-kimi/open/202607110023-base-b.md"
 
+# ==============================================================================
+# Junction/symlink safety: --remove must NEVER follow a .ai/ junction into the
+# canonical coordination plane. This is the ADR-0004 reverse-write hazard that
+# destroyed canonical .ai/ in saja-qr; even though ADR-0016 uses snapshot-copy,
+# old or misconfigured worktrees may still have a junction, so --remove must be
+# defensive.
+# ==============================================================================
+# Re-create a clean kiro worktree, then replace its .ai/ with a link to the
+# canonical .ai/ to simulate a pre-ADR-0016 (or misconfigured) worktree.
+bash "$PROJECT/scripts/wt-bootstrap.sh" "$PROJECT" kiro >/dev/null 2>&1
+wt_kiro="$WORK/.wt/project/kiro"
+rm -rf "$wt_kiro/.ai"
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        # Windows junction: cmd /c mklink /J <junction> <target>
+        # Note: do NOT put inner quotes around the paths here; cmd's parser
+        # treats them as part of the path and the link creation fails silently.
+        canon_win="$(cygpath -w "$PROJECT/.ai")"
+        wt_ai_win="$(cygpath -w "$wt_kiro/.ai")"
+        cmd //c "mklink /J $wt_ai_win $canon_win" >/dev/null 2>&1
+        ;;
+    *)
+        ln -s "$PROJECT/.ai" "$wt_kiro/.ai"
+        ;;
+esac
+# Put a sentinel in canonical .ai/; if --remove follows the junction, the
+# sentinel (and canonical .ai/) will be destroyed.
+echo "canonical-sentinel" > "$PROJECT/.ai/junction-guard-sentinel.txt"
+# Detect a reparse point / symlink. On Windows, junctions do NOT pass -L.
+is_reparse_point() {
+    local p="$1"
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*)
+            local winp
+            winp="$(cygpath -w "$p" 2>/dev/null || echo "$p")"
+            powershell -NoProfile -Command "try { \$i = Get-Item -Path '$winp' -Force -ErrorAction Stop; exit [int](-not (\$i.Attributes -match 'ReparsePoint')) } catch { exit 1 }" 2>/dev/null
+            ;;
+        *)
+            [ -L "$p" ] && return 0 || return 1
+            ;;
+    esac
+}
+check "junction-guard: worktree .ai/ is a reparse point/symlink before remove" \
+    "$(is_reparse_point "$wt_kiro/.ai" && echo 0 || echo 1)"
+
+bash "$PROJECT/scripts/wt-bootstrap.sh" --remove "$PROJECT" kiro >/dev/null 2>&1
+rc_remove=$?
+check "junction-guard: --remove exits 0" "$([ "$rc_remove" -eq 0 ] && echo 0 || echo 1)"
+check "junction-guard: canonical .ai/ sentinel survived" "$([ -f "$PROJECT/.ai/junction-guard-sentinel.txt" ] && echo 0 || echo 1)"
+check "junction-guard: worktree removed" "$([ ! -e "$wt_kiro" ] && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/junction-guard-sentinel.txt"
+
 # ======================================================================
 # grep proof (mirrors handoff verification item (c)): the old shared-checkout
 # invocation `cd "$root"` must be GONE from the dispatch execution path.
