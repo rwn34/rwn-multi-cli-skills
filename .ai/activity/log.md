@@ -1,3 +1,8 @@
+## 2026-07-19 08:12 (UTC+7) - kimai-cockpit
+- Action: Added owner-delegation rule for git/GitHub mechanics to AGENTS.md and .kimi/steering/00-ai-contract.md; committed and pushed two commits to main; synced .rwn-auto/rwn-4AI-panes install; working tree is clean.
+- Files: AGENTS.md, .kimi/steering/00-ai-contract.md, .gitignore, .ai/activity/log.md, .ai/handoffs/template.md
+- Decisions: Restored .ai/activity/log.md from HEAD before committing because dispatcher sync-back had staged a truncated version (709 lines removed); deduplicated a consecutive kiro entry. Committed .ai state together with the contract rule. Added .ai-install-rollback-point.txt to .gitignore to keep working tree clean.
+
 ## 2026-07-19 08:05 (UTC+7) - kimai-cockpit
 - Action: Acknowledged and self-retired closing handoff 202607190755-test-chain-v3-close-to-kimi-cockpit. The v3 six-actor handoff chain (kimai/kiro/opencode autos → claude-auto → claude-cockpit → kimi-cockpit) is complete.
 - Files: .ai/handoffs/to-kimi-cockpit/done/202607190755-test-chain-v3-close-to-kimi-cockpit.md
