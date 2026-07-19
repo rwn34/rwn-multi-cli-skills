@@ -1,8 +1,8 @@
 # v6 test chain — opencode return
-Status: OPEN
+Status: DONE
 Sender: opencode
 Recipient: claude
-Owner: opencode
+Owner: claude
 Created: 2026-07-19 19:30 (UTC+7)
 Auto: yes
 Risk: A
