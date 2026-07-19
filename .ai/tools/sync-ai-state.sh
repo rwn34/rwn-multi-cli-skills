@@ -101,6 +101,10 @@ cmd_sync_back() {
         local rel old_hash canon_hash
         old_hash="${line%%  *}"
         rel="${line#*  }"
+        # If the file still exists in the worktree, it was not retired here.
+        if awk -v r="$rel" '$2==r {found=1} END {exit !found}' "$manifest_new"; then
+            continue
+        fi
         case "$rel" in
             handoffs/to-*/open/*.md|handoffs/to-*/review/*.md)
                 if [ -e "$canon_ai/$rel" ]; then

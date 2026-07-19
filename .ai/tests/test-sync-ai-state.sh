@@ -115,6 +115,23 @@ check "sync-back skip-delete changed open handoff exits 0" "$([ "$rc" -eq 0 ] &&
 check "sync-back preserves changed canonical open handoff" "$([ -f "$CANON/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
 check "sync-back still creates done handoff in canonical" "$([ -f "$CANON/.ai/handoffs/to-kimi/done/h1.md" ] && echo 0 || echo 1)"
 
+# 10. sync-back does NOT delete open/review handoffs addressed to other
+#     recipients that are still present in the worktree snapshot.
+setup_canon
+# Add cross-recipient open handoffs in canonical.
+mkdir -p "$CANON/.ai/handoffs/to-kiro/open" "$CANON/.ai/handoffs/to-opencode/open"
+echo 'kiro handoff' > "$CANON/.ai/handoffs/to-kiro/open/h2.md"
+echo 'opencode handoff' > "$CANON/.ai/handoffs/to-opencode/open/h3.md"
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+# This executor (kimi) retires only its own handoff; leaves kiro/opencode untouched.
+mkdir -p "$WT/.ai/handoffs/to-kimi/done"
+mv "$WT/.ai/handoffs/to-kimi/open/h1.md" "$WT/.ai/handoffs/to-kimi/done/h1.md"
+out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
+check "sync-back cross-recipient exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back removes own retired open handoff" "$([ ! -f "$CANON/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
+check "sync-back preserves kiro open handoff" "$([ -f "$CANON/.ai/handoffs/to-kiro/open/h2.md" ] && echo 0 || echo 1)"
+check "sync-back preserves opencode open handoff" "$([ -f "$CANON/.ai/handoffs/to-opencode/open/h3.md" ] && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1
