@@ -1,5 +1,5 @@
 # Test chain v4 — kiro-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kiro-auto
 Owner: kiro-auto
@@ -36,3 +36,13 @@ does NOT already exist, create it with `Recipient: kimi-cockpit`,
 kimi-cockpit to acknowledge and self-retire.
 If not all markers exist, OR the final handoff already exists, self-retire
 this return handoff to `.ai/handoffs/to-claude/done/`.
+
+## Evidence
+- Wrote `.ai/reports/test-chain-v4-kiro.md`.
+- Checked `.ai/reports/test-chain-v4-kimai.md` — not present, so only 2 of 3
+  markers exist (kiro + opencode). Return handoff self-retired to
+  `.ai/handoffs/to-claude/done/202607190302-test-chain-v4-kiro-return.md`
+  without creating the final aggregation handoff.
+
+## When complete
+Self-retired to `.ai/handoffs/to-kiro/done/` (this file).
