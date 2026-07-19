@@ -79,6 +79,9 @@ id_ed25519*
 # ---- MCP runtime cache (Playwright MCP server scratch dir) ----
 .playwright-mcp/
 
+# ---- AI framework install rollback marker ----
+.ai-install-rollback-point.txt
+
 # ---- Code knowledge graphs (local DBs and caches; config.json may be committed) ----
 .codegraph/*
 !.codegraph/config.json
