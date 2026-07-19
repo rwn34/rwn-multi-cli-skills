@@ -144,6 +144,7 @@ is_denylisted() {
   case "$1" in
     .ai/activity/*|.ai/reports/*|.ai/research/*|.ai/.scratch/*) return 0 ;;
     .ai/.claim*) return 0 ;;
+    .ai/.framework-version) return 0 ;;
     .ai/handoffs/.claims/*|.ai/handoffs/.claim*|.ai/handoffs/.quarantine/*) return 0 ;;
     .ai/handoffs/to-*) return 0 ;;
     .claude/settings.local.json) return 0 ;;
