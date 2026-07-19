@@ -1,8 +1,8 @@
-# v6 test chain — kiro echo child
-Status: OPEN
+# v6 test chain — kimi echo child
+Status: DONE
 Sender: claude
-Recipient: kiro
-Owner: kiro
+Recipient: kimi
+Owner: kimi
 Created: 2026-07-19 19:30 (UTC+7)
 Auto: yes
 Risk: A
@@ -13,20 +13,20 @@ Evidence: VERIFIED (test echo — no file-level assertion)
      NOT decide the next step. -->
 
 ## Goal
-Echo test: confirm the snapshot-copy dispatcher can drive a kiro child in a
+Echo test: confirm the snapshot-copy dispatcher can drive a kimi child in a
 parallel fan-out.
 
 ## Steps
 1. Write a return handoff to
-   `.ai/handoffs/to-claude/open/202607190630-test-chain-v6-kiro-return.md`
-   with `Sender: kiro`, `Recipient: claude`, `Status: OPEN`, and a `## Result`
-   section containing the single line: `kiro-echo`.
+   `.ai/handoffs/to-claude/open/202607190630-test-chain-v6-kimi-return.md`
+   with `Sender: kimi`, `Recipient: claude`, `Status: OPEN`, and a `## Result`
+   section containing the single line: `kimi-echo`.
 2. Self-retire this handoff: set `Status: DONE` and move it to
-   `.ai/handoffs/to-kiro/done/`.
+   `.ai/handoffs/to-kimi/done/`.
 
 ## Verification
-- (a) `ls .ai/handoffs/to-claude/open/202607190630-test-chain-v6-kiro-return.md` exists.
-- (b) This handoff appears in `.ai/handoffs/to-kiro/done/` with `Status: DONE`.
+- (a) `ls .ai/handoffs/to-claude/open/202607190630-test-chain-v6-kimi-return.md` exists.
+- (b) This handoff appears in `.ai/handoffs/to-kimi/done/` with `Status: DONE`.
 
 ## Next step / future note
 The aggregator (`to-opencode/open/202607190630-test-chain-v6-aggregate.md`) waits
