@@ -1,5 +1,5 @@
 # v6 test chain — final
-Status: OPEN
+Status: DONE
 Sender: opencode
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
