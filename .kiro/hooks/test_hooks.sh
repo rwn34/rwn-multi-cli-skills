@@ -114,6 +114,8 @@ run_test    "t26 fleet activity log allowed"         "$FW" "{\"tool_input\":{\"f
 run_test_cd "t27 worktree absolute escape blocked"   "$T/.wt/projA/kiro" "$WC" "{\"tool_input\":{\"file_path\":\"$T/projA/src/x.ts\"}}" 2
 run_test_cd "t28 worktree ../ escape blocked"        "$T/.wt/projA/kiro" "$WC" '{"tool_input":{"file_path":"../kimi/src/x.ts"}}' 2
 run_test_cd "t29 worktree in-tree write allowed"     "$T/.wt/projA/kiro" "$WC" '{"tool_input":{"file_path":"src/x.ts"}}' 0
+run_test_cd "t29a worktree absolute in-tree .ai allowed (snapshot-copy)" "$T/.wt/projA/kiro" "$WC" "{\"tool_input\":{\"file_path\":\"$T/.wt/projA/kiro/.ai/activity/log.md\"}}" 0
+run_test_cd "t29b worktree relative .ai allowed"    "$T/.wt/projA/kiro" "$WC" '{"tool_input":{"file_path":".ai/handoffs/x.md"}}' 0
 
 rm -rf "$T"
 

@@ -39,11 +39,16 @@ case "$PROJECT_ROOT" in
   *) exit 0 ;;  # not in a worktree — rule does not apply
 esac
 
-# Block absolute paths (they escape the worktree by definition since they
-# didn't normalize to a relative path under this tree)
+# Absolute paths: allow if they resolve inside this worktree (snapshot-copy
+# model puts .ai/ inside the worktree as ordinary files); block otherwise.
 case "$FILE_PATH" in
   /*|[A-Za-z]:/*)
-    echo "BLOCKED: Worktree confinement (ADR-0004) — this session runs in executor worktree '$PROJECT_ROOT' and may write only inside it (+ the junctioned .ai/). Escaping to '$FILE_PATH' is blocked — cross-tree changes go through .ai/handoffs/." >&2
+    file_lower=$(echo "$FILE_PATH" | tr '[:upper:]' '[:lower:]')
+    root_lower=$(echo "$PROJECT_ROOT" | tr '[:upper:]' '[:lower:]')
+    case "$file_lower" in
+      "${root_lower%/}"|"${root_lower%/}"/*) exit 0 ;;
+    esac
+    echo "BLOCKED: Worktree confinement (ADR-0004) — this session runs in executor worktree '$PROJECT_ROOT' and may write only inside it. Escaping to '$FILE_PATH' is blocked — cross-tree changes go through .ai/handoffs/." >&2
     exit 2 ;;
 esac
 
@@ -54,5 +59,5 @@ case "$FILE_PATH" in
     exit 2 ;;
 esac
 
-# In-tree relative paths (including .ai/ via junction) are allowed
+# In-tree relative paths (including .ai/) are allowed
 exit 0
