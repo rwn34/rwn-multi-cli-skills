@@ -1,3 +1,8 @@
+## 2026-07-19 15:04 (UTC+7) - kimi-cockpit
+- Action: Closed the v6 fan-out test chain end-to-end in the interactive cockpit session. Verified all three child returns (kimi-echo, kiro-echo, opencode-echo) exist in to-claude/done/, set the final handoff Status: DONE, and moved it to to-kimi-cockpit/done/. The chain exercised the snapshot-copy dispatcher, parallel child dispatches, opencode aggregation, and cockpit finalization.
+- Files: .ai/handoffs/to-kimi-cockpit/done/202607190630-test-chain-v6-final.md
+- Decisions: Processed the final handoff manually as the recipient (kimi-cockpit) since cockpit queues are not auto-dispatched. Chain completed despite auto-pane races on child returns; the aggregator was updated to accept returns already moved to done/.
+
 ## 2026-07-19 22:06 (UTC+7) - claude-code
 - Action: Resume re-check #2 (owner re-invoked, "hit a step/tool cap") of handoff 202607190630-test-chain-v6-opencode-return — still nothing outstanding, fully terminal. Glob confirms the only copy is to-claude/done/202607190630-test-chain-v6-opencode-return.md (read direct: Status DONE line 2, Result marker `opencode-echo` line 16, Completion note lines 25-37, Evidence VERIFIED); no copy in any to-claude*/open/ queue and `.claims/*opencode-return*` empty. Every owner-requested end-state (steps run, Status DONE, moved to done/) satisfied since the 21:52 retirement.
 - Files: — (verification only)
