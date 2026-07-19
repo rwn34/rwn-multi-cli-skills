@@ -1,3 +1,7 @@
+## 2026-07-19 10:36 (UTC+7) - kimi-cli
+- Action: Fixed kiro worktree-confinement guard for snapshot-copy .ai/ model: absolute paths inside the executor worktree are now allowed, so kiro-auto can write .ai/activity/log.md, .ai/reports/*, and .ai/handoffs/* without guard blocks. Added regression tests t29a/t29b; suite passes 62/62. Committed with owner-authorized --no-verify because the pre-commit backstop treats .kiro/hooks/* as kiro territory.
+- Files: .kiro/hooks/worktree-confinement-guard.sh, .kiro/hooks/test_hooks.sh
+- Decisions: Snapshot-copy model places .ai/ inside the worktree as ordinary files, so the previous blanket block on absolute paths was incorrect. Allowed absolute paths whose lowercase prefix matches the worktree root; kept ../ traversal and out-of-tree absolute blocks intact.
 ## 2026-07-19 10:30 (UTC+7) - kimi-cockpit
 - Action: Acknowledged test-chain-v4 aggregation handoff — verified all three marker files (kimai, kiro, opencode) and self-retired the final handoff to to-kimi-cockpit/done/.
 - Files: .ai/handoffs/to-kimi-cockpit/done/202607190302-test-chain-v4-final-to-kimi-cockpit.md
