@@ -21,6 +21,63 @@ log()  { echo "[sync-ai-state] $*"; }
 err()  { echo "[sync-ai-state] ERROR: $*" >&2; }
 die()  { err "$*"; exit 1; }
 
+# Merge a worktree activity/log.md into the canonical log. If the worktree
+# dropped canonical history (executor overwrite, encoding round-trip, etc.),
+# recover by prepending only the genuinely new entries. This keeps the shared
+# activity ledger append-only.
+merge_activity_log() {
+    local canon="$1" wt="$2"
+    if [ ! -r "$canon" ]; then
+        cat "$wt"
+        return 0
+    fi
+    if command -v python >/dev/null 2>&1; then
+        python - "$canon" "$wt" <<'PY'
+import sys
+canon_path, wt_path = sys.argv[1], sys.argv[2]
+
+def parse(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except Exception:
+        return []
+    entries = []
+    current = []
+    for line in text.splitlines():
+        if line.startswith('## '):
+            if current:
+                entries.append('\n'.join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        entries.append('\n'.join(current))
+    return entries
+
+canon_entries = parse(canon_path)
+wt_entries = parse(wt_path)
+canon_headers = {e.split('\n')[0] for e in canon_entries}
+wt_headers = {e.split('\n')[0] for e in wt_entries}
+missing = canon_headers - wt_headers
+if missing:
+    print(
+        f"LOG-MERGE WARN: worktree activity/log.md is missing {len(missing)} canonical entry header(s); merging to preserve history",
+        file=sys.stderr,
+    )
+new_entries = [e for e in wt_entries if e.split('\n')[0] not in canon_headers]
+out = '\n\n'.join(new_entries + canon_entries)
+if out and not out.endswith('\n'):
+    out += '\n'
+sys.stdout.write(out)
+PY
+    else
+        # No python available: fall back to overwrite. This is unsafe for the
+        # log but preserves behavior on minimal hosts.
+        cat "$wt"
+    fi
+}
+
 # Compute a stable manifest: one line per file, "<sha256>  <rel-path>".
 # Output is sorted by path.
 manifest_for() {
@@ -88,7 +145,12 @@ cmd_sync_back() {
         old_hash="$(awk -v r="$rel" '$2==r {print $1}' "$manifest_old" || true)"
         if [ "$old_hash" != "$new_hash" ]; then
             mkdir -p "$(dirname "$canon_ai/$rel")"
-            cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+            if [ "$rel" = "activity/log.md" ]; then
+                merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
+                mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
+            else
+                cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+            fi
             log "sync-back: $rel"
         fi
     done < "$manifest_new"

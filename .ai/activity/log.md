@@ -1,3 +1,8 @@
+## 2026-07-19 08:22 (UTC+7) - kimai-cockpit
+- Action: Hardened sync-ai-state.sh against activity-log truncation: merge activity/log.md on sync-back instead of overwriting, preserving canonical history when an executor drops entries. Added regression test case 11. Verified sync-ai-state (27 pass), dispatch-worktree (79 pass), and check-log-superset (9 pass) suites.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tests/test-sync-ai-state.sh
+- Decisions: Used Python for entry-aware merge because bash/awk entry parsing is error-prone; falls back to overwrite if python is unavailable (minimal-host degrade). The pre-commit LOG-SUPERSET gate remains as final backstop.
+
 ## 2026-07-19 08:12 (UTC+7) - kimai-cockpit
 - Action: Added owner-delegation rule for git/GitHub mechanics to AGENTS.md and .kimi/steering/00-ai-contract.md; committed and pushed two commits to main; synced .rwn-auto/rwn-4AI-panes install; working tree is clean.
 - Files: AGENTS.md, .kimi/steering/00-ai-contract.md, .gitignore, .ai/activity/log.md, .ai/handoffs/template.md
