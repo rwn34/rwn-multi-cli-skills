@@ -1,3 +1,8 @@
+## 2026-07-19 12:34 (UTC+7) - kimi
+- Action: Optimize GitHub Actions minute usage: added paths-ignore to gates.yml push-to-main for non-versioned coordination-plane paths (activity log, handoff queues, reports, etc.), matching scripts/check-version-bump.sh denylist; fixed pre-existing manifest->allowlist sync failure by denylisting .ai/.framework-version; bumped framework to 0.0.46. Merged PRs #127 and #128; push-to-main gates now green.
+- Files: .github/workflows/gates.yml, scripts/check-version-bump.sh, CHANGELOG.md, tools/multi-cli-install/package.json
+- Decisions: Estimated savings ~25-30 billed minutes per 100 push-to-main events based on recent history (~52 gates push runs / 100, roughly half activity-log/handoff-only). Direct pushes to main continue to be fleet-executed; the optimization reduces wasted runs rather than process changes.
+
 ## 2026-07-19 12:11 (UTC+7) - kimi
 - Action: Verify six-item stabilization goal is already landed (PR #122 / ADR-0016 durability contract, fleet-health hygiene, protocol v4 README/template, master→main cleanup). Fix dispatch-owner-for test expectations to match the eight-actor bare identities; full framework suite green except dispatch-worktree intermittently hangs after test6 in this environment (one clean 92/0 run obtained).
 - Files: .ai/tests/test-dispatch-owner-for.sh
