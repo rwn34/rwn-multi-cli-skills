@@ -1,5 +1,5 @@
 # Test chain v3 — kimai-auto echo marker
-Status: OPEN
+Status: DONE
 Sender: claude-auto
 Recipient: kimai-auto
 Owner: kimai-auto
@@ -37,3 +37,9 @@ If not all exist, self-retire this return handoff to `.ai/handoffs/to-claude/don
 
 ## Report back with
 - Paths of the marker file and the return handoff created.
+
+## Report
+- Marker file written: `.ai/reports/test-chain-v3-kimai.md`
+- Return handoff created: `.ai/handoffs/to-claude/open/202607190025-test-chain-v3-kimai-return.md`
+- Self-retired to `.ai/handoffs/to-kimi/done/`.
+- Re-pinned commit: HEAD is `3af1e03` on branch `exec/kimi/202607190025-test-chain-v3-kimai-echo`; SHA matches `Observed-in: main@3af1e03`.
