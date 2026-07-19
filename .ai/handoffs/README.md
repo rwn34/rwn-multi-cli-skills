@@ -112,9 +112,9 @@ Do not rename — they are grandfathered. New handoffs use the timestamp format.
 Sorting `ls .ai/handoffs/to-<cli>/open/` still shows oldest-first with both
 formats present.
 
-## Six-actor cockpit / auto model — 2026-07-18
+## Eight-actor cockpit / auto model — 2026-07-19
 
-The framework has six logical actors, but only four CLI binaries. Each CLI has
+The framework has eight logical actors across four CLI binaries. Each CLI has
 two queues: the bare `to-<cli>/` directory for its headless auto pane, and
 `to-<cli>-cockpit/` for its interactive cockpit session.
 
@@ -273,11 +273,13 @@ A project using this framework has six logical actors, not four CLI binaries:
 | Actor | Role | Headless? |
 |---|---|---|
 | `claude-cockpit` | Interactive Claude Code chat — architecture, orchestration, final review, human relay | no |
-| `kimai-cockpit` | Interactive Kimi CLI chat — executor/tester, dispatcher to auto, human relay | no |
-| `claude-auto` | Headless Claude pane-runner — spec/plan design, final review | yes |
-| `kimai-auto` | Headless Kimi pane-runner — backend + shell package implementation | yes |
-| `kiro-auto` | Headless Kiro pane-runner — frontend implementation | yes |
-| `opencode-auto` | Headless OpenCode pane-runner — deploy, GitHub ops | yes |
+| `kimi-cockpit` | Interactive Kimi CLI chat — executor/tester, dispatcher to auto, human relay | no |
+| `kiro-cockpit` | Interactive Kiro CLI chat — frontend implementation, human relay | no |
+| `opencode-cockpit` | Interactive OpenCode chat — deploy, GitHub ops, human relay | no |
+| `claude` | Headless Claude pane-runner — spec/plan design, final review | yes |
+| `kimi` | Headless Kimi pane-runner — backend + shell package implementation | yes |
+| `kiro` | Headless Kiro pane-runner — frontend implementation | yes |
+| `opencode` | Headless OpenCode pane-runner — deploy, GitHub ops | yes |
 
 The dispatcher and the pane-runner only ever talk to the **auto** actors. A
 cockpit reads handoffs when the owner asks it to, when `stop-reminder.sh`
@@ -285,8 +287,8 @@ surfaces counts, or when `fleet-health.sh` reports a STALL/WEDGED pane.
 
 In handoff status blocks:
 
-- `Sender:` / `Recipient:` / `Owner:` should use the six-actor identity (e.g.
-  `kimai-auto`, `claude-cockpit`). Bare `kimi-cli` or `claude-code` are
+- `Sender:` / `Recipient:` / `Owner:` should use the eight-actor identity (e.g.
+  `kimi`, `claude-cockpit`). Bare `kimi-cli` or `claude-code` are
   ambiguous — they do not say whether the actor is the cockpit or the auto pane.
 - `Auto:` remains the single mechanical ownership boundary:
   - `Auto: yes` + Risk A/B → owned by the auto pane.
@@ -325,15 +327,15 @@ When one handoff must split into parallel work for several executors, use a
 **strict three-stage pattern**. Inline aggregation inside a child return is a
 race hazard and is prohibited.
 
-1. **Root handoff** (e.g. `to-claude-auto/open/…-root.md`) decides the fan-out
+1. **Root handoff** (e.g. `to-claude/open/…-root.md`) decides the fan-out
    and emits one child handoff per parallel executor to the appropriate `open/`
    queues. The root then self-retires.
-2. **Child handoffs** (e.g. `to-kimai-auto/open/…-echo.md`,
-   `to-kiro-auto/open/…-echo.md`, `to-opencode-auto/open/…-echo.md`) do ONE
+2. **Child handoffs** (e.g. `to-kimi/open/…-echo.md`,
+   `to-kiro/open/…-echo.md`, `to-opencode/open/…-echo.md`) do ONE
    thing, write their result, and return a simple handoff to
-   `to-<aggregator>/open/` (usually `to-claude-auto/open/`). They do NOT wait
+   `to-<aggregator>/open/` (usually `to-claude/open/`). They do NOT wait
    for siblings and do NOT decide what happens next.
-3. **Aggregator handoff** (e.g. `to-claude-auto/open/…-aggregate.md`) reads all
+3. **Aggregator handoff** (e.g. `to-opencode/open/…-aggregate.md`) reads all
    child returns, decides the next step, and emits the final handoff to the
    target cockpit/auto actor.
 
