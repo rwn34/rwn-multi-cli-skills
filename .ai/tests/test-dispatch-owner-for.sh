@@ -18,20 +18,21 @@ check() {
 # Source the dispatcher in library mode to expose owner_for()/bin_for().
 DISPATCH_LIB=1 . "$DISPATCHER"
 
-# owner_for() must map every dispatchable queue name to a six-actor identity.
-check "owner_for claude -> claude-auto"            "$([ "$(owner_for claude)" = "claude-auto" ] && echo 0 || echo 1)"
-check "owner_for claude-auto -> claude-auto"       "$([ "$(owner_for claude-auto)" = "claude-auto" ] && echo 0 || echo 1)"
+# owner_for() must map every dispatchable queue name to an eight-actor identity.
+# Auto panes use the bare name; cockpit queues keep the -cockpit suffix.
+check "owner_for claude -> claude"                 "$([ "$(owner_for claude)" = "claude" ] && echo 0 || echo 1)"
+check "owner_for claude-auto -> claude"            "$([ "$(owner_for claude-auto)" = "claude" ] && echo 0 || echo 1)"
 check "owner_for claude-cockpit -> claude-cockpit" "$([ "$(owner_for claude-cockpit)" = "claude-cockpit" ] && echo 0 || echo 1)"
-check "owner_for kimi -> kimai-auto"               "$([ "$(owner_for kimi)" = "kimai-auto" ] && echo 0 || echo 1)"
-check "owner_for kimi-auto -> kimai-auto"          "$([ "$(owner_for kimi-auto)" = "kimai-auto" ] && echo 0 || echo 1)"
-check "owner_for kimi-executor -> kimai-auto"      "$([ "$(owner_for kimi-executor)" = "kimai-auto" ] && echo 0 || echo 1)"
-check "owner_for kimi-cockpit -> kimai-cockpit"    "$([ "$(owner_for kimi-cockpit)" = "kimai-cockpit" ] && echo 0 || echo 1)"
-check "owner_for kiro -> kiro-auto"                "$([ "$(owner_for kiro)" = "kiro-auto" ] && echo 0 || echo 1)"
-check "owner_for kiro-auto -> kiro-auto"           "$([ "$(owner_for kiro-auto)" = "kiro-auto" ] && echo 0 || echo 1)"
-check "owner_for kiro-executor -> kiro-auto"       "$([ "$(owner_for kiro-executor)" = "kiro-auto" ] && echo 0 || echo 1)"
+check "owner_for kimi -> kimi"                     "$([ "$(owner_for kimi)" = "kimi" ] && echo 0 || echo 1)"
+check "owner_for kimi-auto -> kimi"                "$([ "$(owner_for kimi-auto)" = "kimi" ] && echo 0 || echo 1)"
+check "owner_for kimi-executor -> kimi"            "$([ "$(owner_for kimi-executor)" = "kimi" ] && echo 0 || echo 1)"
+check "owner_for kimi-cockpit -> kimi-cockpit"     "$([ "$(owner_for kimi-cockpit)" = "kimi-cockpit" ] && echo 0 || echo 1)"
+check "owner_for kiro -> kiro"                     "$([ "$(owner_for kiro)" = "kiro" ] && echo 0 || echo 1)"
+check "owner_for kiro-auto -> kiro"                "$([ "$(owner_for kiro-auto)" = "kiro" ] && echo 0 || echo 1)"
+check "owner_for kiro-executor -> kiro"            "$([ "$(owner_for kiro-executor)" = "kiro" ] && echo 0 || echo 1)"
 check "owner_for kiro-cockpit -> kiro-cockpit"     "$([ "$(owner_for kiro-cockpit)" = "kiro-cockpit" ] && echo 0 || echo 1)"
-check "owner_for opencode -> opencode-auto"        "$([ "$(owner_for opencode)" = "opencode-auto" ] && echo 0 || echo 1)"
-check "owner_for opencode-auto -> opencode-auto"   "$([ "$(owner_for opencode-auto)" = "opencode-auto" ] && echo 0 || echo 1)"
+check "owner_for opencode -> opencode"             "$([ "$(owner_for opencode)" = "opencode" ] && echo 0 || echo 1)"
+check "owner_for opencode-auto -> opencode"        "$([ "$(owner_for opencode-auto)" = "opencode" ] && echo 0 || echo 1)"
 check "owner_for opencode-cockpit -> opencode-cockpit" "$([ "$(owner_for opencode-cockpit)" = "opencode-cockpit" ] && echo 0 || echo 1)"
 
 # bin_for() still maps queue names to the actual executable on PATH.
