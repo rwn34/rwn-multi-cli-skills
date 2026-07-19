@@ -10,7 +10,7 @@ Evidence: VERIFIED (ls .ai/handoffs/to-claude/open/202607190630-test-chain-v6-*-
 Observed-in: main@HEAD
 
 ## Goal
-Collect the three child return handoffs and emit the final handoff to kimai-cockpit. If any return is missing, leave this handoff OPEN and exit without creating the final handoff.
+Collect the three child return handoffs and emit the final handoff to kimi-cockpit. If any return is missing, leave this handoff OPEN and exit without creating the final handoff.
 
 ## Steps
 1. Verify these three files exist:
@@ -27,7 +27,7 @@ Collect the three child return handoffs and emit the final handoff to kimai-cock
 3. Self-retire this handoff to `.ai/handoffs/to-opencode/done/202607190630-test-chain-v6-aggregate.md` with `Status: DONE`.
 
 ## Verification
-- (a) `test -f .ai/handoffs/to-kimai-cockpit/open/202607190630-test-chain-v6-final.md`
+- (a) `test -f .ai/handoffs/to-kimi-cockpit/open/202607190630-test-chain-v6-final.md`
 - (b) This handoff is in `.ai/handoffs/to-opencode/done/` with `Status: DONE`.
 
 ## Report back with

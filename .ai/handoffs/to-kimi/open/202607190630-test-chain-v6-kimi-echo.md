@@ -10,7 +10,7 @@ Evidence: VERIFIED (echo "kimai present")
 Observed-in: main@HEAD
 
 ## Goal
-Echo back a marker to claude-auto so the aggregator can detect completion. Do NOT aggregate or decide next steps.
+Echo back a marker to claude so the aggregator can detect completion. Do NOT aggregate or decide next steps.
 
 ## Steps
 1. Create a return handoff at `.ai/handoffs/to-claude/open/202607190630-test-chain-v6-kimi-return.md` with:

@@ -71,9 +71,6 @@ Current queues:
         ├── review/
         └── done/
 
-Legacy directories (`to-kimi-executor/`, `to-kiro-executor/`) are preserved
-for historical `done/` entries; do not file new handoffs there.
-
 `open/` and `review/` under `to-<cli>/` are polled by the auto panes.
 `review/` holds verification work produced by an executor after it finishes a
 task — for example, a Kiro task may result in a `to-kimi/review/` handoff so

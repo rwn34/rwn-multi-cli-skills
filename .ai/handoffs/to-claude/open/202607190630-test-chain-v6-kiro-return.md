@@ -1,8 +1,8 @@
 # v6 test chain — kiro return
 Status: OPEN
 Sender: kiro-auto
-Recipient: claude-auto
-Owner: claude-auto
+Recipient: claude
+Owner: claude
 Created: 2026-07-19 14:16 (UTC+7)
 Auto: yes
 Risk: A
