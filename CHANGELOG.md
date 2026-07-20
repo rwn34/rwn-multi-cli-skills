@@ -18,6 +18,8 @@ promotion happened.
 
 ## [Unreleased]
 
+## [0.0.49] - 2026-07-20
+
 ### Added
 
 - `install-template.sh` normalizes the target repo's default branch to `main` during pre-flight: a repo still using `master` gets `main` created from `master`, the local `master` ref removed, and `origin/HEAD` updated when possible.
@@ -28,6 +30,7 @@ promotion happened.
 
 ### Changed
 
+- Converged all actor identities to the eight-actor model: bare `kimi`/`kiro`/`opencode`/`claude` for auto panes and `-cockpit` suffixes for interactive panes. Removed stale `kimai`/`kimai-auto` aliases from docs, claim/release defaults, and pane-runner emitted handoffs.
 - Explicit `Base:` lines in handoffs are now validated before use; an unresolvable base other than `origin/master` fails early with a clear error.
 - `tools/4ai-panes/pane-runner.ps1` no longer syncs worktree `.ai/` state back to the canonical tree when a dispatch fails before the CLI is invoked (WORKTREE_FAIL). This closes a race where a failed pane-runner dispatch could wipe files written by a concurrent headless dispatch.
 
