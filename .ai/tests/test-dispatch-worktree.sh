@@ -828,6 +828,34 @@ check "ADR-0016b: stub was not invoked" "$([ ! -f "$LOGS/kimi.log" ] && echo 0 |
 rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110020-adr0016b-missing-handoff.md"
 
 # ==============================================================================
+# ADR-0016c. Snapshot ordering regression: the .ai/ snapshot must happen AFTER
+# ensure_declared_base_branch() restores the worktree from the declared base.
+# If snapshot runs first, the restore's `':!.ai'` pathspec can be mangled by
+# MSYS and wipe the entire worktree .ai/, deleting open handoffs and any
+# uncommitted canonical .ai/ changes before the CLI sees them.
+# ==============================================================================
+mkdir -p "$PROJECT/.ai/reports"
+echo "canonical-only" > "$PROJECT/.ai/reports/adr0016c-canonical-only.md"
+cat > "$STUB_BIN/kimi" <<EOF
+#!/bin/bash
+if [ ! -f "\$(pwd)/.ai/reports/adr0016c-canonical-only.md" ]; then
+    echo "FAIL: canonical-only .ai/ file missing from worktree snapshot" >&2
+    exit 1
+fi
+exit 0
+EOF
+chmod +x "$STUB_BIN/kimi"
+mk_handoff kimi 202607110022-adr0016c-snapshot-order
+rm -f "$LOGS/kimi.log"
+out_adr0016c="$(run_dispatcher --only kimi --handoff .ai/handoffs/to-kimi/open/202607110022-adr0016c-snapshot-order.md 2>&1)"
+rc_adr0016c=$?
+check "ADR-0016c: dispatcher exits 0 when uncommitted canonical .ai/ survives branch setup" "$([ "$rc_adr0016c" -eq 0 ] && echo 0 || echo 1)"
+check "ADR-0016c: canonical-only file present in worktree snapshot" "$(echo "$out_adr0016c" | grep -qvi 'FAIL: canonical-only' && echo 0 || echo 1)"
+# Cleanup
+rm -f "$PROJECT/.ai/reports/adr0016c-canonical-only.md"
+make_stub "kimi" "$LOGS/kimi.log"
+
+# ==============================================================================
 # --one mode: dispatch exactly one handoff even when multiple are open.
 # ==============================================================================
 # Remove the ADR-0016 handoff so it is not picked up before the --one targets.

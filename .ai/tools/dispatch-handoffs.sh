@@ -847,63 +847,6 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 continue
             fi
 
-            # Snapshot-copy the canonical .ai/ into the worktree. This is the
-            # ADR-0016 replacement for the old junction model: the executor sees
-            # ordinary files, not a junction, so git cannot follow a reparse
-            # point and delete canonical .ai/ state.
-            if ! snapshot_ai "$wt_path"; then
-                echo "FAIL  [$cli] $rel — could not snapshot canonical .ai/ into worktree"
-                EXEC_FAILED=$((EXEC_FAILED+1))
-                ts=$(date -u +%Y%m%d%H%M%S)
-                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
-                {
-                    echo "# Dispatch failure — $cli (.ai/ snapshot)"
-                    echo ""
-                    echo "- Handoff: $rel"
-                    echo "- UTC: $ts"
-                    echo "- Framework: $(framework_version)"
-                    echo "- Worktree: ${wt_path#$root/}"
-                    echo "- Stage: .ai/ snapshot-copy (ADR-0016) — never reached CLI invocation"
-                    echo ""
-                    echo "Triage: run 'bash $root/.ai/tools/sync-ai-state.sh snapshot $root/.ai $wt_path/.ai' manually."
-                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
-                } > "$report"
-                echo "ALERT: dispatch failed — report written to ${report#$root/}"
-                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
-                rm -f "$claim"
-                continue
-            fi
-
-            # Verify the dispatched handoff actually arrived in the worktree.
-            # If snapshot-copy silently dropped it (e.g. tar race or junction
-            # churn), launching the CLI would eventually cause sync-back to
-            # delete the canonical open handoff (ADR-0016 deletion-policy bug).
-            if [ ! -f "$wt_path/$rel" ]; then
-                echo "FAIL  [$cli] $rel — handoff file missing from worktree after .ai/ snapshot" >&2
-                EXEC_FAILED=$((EXEC_FAILED+1))
-                ts=$(date -u +%Y%m%d%H%M%S)
-                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
-                {
-                    echo "# Dispatch failure — $cli (.ai/ snapshot incomplete)"
-                    echo ""
-                    echo "- Handoff: $rel"
-                    echo "- UTC: $ts"
-                    echo "- Framework: $(framework_version)"
-                    echo "- Worktree: ${wt_path#$root/}"
-                    echo "- Stage: .ai/ snapshot-copy verification (ADR-0016) — never reached CLI invocation"
-                    echo ""
-                    echo "Triage: the dispatcher snapshot-copied canonical .ai/ into the worktree,"
-                    echo "but the dispatched handoff file is not present. Inspect the snapshot manifest:"
-                    echo "  $wt_path/.ai/.snapshot-manifest"
-                    echo "This is usually caused by a concurrent modification, a tar race during"
-                    echo "snapshot, or a stale .ai/ directory in the worktree. The handoff stays OPEN."
-                } > "$report"
-                echo "ALERT: dispatch failed — report written to ${report#$root/}"
-                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
-                rm -f "$claim"
-                continue
-            fi
-
             # Declared-base branch cut (second, independent defect from the
             # shared-HEAD one): never leave the worktree on ambient HEAD.
             if ! base="$(base_for "$f")"; then
@@ -1042,6 +985,67 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 rm -f "$claim"
                 continue
             fi
+            # Snapshot-copy the canonical .ai/ into the worktree. This MUST happen
+            # AFTER ensure_declared_base_branch(): that function restores the
+            # worktree from the declared base, and on Windows/MSYS the `':!.ai'`
+            # pathspec used to exclude .ai/ from the restore can be mangled. If we
+            # snapshot first and the restore later touches .ai/, the worktree .ai/
+            # is wiped before the CLI runs (observed as every .ai/ file marked
+            # deleted and cross-queue handoffs vanishing). By cutting the branch
+            # first and then snapshotting, the canonical .ai/ state always wins.
+            if ! snapshot_ai "$wt_path"; then
+                echo "FAIL  [$cli] $rel — could not snapshot canonical .ai/ into worktree"
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (.ai/ snapshot)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Stage: .ai/ snapshot-copy (ADR-0016) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: run 'bash $root/.ai/tools/sync-ai-state.sh snapshot $root/.ai $wt_path/.ai' manually."
+                    echo "The handoff stays OPEN — the dispatcher will retry it on the next --exec run."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+
+            # Verify the dispatched handoff actually arrived in the worktree.
+            # If snapshot-copy silently dropped it (e.g. tar race or junction
+            # churn), launching the CLI would eventually cause sync-back to
+            # delete the canonical open handoff (ADR-0016 deletion-policy bug).
+            if [ ! -f "$wt_path/$rel" ]; then
+                echo "FAIL  [$cli] $rel — handoff file missing from worktree after .ai/ snapshot" >&2
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (.ai/ snapshot incomplete)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Stage: .ai/ snapshot-copy verification (ADR-0016) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: the dispatcher snapshot-copied canonical .ai/ into the worktree,"
+                    echo "but the dispatched handoff file is not present. Inspect the snapshot manifest:"
+                    echo "  $wt_path/.ai/.snapshot-manifest"
+                    echo "This is usually caused by a concurrent modification, a tar race during"
+                    echo "snapshot, or a stale .ai/ directory in the worktree. The handoff stays OPEN."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+
             echo "DISPATCH [$cli] $rel — worktree: ${wt_path#$root/} branch: exec/$cli/$slug (base: $base)"
             owner=$(owner_for "$cli")
             # PICKED notify — right as we commit to dispatching, before launch.

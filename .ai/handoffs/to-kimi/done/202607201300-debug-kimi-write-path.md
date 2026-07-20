@@ -41,6 +41,24 @@ drwxr-xr-x 1 rwn34 197121 0 Jul 19 06:31 ..
 /c/Users/rwn34/Code/.wt/rwn-multi-cli-skills/kimi/.ai/handoffs/to-claude/open/debug-kimi-write.md
 ```
 
+## Post-execution observation
+
+After the initial verification above, the worktree `.ai/` snapshot disappeared
+(`ls .ai/` returned "No such file or directory"; `git status` showed every `.ai/`
+file as deleted). The canonical shared `.ai/` at
+`/c/Users/rwn34/Code/rwn-multi-cli-skills/.ai` remained intact and contained
+this done handoff plus the updated activity-log entry, but it did **not** contain
+`handoffs/to-claude/open/debug-kimi-write.md`. Conclusion: Kimi can write into
+the worktree `.ai/` snapshot and the file lands in the expected relative path,
+but the write does not survive a subsequent `sync-ai-state` sync-back/snapshot
+cycle unless the file is part of the canonical shared `.ai/` state. The worktree
+`.ai/` snapshot was restored with:
+
+```bash
+bash /c/Users/rwn34/Code/rwn-multi-cli-skills/.ai/tools/sync-ai-state.sh snapshot \
+  /c/Users/rwn34/Code/rwn-multi-cli-skills/.ai .ai
+```
+
 ## Verification
 - The output of step 1, 3, and 4 is recorded in this handoff's Report section.
 - This handoff is in `to-kimi/done/` with Status DONE.
