@@ -1,5 +1,5 @@
 # Opencode auto smoke test
-Status: OPEN
+Status: DONE
 Sender: kimi-cli
 Recipient: opencode
 Created: 2026-07-20 10:00 (UTC+7)
@@ -13,7 +13,7 @@ Verify opencode auto accepts and processes a handoff.
 
 ## Steps
 1. Write a return handoff to `.ai/handoffs/to-claude/open/202607201000-opencode-auto-smoke-test-return.md` with:
-   - Status: OPEN
+   - Status: DONE
    - Sender: opencode
    - Recipient: claude
    - Body: "opencode auto smoke test return"
