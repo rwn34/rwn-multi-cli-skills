@@ -223,6 +223,58 @@ sanitize_git_env() {
   unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_PREFIX
 }
 
+# recover_original_branch — when the target is currently on the install branch
+# (e.g. a previous install/update left it there), figure out which branch we
+# should merge back into and delete the install branch from. Order:
+#   1. .ai-install-rollback-point.txt SHA -> branch containing it (not install branch)
+#   2. git reflog -> branch we were on before the most recent checkout to install branch
+#   3. main / master fallback
+recover_original_branch() {
+  local candidate=""
+
+  # 1. Rollback file contains the HEAD SHA of the original branch at install time.
+  if [ -f "$TARGET/$ROLLBACK_FILE" ]; then
+    local rollback_sha
+    rollback_sha="$(head -n 1 "$TARGET/$ROLLBACK_FILE" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$rollback_sha" ]; then
+      # Prefer main if it contains the SHA, then master, then any other branch.
+      for probe in main master; do
+        if git -C "$TARGET" rev-parse --verify "$probe" >/dev/null 2>&1 && \
+           git -C "$TARGET" merge-base --is-ancestor "$rollback_sha" "$probe" 2>/dev/null; then
+          candidate="$probe"
+          break
+        fi
+      done
+      if [ -z "$candidate" ]; then
+        candidate="$(git -C "$TARGET" branch --contains "$rollback_sha" --format='%(refname:short)' 2>/dev/null | grep -v "^$BRANCH$" | head -n 1 || true)"
+      fi
+    fi
+  fi
+
+  # 2. Reflog: "checkout: moving from <old> to <new>" records. Find the most
+  # recent move onto the install branch and return the source branch.
+  if [ -z "$candidate" ] && [ -f "$TARGET/.git/logs/HEAD" ]; then
+    candidate="$(git -C "$TARGET" reflog --pretty=format:'%gs' 2>/dev/null \
+      | grep -E "^checkout: moving from .+ to $BRANCH\b" \
+      | head -n 1 \
+      | sed -E "s/^checkout: moving from (.+) to $BRANCH\b.*$/\1/" \
+      || true)"
+    # If the recovered branch is itself the install branch, ignore it.
+    [ "$candidate" = "$BRANCH" ] && candidate=""
+  fi
+
+  # 3. Fallback to main or master.
+  if [ -z "$candidate" ]; then
+    if git -C "$TARGET" rev-parse --verify main >/dev/null 2>&1; then
+      candidate="main"
+    elif git -C "$TARGET" rev-parse --verify master >/dev/null 2>&1; then
+      candidate="master"
+    fi
+  fi
+
+  echo "$candidate"
+}
+
 # Remove any nested .git file or directory that cp -R copied from a source
 # directory. Source framework dirs (.ai, .claude, .kimi, .kiro, .opencode)
 # should never contain git repos, but when the installer runs from a worktree
@@ -294,6 +346,21 @@ phase0() {
 
   local original_branch
   original_branch="$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")"
+
+  # If the target was left on the install branch by a previous aborted run,
+  # recover the real original branch so phase6 can merge and delete cleanly.
+  if [ "$original_branch" = "$BRANCH" ]; then
+    local recovered
+    recovered="$(recover_original_branch)"
+    if [ -n "$recovered" ]; then
+      log "Target is on install branch; recovered original branch: $recovered"
+      original_branch="$recovered"
+    else
+      warn "Target is on install branch and original branch could not be recovered; defaulting to main."
+      original_branch="main"
+    fi
+  fi
+
   ORIGINAL_BRANCH="$original_branch"
   log "Target original branch: $ORIGINAL_BRANCH"
 
@@ -1528,6 +1595,21 @@ phase6() {
   if [ "$do_merge" -eq 0 ]; then
     log "Install branch left intact: $BRANCH"
     return 0
+  fi
+
+  # Guard: if we still think the original branch is the install branch, we cannot
+  # merge/delete it. Try one more recovery before giving up.
+  if [ "$ORIGINAL_BRANCH" = "$BRANCH" ]; then
+    local recovered
+    recovered="$(recover_original_branch)"
+    if [ -n "$recovered" ] && [ "$recovered" != "$BRANCH" ]; then
+      ORIGINAL_BRANCH="$recovered"
+      log "Recovered original branch in phase6: $ORIGINAL_BRANCH"
+    else
+      warn "Original branch is the install branch ($BRANCH); cannot auto-merge/delete."
+      log "Switch away from $BRANCH manually, then delete it."
+      return 0
+    fi
   fi
 
   # Safety: abort if there are unexpected uncommitted changes before switching.
