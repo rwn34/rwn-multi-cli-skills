@@ -898,8 +898,8 @@ function Read-HandoffField {
     return $null
 }
 
-# Eight-actor identity normalization. Accepts legacy bare cli names (kimi),
-# legacy '-cli' forms, and full eight-actor identities, and returns
+# Six-actor identity normalization. Accepts legacy bare cli names (kimi),
+# legacy '-cli' forms, and full six-actor identities, and returns
 # the canonical identity used in Sender:/Recipient:/Owner:.
 function Resolve-ActorIdentity {
     param([string]$Actor)
@@ -910,9 +910,7 @@ function Resolve-ActorIdentity {
         { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli') }    { return 'kimi' }
         { $_ -in @('kimi-cockpit','kimai-cockpit') }                { return 'kimi-cockpit' }
         { $_ -in @('kiro','kiro-auto','kiro-cli') }                 { return 'kiro' }
-        'kiro-cockpit'                                              { return 'kiro-cockpit' }
         { $_ -in @('opencode','opencode-auto','opencode-cli') }     { return 'opencode' }
-        'opencode-cockpit'                                          { return 'opencode-cockpit' }
         default                                                     { return $a }
     }
 }

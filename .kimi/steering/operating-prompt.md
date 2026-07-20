@@ -161,11 +161,11 @@ on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to
 between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
-actor: `claude-cockpit`, `kimi-cockpit`, `kiro-cockpit`, `opencode-cockpit`,
-`claude`, `kimi`, `kiro`, or `opencode`; UTC+7 wall-clock finish time, annotated
-`(UTC+7)`; prepend order is authoritative). Bare names are the auto-pane
-identity; the `-cockpit` suffix is the interactive cockpit identity. If another
-CLI must continue, write a handoff to
+actor: `claude-cockpit`, `kimi-cockpit`, `claude`, `kimi`, `kiro`, or `opencode`;
+UTC+7 wall-clock finish time, annotated `(UTC+7)`; prepend order is
+authoritative). Bare names are the auto-pane identity; the `-cockpit` suffix is
+the interactive cockpit identity (only `claude-cockpit` and `kimi-cockpit`
+exist). If another CLI must continue, write a handoff to
 `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp filename)
 with a `Created:` line in UTC+7.
 
@@ -182,9 +182,9 @@ to the auto pane — a cockpit must not hand-take it; `Auto: no` / Risk C is
 cockpit-owned. A cockpit taking an `Auto: yes` handoff (pane down,
 quarantined, owner waiting live) must FIRST run `bash .ai/tools/claim-handoff.sh
 <path>` (flips `Auto: no` + claim sidecar, atomically); `release-handoff.sh`
-reverts. Symmetric across all four CLI binaries; the eight logical actors are
-`claude-cockpit`, `kimi-cockpit`, `kiro-cockpit`, `opencode-cockpit`,
-`claude`, `kimi`, `kiro`, and `opencode` (see `.ai/handoffs/README.md`).
+reverts. Symmetric across all four CLI binaries; the six logical actors are
+`claude-cockpit`, `kimi-cockpit`, `claude`, `kimi`, `kiro`, and `opencode`
+(see `.ai/handoffs/README.md`).
 
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.

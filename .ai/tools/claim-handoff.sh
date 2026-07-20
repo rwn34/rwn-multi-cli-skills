@@ -82,8 +82,6 @@ if [ -z "$OWNER" ]; then
     case "$recipient" in
         claude)   OWNER="claude-cockpit" ;;
         kimi)     OWNER="kimi-cockpit" ;;
-        kiro)     OWNER="kiro-cockpit" ;;
-        opencode) OWNER="opencode-cockpit" ;;
     esac
 fi
 

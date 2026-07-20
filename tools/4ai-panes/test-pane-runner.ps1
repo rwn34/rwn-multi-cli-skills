@@ -263,7 +263,7 @@ Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable ->
 Release-Handoff -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
 
-# -- Get-DefaultOwner returns eight-actor auto identities --
+# -- Get-DefaultOwner returns six-actor auto identities --
 Assert-Equal 'claude'   (Get-DefaultOwner -CliName 'claude')   'k: claude owner is claude'
 Assert-Equal 'kimi'     (Get-DefaultOwner -CliName 'kimi')     'k: kimi owner is kimi'
 Assert-Equal 'kiro'     (Get-DefaultOwner -CliName 'kiro')     'k: kiro owner is kiro'
@@ -325,7 +325,7 @@ Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk)
 # restore the real threshold
 $script:MaxHandoffAttempts = $origMax
 
-# -- (bn-bs) Emit-NextStageHandoff: eight-actor identities + Next: fan-out --
+# -- (bn-bs) Emit-NextStageHandoff: six-actor identities + Next: fan-out --
 # Use an isolated workspace so earlier tests' leftover queue files do not skew counts.
 $emitWork = Join-Path $env:TEMP ("pane-runner-emit-test-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $emitWork -Force | Out-Null
@@ -364,7 +364,7 @@ function Get-EmitFile {
     return (Get-ChildItem -Path $d -Filter '*.md' -File | Where-Object { $_.Name -like "*$SlugPattern*" } | Select-Object -First 1)
 }
 
-# (bn) ReviewBy: bare cli maps to <cli>, sender is the emitting pane's eight-actor identity
+# (bn) ReviewBy: bare cli maps to <cli>, sender is the emitting pane's six-actor identity
 $bnDone = New-DoneHandoff -CliName 'kimi' -Slug 'bn-review' -ExtraLines 'ReviewBy: kiro'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kimi' -HandoffPath $bnDone
 Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'review') 'bn: ReviewBy bare kiro emits one review handoff'
@@ -408,7 +408,7 @@ Assert-Equal $true ($bqContent -match '(?m)^Sender:\s*claude\s*$') 'bq: deploy s
 Assert-Equal $true ($bqContent -match '(?m)^Recipient:\s*opencode\s*$') 'bq: deploy recipient is opencode'
 Assert-Equal $true ($bqContent -match '(?m)^Auto:\s*yes\s*$') 'bq: deploy handoff is Auto: yes'
 
-# (br) FinalReview: <actor> emits a review handoff with eight-actor identities
+# (br) FinalReview: <actor> emits a review handoff with six-actor identities
 $brDone = New-DoneHandoff -CliName 'kiro' -Slug 'br-final' -ExtraLines 'FinalReview: claude'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kiro' -HandoffPath $brDone
 $brFile = Get-EmitFile -Queue 'claude' -SubDir 'review' -SlugPattern 'br-final'

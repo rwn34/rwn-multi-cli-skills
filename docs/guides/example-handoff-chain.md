@@ -268,7 +268,7 @@ Observed-in: main@m7n8o9p
 Evidence: VERIFIED (gh run list --branch main --limit 1 --json conclusion -> "success")
 Gate: owner (staging deploy is Tier B; no hard gate, notify after)
 # No Gate-satisfied-by needed for staging; dry-run first, then deploy.
-Next: kimai-cockpit
+Next: kimi-cockpit
 
 ## Goal
 Deploy the merged QR feature to the staging environment.
@@ -304,8 +304,8 @@ back to a cockpit.
 # Validate QR feature on staging
 Status: OPEN
 Sender: opencode-auto
-Recipient: kimai-cockpit
-Owner: kimai-cockpit
+Recipient: kimi-cockpit
+Owner: kimi-cockpit
 Created: 2026-07-19 01:00 (UTC+7)
 Auto: no
 Risk: C
@@ -332,9 +332,9 @@ Validate the staging deployment and decide whether to request production deploy.
 Recipient self-retires to `to-kimai/done/`.
 ```
 
-**Result:** `kimai-cockpit` validates, asks the owner. If the owner authorizes
-production deploy, `kimai-cockpit` files `to-opencode/open/202607190100-deploy-production-qr.md`
-with `Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)` and `Relay: kimai-cockpit`.
+**Result:** `kimi-cockpit` validates, asks the owner. If the owner authorizes
+production deploy, `kimi-cockpit` files `to-opencode/open/202607190100-deploy-production-qr.md`
+with `Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)` and `Relay: kimi-cockpit`.
 
 ---
 
@@ -345,7 +345,7 @@ with `Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)` and `Relay: kimai-coc
 ```markdown
 # Deploy QR feature to production
 Status: OPEN
-Sender: kimai-cockpit
+Sender: kimi-cockpit
 Recipient: opencode-auto
 Owner: opencode-auto
 Created: 2026-07-19 01:20 (UTC+7)
@@ -355,7 +355,7 @@ Observed-in: main@m7n8o9p
 Evidence: VERIFIED (curl https://staging... -> 200 OK)
 Gate: owner
 Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)
-Relay: kimai-cockpit
+Relay: kimi-cockpit
 
 ## Goal
 Deploy the validated QR feature to production.
@@ -401,7 +401,7 @@ claude-cockpit
           → to-opencode/open/202607182100-deploy-staging-qr.md
             → opencode-auto (staging deploy)
               → to-kimai/open/202607182200-validate-staging-qr.md
-                → kimai-cockpit (validation + owner gate)
+                → kimi-cockpit (validation + owner gate)
                   → to-opencode/open/202607190100-deploy-production-qr.md
                     → opencode-auto (production deploy)
 ```

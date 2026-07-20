@@ -62,16 +62,8 @@ Current queues:
     │   ├── open/
     │   ├── review/
     │   └── done/
-    ├── to-kiro-cockpit/             interactive Kiro CLI session
-    │   ├── open/
-    │   ├── review/
-    │   └── done/
-    ├── to-opencode/                 headless OpenCode auto pane
-    │   ├── open/                    (renamed from to-crush/ 2026-07-09)
-    │   ├── review/
-    │   └── done/
-    └── to-opencode-cockpit/         interactive OpenCode session
-        ├── open/
+    └── to-opencode/                 headless OpenCode auto pane
+        ├── open/                    (renamed from to-crush/ 2026-07-09)
         ├── review/
         └── done/
 
@@ -116,30 +108,28 @@ Do not rename — they are grandfathered. New handoffs use the timestamp format.
 Sorting `ls .ai/handoffs/to-<cli>/open/` still shows oldest-first with both
 formats present.
 
-## Eight-actor cockpit / auto model — 2026-07-19
+## Six-actor model — 2026-07-19
 
-The framework has eight logical actors across four CLI binaries. Each CLI has
-two queues: the bare `to-<cli>/` directory for its headless auto pane, and
-`to-<cli>-cockpit/` for its interactive cockpit session.
+The framework has six logical actors across four CLI binaries. `claude` and
+`kimi` each have both a headless auto pane (`to-<cli>/`) and an interactive
+cockpit (`to-<cli>-cockpit/`); `kiro` and `opencode` only have auto-pane queues.
 
 | Identity | Queue directory | Mode | Role |
 |----------|-----------------|------|------|
 | `claude-cockpit` | `to-claude-cockpit/` | interactive cockpit | architecture, orchestration, final review, human relay |
 | `kimi-cockpit` | `to-kimi-cockpit/` | interactive cockpit | executor/tester, dispatcher to auto |
-| `kiro-cockpit` | `to-kiro-cockpit/` | interactive cockpit | frontend review, human relay |
-| `opencode-cockpit` | `to-opencode-cockpit/` | interactive cockpit | deploy review, human relay |
 | `claude` | `to-claude/` | headless auto pane | spec/plan design, final review |
 | `kimi` | `to-kimi/` | headless auto pane | backend + shell package implementation |
 | `kiro` | `to-kiro/` | headless auto pane | frontend implementation |
 | `opencode` | `to-opencode/` | headless auto pane | deploy, GitHub ops |
 
-A handoff's `Sender:`, `Recipient:`, and `Owner:` lines use the eight-actor
+A handoff's `Sender:`, `Recipient:`, and `Owner:` lines use the six-actor
 identity. The bare CLI name (`kimi`, `kiro`, `opencode`, `claude`) is the
 auto-pane identity; the `-cockpit` suffix is the interactive identity.
 
 - `Auto: yes` + `Risk: A/B` routes to the bare `to-<cli>/` auto-pane queue.
 - `Auto: no`, hard-gate `Risk: C`, or a `Next:` pointing at a cockpit routes to
-  the `to-<cli>-cockpit/` queue.
+  `to-claude-cockpit/` or `to-kimi-cockpit/` (the only cockpit queues).
 
 See `docs/specs/saja-akun-cli-workflow.md` for the routing table, multi-stage
 chains, visibility model, and escalation rules, and
@@ -272,16 +262,16 @@ spec and `docs/architecture/0015-handoff-protocol-v4.md` for the ADR.
 - `Relay: <actor>` — optional; clarifies who physically launches the action when
   it differs from the `Recipient`. If omitted, the recipient is the relay.
 
-## Cockpit / auto distinction (eight-actor model)
+## Cockpit / auto distinction (six-actor model)
 
-A project using this framework has eight logical actors across four CLI binaries:
+A project using this framework has six logical actors across four CLI binaries:
+`claude` and `kimi` each have an auto pane and a cockpit; `kiro` and `opencode`
+only have an auto pane.
 
 | Actor | Role | Headless? |
 |---|---|---|
 | `claude-cockpit` | Interactive Claude Code chat — architecture, orchestration, final review, human relay | no |
 | `kimi-cockpit` | Interactive Kimi CLI chat — executor/tester, dispatcher to auto, human relay | no |
-| `kiro-cockpit` | Interactive Kiro CLI chat — frontend implementation, human relay | no |
-| `opencode-cockpit` | Interactive OpenCode chat — deploy, GitHub ops, human relay | no |
 | `claude` | Headless Claude pane-runner — spec/plan design, final review | yes |
 | `kimi` | Headless Kimi pane-runner — backend + shell package implementation | yes |
 | `kiro` | Headless Kiro pane-runner — frontend implementation | yes |
@@ -293,7 +283,7 @@ surfaces counts, or when `fleet-health.sh` reports a STALL/WEDGED pane.
 
 In handoff status blocks:
 
-- `Sender:` / `Recipient:` / `Owner:` should use the eight-actor identity (e.g.
+- `Sender:` / `Recipient:` / `Owner:` should use the six-actor identity (e.g.
   `kimi`, `claude-cockpit`). Bare `kimi-cli` or `claude-code` are
   ambiguous — they do not say whether the actor is the cockpit or the auto pane.
 - `Auto:` remains the single mechanical ownership boundary:

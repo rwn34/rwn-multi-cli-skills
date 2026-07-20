@@ -26,8 +26,8 @@ set -euo pipefail
 DEFAULT_EXECUTORS="kiro kimi opencode"
 
 # All dispatchable actors that need a handoff queue tree.  Keep in sync with
-# .ai/handoffs/README.md (eight-actor model) and .ai/tools/fleet-health.sh.
-HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kiro kiro-cockpit opencode"
+# .ai/handoffs/README.md (six-actor model) and .ai/tools/fleet-health.sh.
+HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kiro opencode"
 
 # ---------- logging ----------
 log()  { echo "[wt-bootstrap] $*"; }

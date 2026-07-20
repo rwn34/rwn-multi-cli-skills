@@ -110,8 +110,9 @@ command -v fleet_notify >/dev/null 2>&1 || fleet_notify() { :; }
 project_name="$(basename "$root")"
 
 # The recipient CLI's activity-log identity (mirrors pane-runner.ps1 Get-DefaultOwner).
-# Eight-actor model: bare names are auto panes; -cockpit suffixes are interactive
-# sessions. Cockpit queues are non-dispatchable and exist only for human routing.
+# Six-actor model: bare names are auto panes; only claude and kimi have a
+# cockpit suffix. Cockpit queues are non-dispatchable and exist only for human
+# routing.
 owner_for() {
     case "$1" in
         claude|claude-auto)              echo "claude" ;;
@@ -119,9 +120,7 @@ owner_for() {
         kimi|kimi-auto|kimai-auto)       echo "kimi" ;;
         kimi-cockpit|kimai-cockpit)      echo "kimi-cockpit" ;;
         kiro|kiro-auto)                  echo "kiro" ;;
-        kiro-cockpit)                    echo "kiro-cockpit" ;;
         opencode|opencode-auto)          echo "opencode" ;;
-        opencode-cockpit)                echo "opencode-cockpit" ;;
         *)                               echo "$1" ;;
     esac
 }

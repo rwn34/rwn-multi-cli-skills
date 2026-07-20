@@ -1,6 +1,6 @@
 # Saja-Project Cockpit / Auto Handoff Workflow
 
-**Scope:** framework-level design for the eight-actor model intended as the
+**Scope:** framework-level design for the six-actor model intended as the
 reusable pattern for all `saja-*` repos.
 
 **Actors:**
@@ -9,16 +9,15 @@ reusable pattern for all `saja-*` repos.
 |-------|----------|------|--------------|
 | `claude-cockpit` | interactive Claude Code chat | cockpit | architecture, orchestration, final review, human relay |
 | `kimi-cockpit` | interactive Kimi CLI chat | cockpit | executor/tester, dispatcher to auto |
-| `kiro-cockpit` | interactive Kiro CLI chat | cockpit | frontend review, human relay |
-| `opencode-cockpit` | interactive OpenCode chat | cockpit | deploy review, human relay |
 | `claude` | headless Claude pane-runner | auto | spec/plan design, final review |
 | `kimi` | headless Kimi pane-runner | auto | backend + shell package implementation |
 | `kiro` | headless Kiro pane-runner | auto | frontend implementation |
 | `opencode` | headless OpenCode pane-runner | auto | deploy, GitHub ops |
 
 The bare CLI name is the auto-pane identity; the `-cockpit` suffix is the
-interactive cockpit identity. Handoff files use these canonical eight-actor
-identities in `Sender:` / `Recipient:` / `Owner:`.
+interactive cockpit identity (only `claude-cockpit` and `kimi-cockpit` exist).
+Handoff files use these canonical six-actor identities in `Sender:` /
+`Recipient:` / `Owner:`.
 
 ## 1. Routing table — which task type goes to which actor
 
@@ -39,11 +38,11 @@ identities in `Sender:` / `Recipient:` / `Owner:`.
 ## 2. Status-block conventions
 
 Use the protocol-v4 status block from `.ai/handoffs/template.md`. The
-eight-actor model changes how three existing fields are interpreted:
+six-actor model changes how three existing fields are interpreted:
 
 ### 2.1 `Sender:` / `Recipient:` / `Owner:` include mode
 
-Always use the eight-actor identity:
+Always use the six-actor identity:
 
 ```markdown
 Sender: kimi-cockpit
@@ -188,7 +187,7 @@ should never remove a live claim.
 
 ## 7. Activity-log identity
 
-Use the eight-actor identity in the activity log:
+Use the six-actor identity in the activity log:
 
 ```markdown
 ## 2026-07-18 22:00 (UTC+7) — kimi
@@ -206,7 +205,7 @@ No new field is needed.
 No tooling or SSOT changes are required. The current stack already supports
 this workflow:
 
-- `.ai/handoffs/template.md` has the eight-actor `Sender:`/`Recipient:` identities
+- `.ai/handoffs/template.md` has the six-actor `Sender:`/`Recipient:` identities
   and the v4 evidence fields.
 - `.ai/tools/dispatch-handoffs.sh` routes `Auto: yes` + Risk A/B to the auto
   pane and enforces `Observed-in`, `HYPOTHESIS`, and gate rules.
@@ -223,7 +222,7 @@ the routing discipline in §1–§4, and the README cross-reference.
 
 ## 9. Open questions resolved
 
-- **Should `Sender:`/`Recipient:` include mode?** Yes — use the full eight-actor
+- **Should `Sender:`/`Recipient:` include mode?** Yes — use the full six-actor
   identity (`kimi-cockpit`, `claude`).
 - **How encode the intended next actor when an auto pane finishes?** Use
   `ReviewBy:`, `FinalReview:`, `Deploy: yes`, or `Next:`.
