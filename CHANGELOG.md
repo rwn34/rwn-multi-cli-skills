@@ -21,6 +21,7 @@ promotion happened.
 ### Added
 
 - `install-template.sh` normalizes the target repo's default branch to `main` during pre-flight: a repo still using `master` gets `main` created from `master`, the local `master` ref removed, and `origin/HEAD` updated when possible.
+- `install-template.sh` also renames the GitHub remote default branch from `master` to `main` via `gh api` when `gh` is available and authenticated, so fresh clones no longer fetch `origin/master`.
 - Dispatcher fallback for handoffs with an explicit `Base: origin/master` that no longer resolves: the dispatcher warns and re-runs the default-branch resolution chain instead of failing.
 - New test suite `.ai/tests/test-install-template-default-branch.sh` covering master→main normalization.
 - New regression test in `.ai/tests/test-dispatch-worktree.sh` (test4e) proving `Base: origin/master` falls back to a main-line base.

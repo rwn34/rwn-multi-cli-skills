@@ -279,6 +279,66 @@ normalize_default_branch_to_main() {
       log "Updated origin/HEAD -> origin/main."
     fi
   fi
+
+  # Case 4: if the GitHub remote still has `master` as its default branch,
+  # rename it to `main` via the GitHub API. This closes the remaining hole
+  # where fresh clones of the repo keep fetching `origin/master`.
+  normalize_remote_default_branch_to_main
+}
+
+# github_owner_repo <remote-name> -> echoes "owner/repo" for a GitHub remote URL,
+# or empty string if the remote is missing or not a github.com URL. Supports both
+# HTTPS and SSH styles, with or without a trailing ".git".
+github_owner_repo() {
+  local remote_name="${1:-origin}"
+  local url
+  url="$(git -C "$TARGET" remote get-url "$remote_name" 2>/dev/null || true)"
+  [ -n "$url" ] || return 0
+  case "$url" in
+    https://github.com/*|http://github.com/*|git@github.com:*)
+      # Strip protocol, auth, and trailing .git.
+      echo "$url" | sed -E 's#^(https?://[^/]+/|git@github.com:)##; s/\.git$//'
+      ;;
+  esac
+}
+
+# normalize_remote_default_branch_to_main — best-effort GitHub API rename of the
+# remote default branch from `master` to `main`. Requires `gh` CLI and auth.
+# Never fails the install: if `gh` is missing, unauthenticated, or the remote is
+# not GitHub, the function logs a warning and returns.
+normalize_remote_default_branch_to_main() {
+  if ! command -v gh >/dev/null 2>&1; then
+    warn "gh CLI not found; skipping remote default-branch check. Install gh and rerun if you want GitHub's default branch flipped to 'main'."
+    return 0
+  fi
+
+  local owner_repo
+  owner_repo="$(github_owner_repo origin)"
+  [ -n "$owner_repo" ] || return 0
+
+  local default_branch
+  default_branch="$(gh api "repos/$owner_repo" --jq '.default_branch' 2>/dev/null || true)"
+  [ -n "$default_branch" ] || {
+    warn "Could not read default branch for GitHub repo $owner_repo (gh not authenticated or no network). Skipping remote rename."
+    return 0
+  }
+
+  if [ "$default_branch" = "main" ]; then
+    log "GitHub remote $owner_repo already has default branch 'main'."
+    return 0
+  fi
+
+  if [ "$default_branch" != "master" ]; then
+    warn "GitHub remote $owner_repo has unexpected default branch '$default_branch'; leaving it alone."
+    return 0
+  fi
+
+  log "Renaming GitHub default branch 'master' -> 'main' for $owner_repo..."
+  if gh api -X PATCH "repos/$owner_repo" -f default_branch=main >/dev/null 2>&1; then
+    log "GitHub default branch renamed to 'main'."
+  else
+    warn "Could not rename GitHub default branch for $owner_repo. You may need to do it manually in the repo settings."
+  fi
 }
 
 # recover_original_branch — when the target is currently on the install branch
