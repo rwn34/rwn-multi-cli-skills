@@ -33,6 +33,10 @@ There are two queues per CLI:
 - `to-<cli>-cockpit/` — the **interactive cockpit** session. Use this when
   `Auto: no`, Risk C, or the task explicitly needs a human in the loop.
 
+There is no separate `to-<cli>-auto/` queue; the auto pane uses the base
+`to-<cli>/` queue. Older `-executor` and stray `-auto` directories have been
+removed.
+
 Current queues:
 
     .ai/handoffs/
