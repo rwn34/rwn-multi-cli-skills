@@ -1,3 +1,8 @@
+## 2026-07-20 23:00 (UTC+7) — claude-cockpit
+- Action: Revert framework actor model from eight actors to six actors (remove kiro-cockpit and opencode-cockpit); committed, pushed, synced pane-runner to ~/.rwn-auto/rwn-4AI-panes, and merged Kiro contract update via PR #129.
+- Files: .ai/instructions/operating-prompt/principles.md, .ai/handoffs/README.md, .ai/handoffs/template.md, docs/specs/saja-akun-cli-workflow.md, docs/guides/example-handoff-chain.md, .ai/tools/dispatch-handoffs.sh, .ai/tools/claim-handoff.sh, .ai/tools/release-handoff.sh, .ai/tools/fleet-health.sh, .ai/tools/test-fleet-health.sh, scripts/wt-bootstrap.sh, tools/4ai-panes/pane-runner.ps1, tools/4ai-panes/test-pane-runner.ps1, .ai/tests/test-dispatch-owner-for.sh, CHANGELOG.md, .kiro/steering/00-ai-contract.md (PR #129)
+- Decisions: Kiro contract excluded from main commit due to cross-CLI pre-commit hook; routed through handoff to kiro and merged as PR #129. Legacy to-kiro-cockpit/ and to-opencode-cockpit/ queue dirs removed. Verification: sync-replicas --check, owner-for, fleet-health tests, lint-handoff, pane-runner tests all green.
+
 ## 2026-07-20 22:45 (UTC+7) — kiro
 - Action: Processed handoff 202607201600-kiro-contract-six-actor.md — verified `.kiro/steering/00-ai-contract.md` already carried the three six-actor-model edits, ran the sender lint, committed, and pushed as kiro. Self-retired handoff to done/.
 - Files: .kiro/steering/00-ai-contract.md (committed 5f830d4 on exec/kiro/202607201600-kiro-contract-six-actor, pushed to origin), .ai/handoffs/to-kiro/done/202607201600-kiro-contract-six-actor.md (moved from open/)
