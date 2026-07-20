@@ -26,15 +26,15 @@ heading (that would collide N concurrent PRs on the same two lines). The old
 per-branch rebump on the merge train STOPS. Your job at merge is the single
 version assignment:
 
-1. Assign ONE version (strictly greater than what is on master).
+1. Assign ONE version (strictly greater than what is on main).
 2. Promote the accumulated `## [Unreleased]` bullets in `CHANGELOG.md` into one
    new `## [<version>]` heading (leave a fresh empty `## [Unreleased]`).
 3. Bump `package.json` `.version` once to match.
 
-`scripts/check-version-bump.sh` runs on `push: master` (last in `gates.yml`) and
+`scripts/check-version-bump.sh` runs on `push: main` (last in `gates.yml`) and
 verifies this happened — a merge that changed versioned content without the bump
-turns the master run red. Preserve the strict-increase invariant: never assign a
-version equal to or lower than master's, so adopter drift-detection
+turns the main run red. Preserve the strict-increase invariant: never assign a
+version equal to or lower than main's, so adopter drift-detection
 (`Selector.ps1` `Test-FrameworkDrift` + the installer's `version.ts`) keeps
 seeing one increment per merge.
 
