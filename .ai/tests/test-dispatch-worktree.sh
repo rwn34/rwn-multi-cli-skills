@@ -264,7 +264,7 @@ rc4b=$?
 after_reports4b="$(ls "$PROJECT/.ai/reports" 2>/dev/null | wc -l)"
 
 check "test4b: dispatcher exits non-zero for unresolvable base" "$([ "$rc4b" -ne 0 ] && echo 0 || echo 1)"
-check "test4b: dispatcher reports FAIL for unresolvable base" "$(echo "$out4b" | grep -q 'FAIL.*kiro.*could not establish declared-base' && echo 0 || echo 1)"
+check "test4b: dispatcher reports FAIL for unresolvable base" "$(echo "$out4b" | grep -q 'FAIL.*\[kiro\]' && echo 0 || echo 1)"
 check "test4b: a dispatch-failure report was written" "$([ "$after_reports4b" -gt "$before_reports4b" ] && echo 0 || echo 1)"
 check "test4b: handoff file still present in open/" "$([ -f "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" ] && echo 0 || echo 1)"
 check "test4b: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kiro/open/202607110004-t4b.md" && echo 0 || echo 1)"
@@ -361,6 +361,37 @@ if [ -d "$wt_kimi_main4d" ]; then
     check "test4d: branch was cut from latest origin/main after fetch" "$([ "$branch_head_4d" = "$LATEST_MAIN" ] && echo 0 || echo 1)"
 else
     check "test4d: kimi worktree exists" 1
+fi
+
+# ==============================================================================
+# 4e. Explicit `Base: origin/master` on a repo that has no `origin/master`
+#     falls back to the default branch resolution chain instead of failing.
+#     Regression test for old handoffs/templates still carrying `origin/master`.
+# ==============================================================================
+mk_handoff_for "$PROJECT_MAIN" kiro 202607110004-t4e "Base: origin/master"
+(
+    cd "$PROJECT_MAIN" && bash "$DISPATCHER" --exec --only kiro
+) >"$LOGS/t4e-dispatcher.out" 2>&1
+rc4e=$?
+check "test4e: dispatcher exits 0 despite Base: origin/master missing locally" "$([ "$rc4e" -eq 0 ] && echo 0 || echo 1)"
+
+wt_kiro_main4e="$WORK/.wt/project-main/kiro"
+if [ -d "$wt_kiro_main4e" ]; then
+    branch_head_4e="$(git -C "$wt_kiro_main4e" rev-parse --verify --quiet "exec/kiro/202607110004-t4e" 2>/dev/null)"
+    origin_main_head_4e="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet origin/main 2>/dev/null)"
+    local_main_head_4e="$(git -C "$PROJECT_MAIN" rev-parse --verify --quiet main 2>/dev/null)"
+    check "test4e: exec/kiro/<slug> branch exists" "$([ -n "$branch_head_4e" ] && echo 0 || echo 1)"
+    # The fallback may resolve to local main (ahead of origin/main after prior
+    # sync-back auto-commits), so accept either origin/main or any ancestor of
+    # the current local main that is itself on the main line.
+    on_main_line=1
+    if [ -n "$branch_head_4e" ] && [ -n "$local_main_head_4e" ] && \
+       git -C "$PROJECT_MAIN" merge-base --is-ancestor "$branch_head_4e" "$local_main_head_4e" 2>/dev/null; then
+        on_main_line=0
+    fi
+    check "test4e: branch was cut from a main-line fallback" "$on_main_line"
+else
+    check "test4e: kiro worktree exists" 1
 fi
 
 # ==============================================================================

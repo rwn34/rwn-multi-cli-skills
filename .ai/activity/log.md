@@ -1,3 +1,8 @@
+## 2026-07-20 14:14 (UTC+7) - kimi-cli
+- Action: Closed local tracker issue #1 (Kiro subagent hook inheritance) as "not planned"; bug is upstream at kirodotdev/Kiro#7671 and mitigations are documented in .ai/known-limitations.md.
+- Files: -
+- Decisions: This repo cannot fix the Kiro runtime. Layered mitigations (prompt-level SAFETY RULES, tool-level deniedPaths, ADR-0005 pre-commit backstop) remain active. Re-open only after upstream fix + empirical re-verification per handoff 017.
+
 ## 2026-07-20 12:25 (UTC+7) - kimi-cli
 - Action: Refresh the four executor worktrees (claude/kimi/kiro/opencode) to main HEAD using wt-bootstrap.sh --remove + recreate; clean fleet-health report.
 - Files: -

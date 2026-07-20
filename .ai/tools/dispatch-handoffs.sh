@@ -533,8 +533,21 @@ base_for() {
     local file="$1" base sym candidate
     base="$(header_value "$file" Base | awk '{print $1}')"
     if [ -n "$base" ]; then
-        echo "$base"
-        return 0
+        # Validate the explicit base resolves. If it doesn't, fall back to the
+        # default branch resolution chain — but only for the historical
+        # `origin/master` default; other unresolvable bases remain errors
+        # (tested in 4b).
+        if git -C "$root" rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
+            echo "$base"
+            return 0
+        fi
+        if [ "$base" = "origin/master" ]; then
+            echo "WARN: explicit Base: origin/master does not resolve; falling back to default branch resolution" >&2
+        else
+            echo "ERROR: explicit Base: $base does not resolve" >&2
+            return 1
+        fi
+        # fall through to default-branch discovery below
     fi
 
     # No explicit Base: — discover the repo's default branch. Order of

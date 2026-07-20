@@ -20,11 +20,14 @@ promotion happened.
 
 ### Added
 
-- [TODO]
+- `install-template.sh` normalizes the target repo's default branch to `main` during pre-flight: a repo still using `master` gets `main` created from `master`, the local `master` ref removed, and `origin/HEAD` updated when possible.
+- Dispatcher fallback for handoffs with an explicit `Base: origin/master` that no longer resolves: the dispatcher warns and re-runs the default-branch resolution chain instead of failing.
+- New test suite `.ai/tests/test-install-template-default-branch.sh` covering master→main normalization.
+- New regression test in `.ai/tests/test-dispatch-worktree.sh` (test4e) proving `Base: origin/master` falls back to a main-line base.
 
 ### Changed
 
-- [TODO]
+- Explicit `Base:` lines in handoffs are now validated before use; an unresolvable base other than `origin/master` fails early with a clear error.
 
 ## [0.0.47] - 2026-07-20
 

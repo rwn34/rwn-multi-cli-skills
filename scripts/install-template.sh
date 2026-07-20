@@ -223,6 +223,64 @@ sanitize_git_env() {
   unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_PREFIX
 }
 
+# normalize_default_branch_to_main — ensure the target repo uses `main` as its
+# default branch. If the repo still uses `master`, rename it locally to `main`
+# (or create `main` from `master` if the current branch is not master) and try
+# to update origin/HEAD so future dispatcher base resolution never relies on
+# `origin/master`. This is idempotent: a repo already on `main` is untouched.
+normalize_default_branch_to_main() {
+  local current
+  current="$(git -C "$TARGET" symbolic-ref --short HEAD 2>/dev/null || true)"
+
+  # Case 1: we are currently on `master` -> rename it to `main` in-place.
+  if [ "$current" = "master" ]; then
+    if git -C "$TARGET" rev-parse --verify --quiet main >/dev/null 2>&1; then
+      # Both exist and we're on master. This is a weird state; switch to main
+      # and leave master for manual cleanup rather than overwriting.
+      warn "Both 'master' and 'main' exist and current branch is 'master'. Switching to 'main' but NOT deleting 'master'."
+      git -C "$TARGET" checkout -q main || warn "Could not switch to 'main'."
+    else
+      git -C "$TARGET" branch -m master main
+      log "Renamed current branch 'master' -> 'main'."
+    fi
+    current="$(git -C "$TARGET" symbolic-ref --short HEAD 2>/dev/null || true)"
+  fi
+
+  # Case 2: `master` still exists but `main` does not -> create `main` from the
+  # tip of `master`, then delete `master`. Safe even if we're on a feature
+  # branch because we only create/delete refs, not the working tree.
+  if git -C "$TARGET" rev-parse --verify --quiet master >/dev/null 2>&1 && \
+     ! git -C "$TARGET" rev-parse --verify --quiet main >/dev/null 2>&1; then
+    local master_sha
+    master_sha="$(git -C "$TARGET" rev-parse master)"
+    git -C "$TARGET" branch main "$master_sha"
+    log "Created 'main' from existing 'master' ($master_sha)."
+    git -C "$TARGET" branch -D master
+    log "Deleted local 'master' branch."
+  fi
+
+  # Update the installer's merge target if it still references the now-removed
+  # `master` branch.
+  if [ "${ORIGINAL_BRANCH:-}" = "master" ]; then
+    ORIGINAL_BRANCH="main"
+  fi
+
+  # Case 3: origin/HEAD still points to origin/master -> try to point it at
+  # origin/main. This is best-effort: if the remote truly has no main ref yet,
+  # we do not fail the install.
+  local origin_head
+  origin_head="$(git -C "$TARGET" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||' || true)"
+  if [ "$origin_head" = "origin/master" ]; then
+    git -C "$TARGET" remote set-head origin -a >/dev/null 2>&1 || true
+    origin_head="$(git -C "$TARGET" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/||' || true)"
+    if [ "$origin_head" = "origin/master" ] && \
+       git -C "$TARGET" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+      git -C "$TARGET" remote set-head origin main >/dev/null 2>&1 || true
+      log "Updated origin/HEAD -> origin/main."
+    fi
+  fi
+}
+
 # recover_original_branch — when the target is currently on the install branch
 # (e.g. a previous install/update left it there), figure out which branch we
 # should merge back into and delete the install branch from. Order:
@@ -338,6 +396,15 @@ phase0() {
       echo "$status" >&2
       die "Aborting to protect in-flight changes."
     fi
+  fi
+
+  # Normalize the repo's default branch to `main` so the framework never relies
+  # on `origin/master` for dispatcher base resolution or install merge targets.
+  # This is idempotent for repos already on main.
+  if [ "$DRY_RUN" -eq 0 ]; then
+    normalize_default_branch_to_main
+  else
+    log "DRY-RUN: would normalize default branch to 'main' if needed."
   fi
 
   local head_sha
