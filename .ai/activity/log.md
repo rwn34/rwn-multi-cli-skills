@@ -1,3 +1,8 @@
+## 2026-07-20 12:14 (UTC+7) - kimi-cli
+- Action: Fix install-template.sh so it recovers the original branch when the target repo was left on ai-template-install by a previous aborted install/update.
+- Files: scripts/install-template.sh, .ai/tests/test-install-template-branch-cleanup.sh
+- Decisions: Added recover_original_branch() that uses rollback-point SHA -> branch containing it, then reflog, then main/master fallback. Integrated into phase0 (so ORIGINAL_BRANCH is never the install branch) and phase6 (extra guard before merge/delete). Added regression test covering rollback SHA, reflog, and fallback paths. No manual worktree/branch cleanup should be required for reruns.
+
 ## 2026-07-20 11:59 (UTC+7) - kimi-cli
 - Action: Remove orphaned to-claude-auto/ queue directory and clarify README that there is no separate -auto queue.
 - Files: .ai/handoffs/README.md
