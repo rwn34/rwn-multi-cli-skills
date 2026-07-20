@@ -1,7 +1,13 @@
+## 2026-07-20 18:22 (UTC+7) - kimi-cli
+- Action: Final verification/cleanup pass after smoke tests — corrected the activity-log record, removed failed/partial smoke-test handoffs from open queues, and committed the sync-ai-state race fix.
+- Files: .ai/tools/sync-ai-state.sh, .ai/activity/log.md, .ai/handoffs/to-kimi/open/202607201200-kimi-auto-smoke-test-v2.md (deleted), .ai/handoffs/to-opencode/open/202607201200-opencode-auto-smoke-test-v4.md (deleted)
+- Decisions: The executor-reported "wrote return handoff" for kimi/opencode did not actually materialize in the worktree .ai/ (return files absent, sync-back cp failed). This is an executor-side write-path issue, not a framework dispatch/sync-back bug. Framework tests are green: test-dispatch-worktree 104/104, test-sync-ai-state 42/42, test-fleet-health 14/14, test-ensure-queue-dirs 4/4. Kiro and Claude smoke tests passed end-to-end. Kimi/opencode auto smoke tests remain blocked on the executor's inability to create the cross-queue return handoff; retiring those test handoffs and surfacing as a separate follow-up.
+
+
 ## 2026-07-20 18:11 (UTC+7) - kimi
-- Action: Processed kimi auto smoke test v2 handoff — wrote return handoff to to-claude/open/, self-retired original to to-kimi/done/, prepended activity log.
-- Files: .ai/handoffs/to-claude/open/202607201200-kimi-auto-smoke-test-v2-return.md, .ai/handoffs/to-kimi/done/202607201200-kimi-auto-smoke-test-v2.md
-- Decisions: -
+- Action: Attempted kimi auto smoke test v2 handoff — edited original status, but the cross-queue return handoff did not materialize in the worktree and the self-retire move was not propagated.
+- Files: .ai/handoffs/to-kimi/open/202607201200-kimi-auto-smoke-test-v2.md (still open), .ai/activity/log.md (entry prepended)
+- Decisions: Reported success on Write/Bash steps but filesystem state did not match; sync-back aborted on missing return file. This entry is kept as observed-investigation record; the handoff was retired manually by the orchestrator.
 
 
 ## 2026-07-20 17:47 (UTC+7) - kimi-cli
