@@ -3,11 +3,11 @@
 Multiple AI CLIs work in this project (Claude Code, Kimi CLI, Kiro CLI = you). They
 share state via `.ai/` so no CLI has to copy-paste another's output to stay coherent.
 
-## Your identity for the activity log: `kiro-cockpit`
+## Your identity for the activity log: `kiro`
 
-You are the interactive Kiro cockpit session. The bare name `kiro` is the
-headless auto-pane identity; use `kiro-cockpit` for activity-log entries you
-prepend here.
+You are the interactive Kiro CLI session. The bare name `kiro` is also the
+headless auto-pane identity; there is no `kiro-cockpit`. Use `kiro` for
+activity-log entries you prepend here.
 
 ## Single source of truth
 
@@ -48,7 +48,7 @@ entry:
 The file's **body** keeps the same heading + shape as before — only the storage
 location changed, not the content format:
 
-    ## YYYY-MM-DD HH:MM — kiro-cockpit
+    ## YYYY-MM-DD HH:MM — kiro
     - Action: <one-line summary>
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">
