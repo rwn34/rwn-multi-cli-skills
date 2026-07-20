@@ -36,7 +36,7 @@ is 600KB+/2,100+ lines and almost entirely irrelevant to any one task.
 tests, non-obvious decisions, finishing a task) — never edit or delete another
 entry:
 
-    .ai/activity/entries/<YYYYMMDDTHHMMSSZ>-kiro-cli-<slug>-<rand4>.md
+    .ai/activity/entries/<YYYYMMDDTHHMMSSZ>-kiro-<slug>-<rand4>.md
 
 - `<YYYYMMDDTHHMMSSZ>` — **UTC**, second precision, ISO-8601 basic form (this is
   the filename's sort key — it must be UTC even though the body heading below

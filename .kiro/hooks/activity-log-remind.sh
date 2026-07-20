@@ -3,12 +3,15 @@
 # Non-blocking (exit 0). Queue-count block mirrors Claude's stop-reminder.sh so
 # Kiro gets the same end-of-session handoff awareness (gap B4).
 #
-# Dual-mode (ADR-0010): predicate on the FREEZE (log.md presence), not on
-# entries/ emptiness — see activity-log-inject.sh for the full rationale.
-# log.md absent => the freeze has landed => entries/ is authoritative.
+# Dual-mode (ADR-0010): predicate on the FREEZE, not on entries/ emptiness and
+# not on log.md's mere presence on disk — see activity-log-inject.sh for the
+# full rationale. Post-freeze, log.md is a generated, gitignored VIEW that can
+# be present-but-untracked (a stale render); the freeze signal is "is log.md
+# git-tracked", not "does it exist" (same test as
+# .ai/tools/render-activity-log.sh:29).
 
 # --- Reminder 1: activity log ---
-if [ -f .ai/activity/log.md ]; then
+if git ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
   if [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
     echo 'REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending.'
   fi
