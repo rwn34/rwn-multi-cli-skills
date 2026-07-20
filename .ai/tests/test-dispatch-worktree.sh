@@ -66,6 +66,8 @@ mkdir -p "$PROJECT/.ai/handoffs/to-kiro/open" "$PROJECT/.ai/handoffs/to-kimi/ope
 # ensure_declared_base_branch() restores .ai/ from the declared base, so .ai/
 # must exist in the repo tree. A .gitkeep is enough.
 echo "keep" > "$PROJECT/.ai/.gitkeep"
+# Mirror the framework version file so dispatch-failure reports can include it.
+cp "$REPO_ROOT/.ai/.framework-version" "$PROJECT/.ai/.framework-version" 2>/dev/null || true
 echo "seed" > "$PROJECT/seed.txt"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit --quiet -m "seed"
@@ -190,6 +192,11 @@ check "test3: handoff Status is still OPEN" "$(grep -q '^Status: OPEN' "$PROJECT
 check "test3: stub was NEVER invoked (no fallback to primary checkout)" "$([ ! -f "$LOGS/opencode.log" ] && echo 0 || echo 1)"
 check "test3: primary checkout untouched (no stray opencode worktree artifacts in \$PROJECT)" "$([ ! -e "$PROJECT/.sentinel-from-test" ] && echo 0 || echo 1)"
 
+newest_report_t3="$(ls -t "$PROJECT/.ai/reports"/dispatch-failure-*.md 2>/dev/null | head -1)"
+if [ -f "$PROJECT/.ai/.framework-version" ]; then
+    check "test3: dispatch-failure report includes Framework version" "$( [ -n "$newest_report_t3" ] && grep -q '^- Framework:' "$newest_report_t3" && echo 0 || echo 1 )"
+fi
+
 rm -f "$WORK/.wt/project/opencode"   # clear the induced failure for later tests
 rm -f "$PROJECT/.ai/handoffs/to-opencode/open/202607110003-t3.md"  # don't let it dispatch in later tests
 
@@ -278,6 +285,7 @@ git -C "$PROJECT_MAIN" config user.email "test@example.com"
 git -C "$PROJECT_MAIN" config user.name  "test"
 mkdir -p "$PROJECT_MAIN/.ai/handoffs/to-kimi/open" "$PROJECT_MAIN/.ai/reports"
 echo "keep" > "$PROJECT_MAIN/.ai/.gitkeep"
+cp "$REPO_ROOT/.ai/.framework-version" "$PROJECT_MAIN/.ai/.framework-version" 2>/dev/null || true
 echo "seed" > "$PROJECT_MAIN/seed.txt"
 git -C "$PROJECT_MAIN" add -A
 git -C "$PROJECT_MAIN" commit --quiet -m "seed"

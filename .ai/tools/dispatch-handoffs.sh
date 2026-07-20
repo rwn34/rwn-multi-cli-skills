@@ -122,6 +122,18 @@ owner_for() {
     esac
 }
 
+# framework_version -> echoes the framework_version field from .ai/.framework-version
+# (installed by the framework installer), or "unknown" if missing/unparseable.
+framework_version() {
+    local vf="$root/.ai/.framework-version"
+    if [ -f "$vf" ]; then
+        local v
+        v="$(sed -n 's/.*"framework_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$vf" 2>/dev/null | head -1)"
+        [ -n "$v" ] && { echo "$v"; return 0; }
+    fi
+    echo "unknown"
+}
+
 # Self-heal (gap C3): before selecting/dispatching, move any handoff left in
 # open/ but already marked Status:DONE into its sibling done/ dir — a forgotten
 # protocol-v3 self-retire. Fail-open: reconcile is exit-0 by contract and any
@@ -760,6 +772,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                         echo ""
                         echo "- Handoff: $rel"
                         echo "- UTC: $ts"
+                        echo "- Framework: $(framework_version)"
                         echo "- Sender: $sender_val"
                         echo "- Recipient: $recipient_val"
                         echo "- Stage: status-block validation (S2-4)"
@@ -809,6 +822,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo ""
                     echo "- Handoff: $rel"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo "- Stage: worktree-per-CLI setup (ADR-0004 amendment) — never reached CLI invocation"
                     echo ""
                     echo "Triage: run 'bash $WT_BOOTSTRAP $root $cli' manually to see the failure."
@@ -836,6 +850,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo ""
                     echo "- Handoff: $rel"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo "- Worktree: ${wt_path#$root/}"
                     echo "- Stage: .ai/ snapshot-copy (ADR-0016) — never reached CLI invocation"
                     echo ""
@@ -862,6 +877,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo ""
                     echo "- Handoff: $rel"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo "- Worktree: ${wt_path#$root/}"
                     echo "- Stage: .ai/ snapshot-copy verification (ADR-0016) — never reached CLI invocation"
                     echo ""
@@ -889,6 +905,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo ""
                     echo "- Handoff: $rel"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo "- Worktree: ${wt_path#$root/}"
                     echo "- Declared base: <unresolvable>"
                     echo "- Stage: declared-base resolution (no origin/HEAD, origin/main, local main, or HEAD resolves)"
@@ -920,6 +937,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                         echo ""
                         echo "- Handoff: $rel"
                         echo "- UTC: $ts"
+                        echo "- Framework: $(framework_version)"
                         echo "- Worktree: ${wt_path#$root/}"
                         echo "- Resolved base: $base"
                         echo "- Observed-in SHA: $observed_sha"
@@ -946,6 +964,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                         echo ""
                         echo "- Handoff: $rel"
                         echo "- UTC: $ts"
+                        echo "- Framework: $(framework_version)"
                         echo "- Worktree: ${wt_path#$root/}"
                         echo "- Resolved base: $base"
                         echo "- Observed-in SHA: $observed_sha"
@@ -970,6 +989,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                         echo ""
                         echo "- Handoff: $rel"
                         echo "- UTC: $ts"
+                        echo "- Framework: $(framework_version)"
                         echo "- Worktree: ${wt_path#$root/}"
                         echo "- Resolved base: $base"
                         echo "- Resolved base SHA: $base_full"
@@ -998,6 +1018,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo ""
                     echo "- Handoff: $rel"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo "- Worktree: ${wt_path#$root/}"
                     echo "- Declared base: $base"
                     echo "- Stage: declared-base branch cut (ADR-0004 amendment) — never reached CLI invocation"
@@ -1045,6 +1066,7 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                     echo "- Handoff: $rel"
                     echo "- Command: $cmd"
                     echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
                     echo ""
                     echo "## Output tail (last 40 lines)"
                     echo '```'
