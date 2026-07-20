@@ -1,6 +1,6 @@
 #!/bin/bash
 # test-dispatch-owner-for.sh — unit tests for dispatch-handoffs.sh owner_for().
-# Verifies the six-actor auto identity mapping used in claim sidecars and
+# Verifies the eight-actor auto identity mapping used in claim sidecars and
 # fleet notifications. Run from repo root.
 set -u
 
@@ -25,11 +25,9 @@ check "owner_for claude-auto -> claude"            "$([ "$(owner_for claude-auto
 check "owner_for claude-cockpit -> claude-cockpit" "$([ "$(owner_for claude-cockpit)" = "claude-cockpit" ] && echo 0 || echo 1)"
 check "owner_for kimi -> kimi"                     "$([ "$(owner_for kimi)" = "kimi" ] && echo 0 || echo 1)"
 check "owner_for kimi-auto -> kimi"                "$([ "$(owner_for kimi-auto)" = "kimi" ] && echo 0 || echo 1)"
-check "owner_for kimi-executor -> kimi"            "$([ "$(owner_for kimi-executor)" = "kimi" ] && echo 0 || echo 1)"
 check "owner_for kimi-cockpit -> kimi-cockpit"     "$([ "$(owner_for kimi-cockpit)" = "kimi-cockpit" ] && echo 0 || echo 1)"
 check "owner_for kiro -> kiro"                     "$([ "$(owner_for kiro)" = "kiro" ] && echo 0 || echo 1)"
 check "owner_for kiro-auto -> kiro"                "$([ "$(owner_for kiro-auto)" = "kiro" ] && echo 0 || echo 1)"
-check "owner_for kiro-executor -> kiro"            "$([ "$(owner_for kiro-executor)" = "kiro" ] && echo 0 || echo 1)"
 check "owner_for kiro-cockpit -> kiro-cockpit"     "$([ "$(owner_for kiro-cockpit)" = "kiro-cockpit" ] && echo 0 || echo 1)"
 check "owner_for opencode -> opencode"             "$([ "$(owner_for opencode)" = "opencode" ] && echo 0 || echo 1)"
 check "owner_for opencode-auto -> opencode"        "$([ "$(owner_for opencode-auto)" = "opencode" ] && echo 0 || echo 1)"
@@ -38,9 +36,7 @@ check "owner_for opencode-cockpit -> opencode-cockpit" "$([ "$(owner_for opencod
 # bin_for() still maps queue names to the actual executable on PATH.
 check "bin_for claude -> claude"                   "$([ "$(bin_for claude)" = "claude" ] && echo 0 || echo 1)"
 check "bin_for kimi -> kimi"                       "$([ "$(bin_for kimi)" = "kimi" ] && echo 0 || echo 1)"
-check "bin_for kimi-executor -> kimi"              "$([ "$(bin_for kimi-executor)" = "kimi" ] && echo 0 || echo 1)"
 check "bin_for kiro -> kiro-cli"                   "$([ "$(bin_for kiro)" = "kiro-cli" ] && echo 0 || echo 1)"
-check "bin_for kiro-executor -> kiro-cli"          "$([ "$(bin_for kiro-executor)" = "kiro-cli" ] && echo 0 || echo 1)"
 check "bin_for opencode -> opencode"               "$([ "$(bin_for opencode)" = "opencode" ] && echo 0 || echo 1)"
 
 echo ""

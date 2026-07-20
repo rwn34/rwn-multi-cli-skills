@@ -15,8 +15,8 @@
 | `opencode-auto` | headless OpenCode pane-runner | auto | deploy, GitHub ops |
 
 > Note: the bash tooling uses `kimi` as the queue/cli name; `owner_for()` maps
-> `kimi`, `kimi-auto`, and `kimi-executor` to the auto identity `kimai-auto`.
-> Handoff files should use the canonical six-actor identity in `Sender:` /
+> `kimi` and `kimi-auto` to the auto identity `kimai-auto`.
+> Handoff files should use the canonical eight-actor identity in `Sender:` /
 > `Recipient:` / `Owner:`.
 
 ## 1. Routing table — which task type goes to which actor

@@ -868,8 +868,8 @@ function Read-HandoffField {
     return $null
 }
 
-# Six-actor identity normalization. Accepts legacy bare cli names (kimi),
-# legacy '-cli' / '-executor' forms, and full six-actor identities, and returns
+# Eight-actor identity normalization. Accepts legacy bare cli names (kimi),
+# legacy '-cli' forms, and full eight-actor identities, and returns
 # the canonical identity used in Sender:/Recipient:/Owner:.
 function Resolve-ActorIdentity {
     param([string]$Actor)
@@ -877,9 +877,9 @@ function Resolve-ActorIdentity {
     switch ($a) {
         { $_ -in @('claude','claude-auto','claude-code') }          { return 'claude-auto' }
         'claude-cockpit'                                            { return 'claude-cockpit' }
-        { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli','kimi-executor') } { return 'kimai-auto' }
+        { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli') }    { return 'kimai-auto' }
         { $_ -in @('kimi-cockpit','kimai-cockpit') }                { return 'kimai-cockpit' }
-        { $_ -in @('kiro','kiro-auto','kiro-cli','kiro-executor') } { return 'kiro-auto' }
+        { $_ -in @('kiro','kiro-auto','kiro-cli') }                 { return 'kiro-auto' }
         'kiro-cockpit'                                              { return 'kiro-cockpit' }
         { $_ -in @('opencode','opencode-auto','opencode-cli') }     { return 'opencode-auto' }
         'opencode-cockpit'                                          { return 'opencode-cockpit' }

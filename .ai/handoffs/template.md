@@ -36,7 +36,7 @@ Evidence: <VERIFIED (<command> -> <output>) | HYPOTHESIS (unverified)>
      Evidence:  = VERIFIED (default) or HYPOTHESIS. HYPOTHESIS holds auto-dispatch.
      Observed-in: = <branch>@<sha>; required when asserting file-level facts.
      Sender/Recipient/Owner use the eight-actor identity (claude-cockpit,
-     kimi-cockpit, claude, kimi, kiro, opencode).
+     kimi-cockpit, kiro-cockpit, opencode-cockpit, claude, kimi, kiro, opencode).
      Parallel fan-out: do NOT put aggregation logic inside child return
      handoffs. Each child writes its result and returns to the aggregator's
      own open queue (Status: OPEN). A separate aggregator handoff then collects

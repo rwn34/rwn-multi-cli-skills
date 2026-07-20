@@ -189,7 +189,7 @@ if [ "$rc" -ne 0 ]; then
   fail=$((fail + 1)); rmproject "$P"
 else
   missing=""
-  for actor in claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode; do
+  for actor in claude claude-cockpit kimi kimi-cockpit kiro kiro-cockpit opencode; do
     for sub in open review done; do
       [ -d "$P/.ai/handoffs/to-$actor/$sub" ] || missing="$missing to-$actor/$sub"
     done

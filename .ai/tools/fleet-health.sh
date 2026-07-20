@@ -187,7 +187,7 @@ handoff_age_min() {
 
 # Dispatchable actors that own a worktree under .wt/<project>/<actor>.
 # Keep in sync with scripts/wt-bootstrap.sh.
-HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kimi-executor kiro kiro-executor opencode"
+HANDOFF_ACTORS="claude claude-cockpit kimi kimi-cockpit kiro kiro-cockpit opencode"
 
 # Verify every discovered handoff queue has the required open/review/done
 # subdirectories.  Missing dirs are a framework health problem: handoffs have

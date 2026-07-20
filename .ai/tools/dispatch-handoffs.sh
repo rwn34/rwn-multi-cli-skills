@@ -110,15 +110,15 @@ project_name="$(basename "$root")"
 # sessions. Cockpit queues are non-dispatchable and exist only for human routing.
 owner_for() {
     case "$1" in
-        claude|claude-auto)           echo "claude" ;;
-        claude-cockpit)               echo "claude-cockpit" ;;
-        kimi|kimi-auto|kimi-executor) echo "kimi" ;;
-        kimi-cockpit)                 echo "kimi-cockpit" ;;
-        kiro|kiro-auto|kiro-executor) echo "kiro" ;;
-        kiro-cockpit)                 echo "kiro-cockpit" ;;
-        opencode|opencode-auto)       echo "opencode" ;;
-        opencode-cockpit)             echo "opencode-cockpit" ;;
-        *)                            echo "$1" ;;
+        claude|claude-auto)     echo "claude" ;;
+        claude-cockpit)         echo "claude-cockpit" ;;
+        kimi|kimi-auto)         echo "kimi" ;;
+        kimi-cockpit)           echo "kimi-cockpit" ;;
+        kiro|kiro-auto)         echo "kiro" ;;
+        kiro-cockpit)           echo "kiro-cockpit" ;;
+        opencode|opencode-auto) echo "opencode" ;;
+        opencode-cockpit)       echo "opencode-cockpit" ;;
+        *)                      echo "$1" ;;
     esac
 }
 
@@ -198,9 +198,7 @@ headless_cmd() {
         claude) HEADLESS_ARGV=(claude -p "$prompt" --dangerously-skip-permissions) ;;
         # kimi-code has no --agent-file/--agent flag (verified via `kimi --help`
         # 2026-07-09); prompt-only headless invocation via -p.
-        # `kimi-executor` and `kiro-executor` queue names share the same
-        # binaries as their base CLIs (2026-07-17 dark-queue fix).
-        kimi|kimi-executor)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
+        kimi)   HEADLESS_ARGV=(kimi -p "$prompt") ;;
         # --trust-all-tools REQUIRED headless: without it kiro-cli aborts with
         # "Tool approval required but --no-interactive was specified. Use
         # --trust-all-tools" (dispatch failure 2026-07-09, see
@@ -222,7 +220,7 @@ headless_cmd() {
         # (ADR-0005) is the version-agnostic mechanical floor for these commits.
         # (--trust-all-tools + --agent orchestrator rationale unchanged: see the
         # dispatch-failure report + T-K2 default-agent gap, 2026-07-09.)
-        kiro|kiro-executor)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
+        kiro)   HEADLESS_ARGV=(kiro-cli chat --no-interactive --trust-all-tools --agent orchestrator "$prompt") ;;
         # --auto is REQUIRED headless: with edit:"ask" opencode auto-rejects all
         # writes; the framework-guard plugin fires before the permission layer
         # and remains the mechanical lane barrier (verified 2026-07-09).
@@ -237,8 +235,8 @@ headless_cmd() {
 bin_for() {
     case "$1" in
         claude) echo "claude" ;;
-        kimi|kimi-executor)   echo "kimi" ;;
-        kiro|kiro-executor)   echo "kiro-cli" ;;
+        kimi)   echo "kimi" ;;
+        kiro)   echo "kiro-cli" ;;
         opencode) echo "opencode" ;;
     esac
 }

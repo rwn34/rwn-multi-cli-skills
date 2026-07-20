@@ -122,12 +122,14 @@ two queues: the bare `to-<cli>/` directory for its headless auto pane, and
 |----------|-----------------|------|------|
 | `claude-cockpit` | `to-claude-cockpit/` | interactive cockpit | architecture, orchestration, final review, human relay |
 | `kimi-cockpit` | `to-kimi-cockpit/` | interactive cockpit | executor/tester, dispatcher to auto |
+| `kiro-cockpit` | `to-kiro-cockpit/` | interactive cockpit | frontend review, human relay |
+| `opencode-cockpit` | `to-opencode-cockpit/` | interactive cockpit | deploy review, human relay |
 | `claude` | `to-claude/` | headless auto pane | spec/plan design, final review |
 | `kimi` | `to-kimi/` | headless auto pane | backend + shell package implementation |
 | `kiro` | `to-kiro/` | headless auto pane | frontend implementation |
 | `opencode` | `to-opencode/` | headless auto pane | deploy, GitHub ops |
 
-A handoff's `Sender:`, `Recipient:`, and `Owner:` lines use the six-actor
+A handoff's `Sender:`, `Recipient:`, and `Owner:` lines use the eight-actor
 identity. The bare CLI name (`kimi`, `kiro`, `opencode`, `claude`) is the
 auto-pane identity; the `-cockpit` suffix is the interactive identity.
 
