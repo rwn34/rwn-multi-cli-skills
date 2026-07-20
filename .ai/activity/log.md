@@ -1,3 +1,8 @@
+## 2026-07-20 09:53 (UTC+7) - kimi-cli
+- Action: Add "u" shortcut alias for framework install/update in Selector.ps1; sync 4AI-panes install to ~/.rwn-auto/rwn-4AI-panes.
+- Files: tools/4ai-panes/Selector.ps1, ~/.rwn-auto/rwn-4AI-panes/Selector.ps1
+- Decisions: Both "i" and "u" now invoke Install-Framework-In-NewTab; help text shows i/u:install/update. install-template.sh already handles UPDATE_MODE for existing projects. Sync verified Selector.ps1 copied successfully.
+
 ## 2026-07-20 09:49 (UTC+7) - kimi-cli
 - Action: Include framework version in all dispatch-failure reports; add regression test.
 - Files: .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
