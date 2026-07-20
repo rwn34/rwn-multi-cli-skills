@@ -8,7 +8,7 @@ This ADR **extends ADR-0008** (the self-driving pane-runner and its claim-lock)
 and **ADR-0009** (the operator-over-fleet topology that put a human cockpit and a
 self-driving pane on the same queue). The tools that enforce the rule
 (`.ai/tools/claim-handoff.sh`, `.ai/tools/release-handoff.sh`) are **live on
-`main`** — they shipped in commit `8fb8bb3` *("feat(ai): make the `Auto:` tag
+`master`** — they shipped in commit `8fb8bb3` *("feat(ai): make the `Auto:` tag
 the cockpit-vs-pane handoff ownership boundary", kimi, handoff
 `to-kimi/202607130250`)*, which also shipped `tools/4ai-panes/test-claim-handoff.ps1`
 and the `.ai/handoffs/README.md` rule text. This ADR ratifies the rule and records
@@ -122,12 +122,12 @@ would both misjudge. Resolving the collision is a follow-up, not a blocker.
 
 ## Verification notes
 
-- The enforcement tools are on `main`, verified with git (authoritative,
-  junction-independent): `git ls-tree --name-only origin/main .ai/tools/` lists
+- The enforcement tools are on `master`, verified with git (authoritative,
+  junction-independent): `git ls-tree --name-only origin/master .ai/tools/` lists
   both `.ai/tools/claim-handoff.sh` and `.ai/tools/release-handoff.sh`. The landing
-  commit `8fb8bb3` is contained in both `main` and `origin/main`. Both scripts
+  commit `8fb8bb3` is contained in both `master` and `origin/master`. Both scripts
   are present and executable on disk (10707 B / 4990 B) and byte-identical to the
-  `origin/main` blobs.
+  `origin/master` blobs.
 - **Junction gotcha — read this before you "verify" any `.ai/**` claim.** In a
   worktree, `.ai/` is a *directory junction* into the primary worktree. Path-glob
   tools (Glob/Grep and anything walking the filesystem) **do not traverse it** and

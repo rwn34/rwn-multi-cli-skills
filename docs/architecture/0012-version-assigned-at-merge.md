@@ -33,7 +33,7 @@ content-changing PR to write them. With N PRs open concurrently:
   merge, re-picks a version, re-writes the heading, and repeats.
 - **Merge-order downgrade risk.** If branch A (bumped to 0.0.30) merges after
   branch B (bumped to 0.0.30 independently, or to a lower number picked earlier),
-  the version can land equal or lower than what is already on main — the exact
+  the version can land equal or lower than what is already on master — the exact
   "unchanged or downgrade" case the gate's own PR#44 hardening was written to
   reject, now produced by the merge *order* rather than by author error.
 - **The gate masked real failures.** In `gates.yml` the version-bump step ran
@@ -43,15 +43,15 @@ content-changing PR to write them. With N PRs open concurrently:
   bookkeeping miss hid whether the code was actually sound.
 
 The bump is bookkeeping that only needs to be correct **once per unit that lands
-on main** — i.e. once per merge — not once per branch. Requiring it per branch
+on master** — i.e. once per merge — not once per branch. Requiring it per branch
 imposes a serialization cost with no added safety, because the thing being
 protected (the template `.version` moving per content-change) is a property of
-*main*, not of any individual feature branch.
+*master*, not of any individual feature branch.
 
 ## Decision
 
 **We assign the framework version at the merge point, not on feature branches,
-and we verify it detectively on the main push.** (Candidate 1 of the Plan
+and we verify it detectively on the master push.** (Candidate 1 of the Plan
 agent's 2026-07-12 adversarial vetting.)
 
 Concretely:
@@ -64,19 +64,19 @@ Concretely:
 2. **The release-engineer assigns the version at the single serialized merge
    point.** At merge, one version is chosen, the accumulated `## [Unreleased]`
    bullets are promoted into one new `## [x.y.z]` heading, and the version SSOT
-   is bumped once. Because merges to main are already serialized (one lands at
+   is bumped once. Because merges to master are already serialized (one lands at
    a time), there is exactly one writer of those two lines per landed unit — no
    collision, and the number only ever moves forward.
 
-3. **`check-version-bump.sh` becomes a detective check on `push: main`.** It
-   compares the **previous main tip** (`github.event.before`) to the **new
+3. **`check-version-bump.sh` becomes a detective check on `push: master`.** It
+   compares the **previous master tip** (`github.event.before`) to the **new
    one** and applies the identical PR#44 logic: if versioned content changed, the
    version must have strictly increased and carry its `## [<new-version>]`
    CHANGELOG heading; equal, downgrade, unparseable, or an unresolvable base ref
    all fail closed. The `is_versioned` allowlist is unchanged. On feature-branch
    PRs the check does not run at all.
 
-4. **`gates.yml` runs the check last, on push-to-main only.** The step moves
+4. **`gates.yml` runs the check last, on push-to-master only.** The step moves
    from first-on-PR to last-on-push, after every substantive suite (SSOT drift,
    the four per-CLI hook suites, the ADR-0005 backstop, and the installer
    typecheck + tests). A missing bump can therefore never mask a real test
@@ -108,25 +108,25 @@ alternatives that dropped or batched the increment were rejected on this basis.
 ### Residual risk — detective, not preventive
 
 Moving the check from `pull_request` (preventive — a bad PR cannot merge) to
-`push: main` (detective — a bad merge is caught after it lands) is a real
+`push: master` (detective — a bad merge is caught after it lands) is a real
 weakening, and it is bounded, not eliminated:
 
 - **What is exposed.** A merge that changes versioned content *without* the
-  release-engineer bumping lands on main and turns the gate red *after the
-  fact*. Between that push and the fix, tip-of-main carries changed content at
+  release-engineer bumping lands on master and turns the gate red *after the
+  fact*. Between that push and the fix, tip-of-master carries changed content at
   an unmoved version — so a project that adopts from tip in that window would not
   see the drift.
 - **Why the blast radius is small.** (a) The window is bounded by fleet reaction
-  time — a red `gates` run on main is a loud, visible signal the maintainer
+  time — a red `gates` run on master is a loud, visible signal the maintainer
   acts on. (b) `.github/workflows/release.yml` does **not** cut a release until
-  the version SSOT actually moves: its main-push path derives the tag from
+  the version SSOT actually moves: its master-push path derives the tag from
   `package.json` `.version` and its idempotency gate no-ops when a release for
   that version already exists, so an unmoved version publishes nothing. The
   *released* artifact stream therefore never carries the un-bumped state; only
-  **tip-of-main installs** are exposed, and only until the detective check is
+  **tip-of-master installs** are exposed, and only until the detective check is
   answered. (c) The release-engineer assigning the version is a deliberate,
   single, serialized act — the failure mode is "forgot to bump at merge", which
-  the red main run names immediately.
+  the red master run names immediately.
 
 This trade — a bounded detective window in exchange for a collision-free parallel
 merge train and no merge-order downgrades — is the point of the decision.
@@ -143,10 +143,10 @@ merge train and no merge-order downgrades — is the point of the decision.
 
 ### Negative
 
-- **Preventive → detective** (bounded as above): tip-of-main can briefly carry
-  changed-content-at-unmoved-version until the red main run is answered.
+- **Preventive → detective** (bounded as above): tip-of-master can briefly carry
+  changed-content-at-unmoved-version until the red master run is answered.
 - **A new discipline lives with the release-engineer** — assign one version and
-  promote the CHANGELOG at merge. If skipped, main goes red rather than the PR;
+  promote the CHANGELOG at merge. If skipped, master goes red rather than the PR;
   the signal moves later in the pipeline.
 
 ### Neutral — what this does NOT change
@@ -158,7 +158,7 @@ merge train and no merge-order downgrades — is the point of the decision.
   rejected, fail-closed on unparseable, and the CHANGELOG-heading requirement all
   carry over unchanged; the `is_versioned` allowlist is reused as-is.
 - **Adopter-facing drift-detection is byte-for-byte unchanged** (see above).
-- **`release.yml` is untouched** — its main-push auto-cut still keys on the
+- **`release.yml` is untouched** — its master-push auto-cut still keys on the
   `.version` SSOT.
 
 ## References
@@ -166,7 +166,7 @@ merge train and no merge-order downgrades — is the point of the decision.
 - `scripts/check-version-bump.sh` — the gate whose trigger this ADR flips
   (PR#44 + handoff 202607120022 hardening preserved verbatim).
 - `.github/workflows/gates.yml` — the version-bump step, moved to
-  `push: main`, run last.
+  `push: master`, run last.
 - `CHANGELOG.md` — the `## [Unreleased]` → `## [x.y.z]` promotion convention this
   ADR documents.
 - `.claude/agents/release-engineer.md` — the agent that assigns the version at
