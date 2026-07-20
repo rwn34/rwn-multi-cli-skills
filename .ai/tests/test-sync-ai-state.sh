@@ -46,6 +46,14 @@ check "snapshot copies log.md" "$([ -f "$WT/.ai/activity/log.md" ] && echo 0 || 
 check "snapshot copies handoff" "$([ -f "$WT/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
 check "snapshot writes manifest" "$([ -f "$WT/.ai/.snapshot-manifest" ] && echo 0 || echo 1)"
 
+# 1b. snapshot copies .gitkeep files so git does not treat queue dirs as deleted.
+setup_canon
+mkdir -p "$CANON/.ai/handoffs/to-kimi/open"
+touch "$CANON/.ai/handoffs/to-kimi/open/.gitkeep"
+out1b="$(bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" 2>&1)"; rc1b=$?
+check "snapshot copies .gitkeep" "$([ "$rc1b" -eq 0 ] && [ -f "$WT/.ai/handoffs/to-kimi/open/.gitkeep" ] && echo 0 || echo 1)"
+check "snapshot manifest records .gitkeep" "$(grep -q 'handoffs/to-kimi/open/\.gitkeep' "$WT/.ai/.snapshot-manifest" && echo 0 || echo 1)"
+
 # 2. sync-back copies a new file from worktree to canonical.
 setup_canon
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1

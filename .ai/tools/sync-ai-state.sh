@@ -238,7 +238,7 @@ cmd_snapshot() {
     while [ "$attempt" -lt 3 ]; do
         attempt=$((attempt+1))
         rm -f "$tarerr"
-        if tar -C "$src" -cf - --exclude='.gitkeep' . 2>"$tarerr" | tar -C "$tmpdst" -xf - 2>/dev/null; then
+        if tar -C "$src" -cf - . 2>"$tarerr" | tar -C "$tmpdst" -xf - 2>/dev/null; then
             break
         fi
         if grep -q "file changed as we read it" "$tarerr" 2>/dev/null; then
