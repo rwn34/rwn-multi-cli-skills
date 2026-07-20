@@ -53,9 +53,9 @@ safe_rm_rf() {
 cleanup_stale_dirs() {
     local parent
     parent="$(dirname "$1")"
-    find "$parent" -maxdepth 1 -type d -name '.ai.stale-*' 2>/dev/null | while IFS= read -r d; do
+    while IFS= read -r d; do
         rm -rf "$d" 2>/dev/null || true
-    done
+    done < <(find "$parent" -maxdepth 1 -type d -name '.ai.stale-*' 2>/dev/null)
 }
 
 # Merge a worktree activity/log.md into the canonical log. If the worktree
@@ -80,7 +80,7 @@ canon_path, wt_path = sys.argv[1], sys.argv[2]
 
 def parse(path):
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
             text = f.read()
     except Exception:
         return []
@@ -162,26 +162,49 @@ PY
 # Compute a stable manifest: one line per file, "<sha256>  <rel-path>".
 # Output is sorted by path. Files that disappear or become unreadable between
 # find and hash (Windows lock/race during concurrent snapshots, antivirus, or
-# a CLI child still writing) are skipped with a warning rather than producing
-# a corrupt manifest line or aborting the whole snapshot/sync-back.
+# a CLI child still writing) are retried a few times; any that remain unreadable
+# after the retries are skipped with a warning rather than aborting the whole
+# snapshot/sync-back.
 manifest_for() {
     local dir="$1"
-    ( cd "$dir" && while IFS= read -r -d '' f; do
-        if [ ! -f "$f" ] || [ ! -r "$f" ]; then
-            warn "manifest skipped unreadable file: ${f#./}"
-            continue
+    local tmp_manifest tmp_warnings
+    tmp_manifest="$(mktemp)"
+    tmp_warnings="$(mktemp)"
+
+    local attempt=0 rc=0
+    while [ "$attempt" -lt 5 ]; do
+        attempt=$((attempt+1))
+        : > "$tmp_manifest"
+        : > "$tmp_warnings"
+        ( cd "$dir" && while IFS= read -r -d '' f; do
+            if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+                echo "manifest skipped unreadable file: ${f#./}" >> "$tmp_warnings"
+                continue
+            fi
+            local hash
+            hash="$(sha256sum "$f" 2>/dev/null | awk '{print $1}')" || {
+                echo "manifest skipped unhashable file: ${f#./}" >> "$tmp_warnings"
+                continue
+            }
+            if [ -z "$hash" ]; then
+                echo "manifest skipped empty hash: ${f#./}" >> "$tmp_warnings"
+                continue
+            fi
+            printf '%s  %s\n' "$hash" "${f#./}"
+        done < <(find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null) | LC_ALL=C sort -k2 > "$tmp_manifest" )
+        if [ ! -s "$tmp_warnings" ]; then
+            cat "$tmp_manifest"
+            rm -f "$tmp_manifest" "$tmp_warnings"
+            return 0
         fi
-        local hash
-        hash="$(sha256sum "$f" 2>/dev/null | awk '{print $1}')" || {
-            warn "manifest skipped unhashable file: ${f#./}"
-            continue
-        }
-        if [ -z "$hash" ]; then
-            warn "manifest skipped empty hash: ${f#./}"
-            continue
+        if [ "$attempt" -lt 5 ]; then
+            warn "manifest attempt $attempt skipped some files; retrying after 1s for locks to clear..."
+            sleep 1
         fi
-        printf '%s  %s\n' "$hash" "${f#./}"
-    done < <(find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null) | LC_ALL=C sort -k2 )
+    done
+    cat "$tmp_warnings" >&2
+    cat "$tmp_manifest"
+    rm -f "$tmp_manifest" "$tmp_warnings"
 }
 
 # snapshot <canonical-ai> <worktree-ai>
@@ -305,8 +328,12 @@ cmd_sync_back() {
                 recipient_del="${recipient_del%%/*}"
                 basename_del="$(basename "$rel_del")"
                 done_rel="handoffs/to-$recipient_del/done/$basename_del"
-                # Accept the deletion only if the done/ counterpart exists.
+                # Accept the deletion only if the done/ counterpart exists (in the
+                # worktree or already in canonical). Checking the filesystem directly
+                # defends against a transient manifest race where the done file is
+                # temporarily unreadable while a CLI child is releasing its handle.
                 if ! [ -e "$canon_ai/$done_rel" ] && \
+                   ! [ -e "$wt_ai/$done_rel" ] && \
                    ! awk -v r="$done_rel" '$2==r {found=1} END {exit !found}' "$manifest_new"; then
                     refused="${refused}  - $rel_del (no matching $done_rel)\n"
                 fi
