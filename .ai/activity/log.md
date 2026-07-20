@@ -1,3 +1,8 @@
+## 2026-07-20 11:49 (UTC+7) - kimi-cli
+- Action: Remove kimi-executor/kiro-executor handoff queues and code references; enforce eight-actor model (4 auto + 4 cockpit).
+- Files: .ai/handoffs/README.md, .ai/handoffs/template.md, .ai/tools/dispatch-handoffs.sh, .ai/tools/fleet-health.sh, .ai/tools/test-fleet-health.sh, .ai/tests/test-dispatch-owner-for.sh, scripts/wt-bootstrap.sh, tools/4ai-panes/pane-runner.ps1, docs/specs/saja-akun-cli-workflow.md
+- Decisions: Deleted to-kimi-executor/ and to-kiro-executor/ queue dirs. Updated owner_for/bin_for/headless_cmd mappings and all docs/tests to use only claude/kimi/kiro/opencode plus -auto/-cockpit variants. Framework tests pass: owner-for 16/16, fleet-health 11/11, sync-ai-state 42/42; pane-runner assertions pass (cleanup access-denied is environmental). Synced pane-runner.ps1 to ~/.rwn-auto/rwn-4AI-panes. Committed and pushed to main (5c3d4db).
+
 ## 2026-07-20 09:53 (UTC+7) - kimi-cli
 - Action: Add "u" shortcut alias for framework install/update in Selector.ps1; sync 4AI-panes install to ~/.rwn-auto/rwn-4AI-panes.
 - Files: tools/4ai-panes/Selector.ps1, ~/.rwn-auto/rwn-4AI-panes/Selector.ps1
