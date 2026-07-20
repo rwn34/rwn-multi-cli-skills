@@ -272,9 +272,9 @@ spec and `docs/architecture/0015-handoff-protocol-v4.md` for the ADR.
 - `Relay: <actor>` — optional; clarifies who physically launches the action when
   it differs from the `Recipient`. If omitted, the recipient is the relay.
 
-## Cockpit / auto distinction (six-actor model)
+## Cockpit / auto distinction (eight-actor model)
 
-A project using this framework has six logical actors, not four CLI binaries:
+A project using this framework has eight logical actors across four CLI binaries:
 
 | Actor | Role | Headless? |
 |---|---|---|

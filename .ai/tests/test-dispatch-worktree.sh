@@ -473,8 +473,8 @@ check "test6b: kimi's private marker survived a concurrent kiro dispatch" "$([ -
 cat > "$PROJECT/.ai/handoffs/to-opencode/open/202607110008-s2-4-self.md" <<'EOF'
 # Self-addressed test
 Status: OPEN
-Sender: opencode-auto
-Recipient: opencode-auto
+Sender: opencode
+Recipient: opencode
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
 Risk: A

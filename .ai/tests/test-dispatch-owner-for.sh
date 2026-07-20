@@ -26,6 +26,8 @@ check "owner_for claude-cockpit -> claude-cockpit" "$([ "$(owner_for claude-cock
 check "owner_for kimi -> kimi"                     "$([ "$(owner_for kimi)" = "kimi" ] && echo 0 || echo 1)"
 check "owner_for kimi-auto -> kimi"                "$([ "$(owner_for kimi-auto)" = "kimi" ] && echo 0 || echo 1)"
 check "owner_for kimi-cockpit -> kimi-cockpit"     "$([ "$(owner_for kimi-cockpit)" = "kimi-cockpit" ] && echo 0 || echo 1)"
+check "owner_for kimai-auto -> kimi"                 "$([ "$(owner_for kimai-auto)" = "kimi" ] && echo 0 || echo 1)"
+check "owner_for kimai-cockpit -> kimi-cockpit"      "$([ "$(owner_for kimai-cockpit)" = "kimi-cockpit" ] && echo 0 || echo 1)"
 check "owner_for kiro -> kiro"                     "$([ "$(owner_for kiro)" = "kiro" ] && echo 0 || echo 1)"
 check "owner_for kiro-auto -> kiro"                "$([ "$(owner_for kiro-auto)" = "kiro" ] && echo 0 || echo 1)"
 check "owner_for kiro-cockpit -> kiro-cockpit"     "$([ "$(owner_for kiro-cockpit)" = "kiro-cockpit" ] && echo 0 || echo 1)"

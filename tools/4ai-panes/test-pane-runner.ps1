@@ -237,37 +237,37 @@ Get-ChildItem -Path $openDir -Filter '*.md' | Remove-Item -Force
 # (g) first Claim-Handoff wins + sidecar exists
 $script:TestPidAlive = { param([int]$ProcessId) return $true }
 $hc = New-TestHandoff -Slug 'g-claim'
-$won = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-auto'
+$won = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude'
 Assert-Equal $true $won 'g: first Claim-Handoff wins -> true'
 $sidecar = Get-HandoffClaimPath -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $true (Test-Path $sidecar) 'g: sidecar written on win'
 
 # (h) second Claim-Handoff by a DIFFERENT owner loses while the first is live
-$won2 = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-code'
+$won2 = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-cockpit'
 Assert-Equal $false $won2 'h: 2nd claim (different owner, live) loses -> false'
 
 # (i) a STALE claim (old claimed_at) is reclaimable
 $stale = [ordered]@{
     handoff    = Get-HandoffBasename -HandoffPath $hc
     recipient  = 'claude'
-    owner      = 'kiro-cli'
+    owner      = 'kiro'
     pid        = $PID
     host       = [System.Net.Dns]::GetHostName()
     claimed_at = (Get-Date).ToUniversalTime().AddMinutes(-30).ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
 $stale | ConvertTo-Json -Compress | Set-Content -Path $sidecar -Encoding utf8 -NoNewline
-$reclaimed = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude-auto'
+$reclaimed = Claim-Handoff -Recipient 'claude' -HandoffPath $hc -Owner 'claude'
 Assert-Equal $true $reclaimed 'i: stale (old claimed_at) claim is reclaimable -> true'
 
 # (j) Release-Handoff removes the sidecar
 Release-Handoff -Recipient 'claude' -HandoffPath $hc
 Assert-Equal $false (Test-Path $sidecar) 'j: Release-Handoff removes the sidecar'
 
-# -- Get-DefaultOwner returns six-actor auto identities --
-Assert-Equal 'claude-auto'   (Get-DefaultOwner -CliName 'claude')   'k: claude owner is claude-auto'
-Assert-Equal 'kimai-auto'    (Get-DefaultOwner -CliName 'kimi')     'k: kimi owner is kimai-auto'
-Assert-Equal 'kiro-auto'     (Get-DefaultOwner -CliName 'kiro')     'k: kiro owner is kiro-auto'
-Assert-Equal 'opencode-auto' (Get-DefaultOwner -CliName 'opencode') 'k: opencode owner is opencode-auto'
+# -- Get-DefaultOwner returns eight-actor auto identities --
+Assert-Equal 'claude'   (Get-DefaultOwner -CliName 'claude')   'k: claude owner is claude'
+Assert-Equal 'kimi'     (Get-DefaultOwner -CliName 'kimi')     'k: kimi owner is kimi'
+Assert-Equal 'kiro'     (Get-DefaultOwner -CliName 'kiro')     'k: kiro owner is kiro'
+Assert-Equal 'opencode' (Get-DefaultOwner -CliName 'opencode') 'k: opencode owner is opencode'
 
 # -- poison-pill quarantine (ADR-0008 self-healing safety valve) --
 $kimiOpen = Join-Path $work ".ai/handoffs/to-kimi/open"
@@ -325,7 +325,7 @@ Assert-Equal $false (Test-HandoffQuarantined -Recipient 'kimi' -HandoffPath $hk)
 # restore the real threshold
 $script:MaxHandoffAttempts = $origMax
 
-# -- (bn-bs) Emit-NextStageHandoff: six-actor identities + Next: fan-out --
+# -- (bn-bs) Emit-NextStageHandoff: eight-actor identities + Next: fan-out --
 # Use an isolated workspace so earlier tests' leftover queue files do not skew counts.
 $emitWork = Join-Path $env:TEMP ("pane-runner-emit-test-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $emitWork -Force | Out-Null
@@ -364,58 +364,58 @@ function Get-EmitFile {
     return (Get-ChildItem -Path $d -Filter '*.md' -File | Where-Object { $_.Name -like "*$SlugPattern*" } | Select-Object -First 1)
 }
 
-# (bn) ReviewBy: bare cli maps to <cli>-auto, sender is the emitting pane's six-actor identity
+# (bn) ReviewBy: bare cli maps to <cli>, sender is the emitting pane's eight-actor identity
 $bnDone = New-DoneHandoff -CliName 'kimi' -Slug 'bn-review' -ExtraLines 'ReviewBy: kiro'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kimi' -HandoffPath $bnDone
 Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'review') 'bn: ReviewBy bare kiro emits one review handoff'
 $bnFile = Get-EmitFile -Queue 'kiro' -SubDir 'review' -SlugPattern 'bn-review'
 Assert-Equal $true ($null -ne $bnFile) 'bn: review file exists'
 $bnContent = Get-Content -Path $bnFile.FullName -Raw
-Assert-Equal $true ($bnContent -match '(?m)^Sender:\s*kimai-auto\s*$') 'bn: review sender is kimai-auto'
-Assert-Equal $true ($bnContent -match '(?m)^Recipient:\s*kiro-auto\s*$') 'bn: review recipient is kiro-auto'
+Assert-Equal $true ($bnContent -match '(?m)^Sender:\s*kimi\s*$') 'bn: review sender is kimi'
+Assert-Equal $true ($bnContent -match '(?m)^Recipient:\s*kiro\s*$') 'bn: review recipient is kiro'
 Assert-Equal $true ($bnContent -match '(?m)^Auto:\s*yes\s*$') 'bn: review handoff is Auto: yes'
 Assert-Equal $true ($bnContent -match 'ReviewOf:\s*bn-review\.md') 'bn: review handoff carries ReviewOf'
 
 # (bo) Next: fans out to multiple actors with correct identities and Auto flags
-$boDone = New-DoneHandoff -CliName 'claude' -Slug 'bo-next' -ExtraLines "Next: kimai-auto, kiro-auto`nFinalReview: claude-auto"
+$boDone = New-DoneHandoff -CliName 'claude' -Slug 'bo-next' -ExtraLines "Next: kimi, kiro`nFinalReview: claude"
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $boDone
-Assert-Equal 1 (Get-EmitCount -Queue 'kimi' -SubDir 'open') 'bo: Next kimai-auto emits one open handoff'
-Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'open') 'bo: Next kiro-auto emits one open handoff'
+Assert-Equal 1 (Get-EmitCount -Queue 'kimi' -SubDir 'open') 'bo: Next kimi emits one open handoff'
+Assert-Equal 1 (Get-EmitCount -Queue 'kiro' -SubDir 'open') 'bo: Next kiro emits one open handoff'
 $boKimi = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bo-next'
 Assert-Equal $true ($null -ne $boKimi) 'bo: kimi Next file exists'
 $boKimiContent = Get-Content -Path $boKimi.FullName -Raw
-Assert-Equal $true ($boKimiContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bo: Next sender is claude-auto'
-Assert-Equal $true ($boKimiContent -match '(?m)^Recipient:\s*kimai-auto\s*$') 'bo: Next recipient is kimai-auto'
+Assert-Equal $true ($boKimiContent -match '(?m)^Sender:\s*claude\s*$') 'bo: Next sender is claude'
+Assert-Equal $true ($boKimiContent -match '(?m)^Recipient:\s*kimi\s*$') 'bo: Next recipient is kimi'
 Assert-Equal $true ($boKimiContent -match '(?m)^Auto:\s*yes\s*$') 'bo: Next auto recipient is Auto: yes'
 
 # (bp) Next: to a cockpit writes Auto: no so the dispatcher leaves it for the cockpit
-$bpDone = New-DoneHandoff -CliName 'opencode' -Slug 'bp-cockpit' -ExtraLines 'Next: kimai-cockpit'
+$bpDone = New-DoneHandoff -CliName 'opencode' -Slug 'bp-cockpit' -ExtraLines 'Next: kimi-cockpit'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'opencode' -HandoffPath $bpDone
 $bpFile = Get-EmitFile -Queue 'kimi' -SubDir 'open' -SlugPattern 'bp-cockpit'
 Assert-Equal $true ($null -ne $bpFile) 'bp: Next cockpit emits a handoff'
 $bpContent = Get-Content -Path $bpFile.FullName -Raw
-Assert-Equal $true ($bpContent -match '(?m)^Recipient:\s*kimai-cockpit\s*$') 'bp: cockpit recipient identity'
+Assert-Equal $true ($bpContent -match '(?m)^Recipient:\s*kimi-cockpit\s*$') 'bp: cockpit recipient identity'
 Assert-Equal $true ($bpContent -match '(?m)^Auto:\s*no\s*$') 'bp: cockpit handoff is Auto: no'
 
-# (bq) Deploy: yes emits an opencode-auto handoff
+# (bq) Deploy: yes emits an opencode handoff
 $bqDone = New-DoneHandoff -CliName 'claude' -Slug 'bq-deploy' -ExtraLines 'Deploy: yes'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'claude' -HandoffPath $bqDone
 Assert-Equal 1 (Get-EmitCount -Queue 'opencode' -SubDir 'open') 'bq: Deploy emits one open handoff'
 $bqFile = Get-EmitFile -Queue 'opencode' -SubDir 'open' -SlugPattern 'bq-deploy'
 Assert-Equal $true ($null -ne $bqFile) 'bq: deploy file exists'
 $bqContent = Get-Content -Path $bqFile.FullName -Raw
-Assert-Equal $true ($bqContent -match '(?m)^Sender:\s*claude-auto\s*$') 'bq: deploy sender is claude-auto'
-Assert-Equal $true ($bqContent -match '(?m)^Recipient:\s*opencode-auto\s*$') 'bq: deploy recipient is opencode-auto'
+Assert-Equal $true ($bqContent -match '(?m)^Sender:\s*claude\s*$') 'bq: deploy sender is claude'
+Assert-Equal $true ($bqContent -match '(?m)^Recipient:\s*opencode\s*$') 'bq: deploy recipient is opencode'
 Assert-Equal $true ($bqContent -match '(?m)^Auto:\s*yes\s*$') 'bq: deploy handoff is Auto: yes'
 
-# (br) FinalReview: <actor> emits a review handoff with six-actor identities
-$brDone = New-DoneHandoff -CliName 'kiro' -Slug 'br-final' -ExtraLines 'FinalReview: claude-auto'
+# (br) FinalReview: <actor> emits a review handoff with eight-actor identities
+$brDone = New-DoneHandoff -CliName 'kiro' -Slug 'br-final' -ExtraLines 'FinalReview: claude'
 Emit-NextStageHandoff -ProjectDir $emitWork -CliName 'kiro' -HandoffPath $brDone
 $brFile = Get-EmitFile -Queue 'claude' -SubDir 'review' -SlugPattern 'br-final'
 Assert-Equal $true ($null -ne $brFile) 'br: final-review file exists'
 $brContent = Get-Content -Path $brFile.FullName -Raw
-Assert-Equal $true ($brContent -match '(?m)^Sender:\s*kiro-auto\s*$') 'br: final-review sender is kiro-auto'
-Assert-Equal $true ($brContent -match '(?m)^Recipient:\s*claude-auto\s*$') 'br: final-review recipient is claude-auto'
+Assert-Equal $true ($brContent -match '(?m)^Sender:\s*kiro\s*$') 'br: final-review sender is kiro'
+Assert-Equal $true ($brContent -match '(?m)^Recipient:\s*claude\s*$') 'br: final-review recipient is claude'
 
 try {
     Remove-Item -Path $emitWork -Recurse -Force -ErrorAction SilentlyContinue
@@ -820,7 +820,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         # worktree is on a different branch, so a naive resolve-inside-worktree would
         # fail. With the explicit ProjectDir fix, Base: main must still resolve and
         # cut exec/<cli>/<slug> from it. This reproduces the production failure where
-        # a return handoff addressed to claude-auto carried Base: main and the claude
+        # a return handoff addressed to claude carried Base: main and the claude
         # worktree had no local main branch.
         Push-Location $primary
         git branch -M main
@@ -1131,7 +1131,7 @@ try {
 # that $PSScriptRoot is always <repo>/tools/4ai-panes/. sync-4ai-panes-install.ps1
 # deploys the pane tools FLAT into ~/.rwn-auto/rwn-4AI-panes/, where that resolves
 # to ~/scripts/ — nonexistent. Every pane-runner failed worktree setup and
-# quarantined every handoff: kimi, kiro, opencode and claude-auto, all of them.
+# quarantined every handoff: kimi, kiro, opencode and claude, all of them.
 #
 # The old test suite passed the whole time, because every worktree test mocks
 # $script:GetCliWorktreePath and therefore never reaches the resolver — and the

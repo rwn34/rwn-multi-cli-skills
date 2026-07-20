@@ -81,7 +81,7 @@ sidecar="$claims_dir/${recipient}__${base}.claim.json"
 if [ -z "$OWNER" ]; then
     case "$recipient" in
         claude)   OWNER="claude-cockpit" ;;
-        kimi)     OWNER="kimai-cockpit" ;;
+        kimi)     OWNER="kimi-cockpit" ;;
         kiro)     OWNER="kiro-cockpit" ;;
         opencode) OWNER="opencode-cockpit" ;;
     esac

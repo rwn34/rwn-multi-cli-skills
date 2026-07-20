@@ -110,15 +110,15 @@ project_name="$(basename "$root")"
 # sessions. Cockpit queues are non-dispatchable and exist only for human routing.
 owner_for() {
     case "$1" in
-        claude|claude-auto)     echo "claude" ;;
-        claude-cockpit)         echo "claude-cockpit" ;;
-        kimi|kimi-auto)         echo "kimi" ;;
-        kimi-cockpit)           echo "kimi-cockpit" ;;
-        kiro|kiro-auto)         echo "kiro" ;;
-        kiro-cockpit)           echo "kiro-cockpit" ;;
-        opencode|opencode-auto) echo "opencode" ;;
-        opencode-cockpit)       echo "opencode-cockpit" ;;
-        *)                      echo "$1" ;;
+        claude|claude-auto)              echo "claude" ;;
+        claude-cockpit)                  echo "claude-cockpit" ;;
+        kimi|kimi-auto|kimai-auto)       echo "kimi" ;;
+        kimi-cockpit|kimai-cockpit)      echo "kimi-cockpit" ;;
+        kiro|kiro-auto)                  echo "kiro" ;;
+        kiro-cockpit)                    echo "kiro-cockpit" ;;
+        opencode|opencode-auto)          echo "opencode" ;;
+        opencode-cockpit)                echo "opencode-cockpit" ;;
+        *)                               echo "$1" ;;
     esac
 }
 

@@ -37,11 +37,10 @@ entry point into a persistent, shared multi-agent workforce.
   system clock is kept at UTC+7, so emit timestamps with plain
   `date +'%Y-%m-%d %H:%M'`; do **not** use `TZ=Asia/Bangkok date`, which MSYS
   treats as UTC and prints the wrong hour.
-- **Claude does not code or deploy.** Neither `claude-cockpit` nor
-  `claude-auto` writes project source code, executes commands, or performs
-  deploys unless the owner explicitly asks. Claude reads, plans, designs,
-  reviews, and delegates: implementation goes to `kimai-auto` / `kiro-auto`,
-  GitHub/DevOps execution to `opencode-auto`.
+- **Claude does not code or deploy.** Neither `claude-cockpit` nor `claude`
+  writes project source code, executes commands, or performs deploys unless the
+  owner explicitly asks. Claude reads, plans, designs, reviews, and delegates:
+  implementation goes to `kimi` / `kiro`, GitHub/DevOps execution to `opencode`.
 - **Handoff default to auto:** Unless the owner explicitly requests cockpit
   ownership, route work to the appropriate auto pane with `Auto: yes`. A cockpit
   handoff (`Auto: no`) is the exception and must be intentional.
@@ -169,28 +168,30 @@ on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to
 between tasks, re-check your open queue and process what's there.
 
 After substantive work: prepend one activity-log entry (identity per your
-actor: `claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`,
-`kiro-auto`, or `opencode-auto`; UTC+7 wall-clock finish time, annotated
-`(UTC+7)`; prepend order is authoritative). If another CLI must continue, write
-a handoff to `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC
-timestamp filename) with a `Created:` line in UTC+7.
+actor: `claude-cockpit`, `kimi-cockpit`, `kiro-cockpit`, `opencode-cockpit`,
+`claude`, `kimi`, `kiro`, or `opencode`; UTC+7 wall-clock finish time, annotated
+`(UTC+7)`; prepend order is authoritative). Bare names are the auto-pane
+identity; the `-cockpit` suffix is the interactive cockpit identity. If another
+CLI must continue, write a handoff to
+`.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp filename)
+with a `Created:` line in UTC+7.
 
-**Handoff protocol v3:** every handoff carries `Auto:` (default **yes**) and
-`Risk:` (A/B/C per §8). `Auto: yes` + Risk A/B handoffs are dispatched
-headless via `bash .ai/tools/dispatch-handoffs.sh --exec` without asking.
-Risk C handoffs are never auto-dispatched — a human relays them. On completion,
-the recipient self-retires: set Status `DONE` and move the file from `open/` to
-`done/` yourself; the sender validates post-hoc. If blocked, leave it in `open/`
-as `BLOCKED` with a verbatim `## Blocker` section.
+**Handoff protocol v4:** every handoff carries `Auto:` (default **yes**),
+`Risk:` (A/B/C per §8), `Evidence:`, and `Observed-in:`. `Auto: yes` + Risk A/B
+handoffs are dispatched headless via `bash .ai/tools/dispatch-handoffs.sh --exec`
+without asking. Risk C handoffs are never auto-dispatched — a human relays them.
+On completion, the recipient self-retires: set Status `DONE` and move the file
+from `open/` to `done/` yourself; the sender validates post-hoc. If blocked,
+leave it in `open/` as `BLOCKED` with a verbatim `## Blocker` section.
 
 **The `Auto:` tag is the ownership boundary.** `Auto: yes` + Risk A/B belongs
 to the auto pane — a cockpit must not hand-take it; `Auto: no` / Risk C is
 cockpit-owned. A cockpit taking an `Auto: yes` handoff (pane down,
 quarantined, owner waiting live) must FIRST run `bash .ai/tools/claim-handoff.sh
 <path>` (flips `Auto: no` + claim sidecar, atomically); `release-handoff.sh`
-reverts. Symmetric across all four CLI binaries; the six logical actors are
-`claude-cockpit`, `kimai-cockpit`, `claude-auto`, `kimai-auto`, `kiro-auto`, and
-`opencode-auto` (see `docs/specs/saja-akun-cli-workflow.md`).
+reverts. Symmetric across all four CLI binaries; the eight logical actors are
+`claude-cockpit`, `kimi-cockpit`, `kiro-cockpit`, `opencode-cockpit`,
+`claude`, `kimi`, `kiro`, and `opencode` (see `.ai/handoffs/README.md`).
 
 **Session end without a written continuation = lost work.** If a workstream is
 unfinished, a continuation handoff or task entry is mandatory before you stop.

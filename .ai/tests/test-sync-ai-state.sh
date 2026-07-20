@@ -151,7 +151,7 @@ cat > "$CANON/.ai/activity/log.md" <<'EOF'
 EOF
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
 cat > "$WT/.ai/activity/log.md" <<'EOF'
-## 2026-07-19 08:00 (UTC+7) - opencode-auto
+## 2026-07-19 08:00 (UTC+7) - opencode
 - Action: executor overwrote the log with only its own entry
 
 EOF
@@ -170,7 +170,7 @@ cat > "$CANON/.ai/activity/log.md" <<'EOF'
 EOF
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
 cat > "$WT/.ai/activity/log.md" <<'EOF'
-## 2026-07-19 08:00 (UTC+7) - opencode-auto
+## 2026-07-19 08:00 (UTC+7) - opencode
 - Action: executor overwrote the log with only its own entry
 
 EOF
@@ -190,7 +190,7 @@ cat > "$CANON/.ai/activity/log.md" <<'EOF'
 EOF
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
 cat > "$WT/.ai/activity/log.md" <<'EOF'
-## 2026-07-19 08:00 (UTC+7) - opencode-auto
+## 2026-07-19 08:00 (UTC+7) - opencode
 - Action: executor entry with arrow →
 
 EOF

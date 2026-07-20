@@ -52,7 +52,12 @@ is what your budget is for. This is a cost rule, not a permission rule: it
 relaxes no Tier-C gate and moves no lane boundary. Note it does NOT conflict
 with the owner-interaction preference above — don't ask, *do* hand off.
 
-## Your identity for the activity log: `claude-code`
+## Your identity for the activity log: `claude-cockpit`
+
+You are the interactive Claude Code cockpit session. The bare name `claude` is
+the headless auto-pane identity; use `claude-cockpit` for activity-log entries
+you prepend here. (`claude-code` is the git committer name, not the actor-model
+identity.)
 
 ## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
 
@@ -96,7 +101,7 @@ your context on every single turn** — you have them before you ask. A wholesal
 **Prepend** one entry after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
 
-    ## YYYY-MM-DD HH:MM — claude-code
+    ## YYYY-MM-DD HH:MM (UTC+7) — claude-cockpit
     - Action: <one-line summary>
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">

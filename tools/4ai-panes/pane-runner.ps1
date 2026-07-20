@@ -77,8 +77,8 @@ param(
     [int]$PollSeconds = 10,
 
     # Claim-lock owner identity for this pane. Empty -> derived from the CLI
-    # (Get-DefaultOwner); pass 'claude-auto' explicitly for the headless Claude
-    # reviewer pane so it is distinct from app-Claude's 'claude-code'.
+    # (Get-DefaultOwner); pass 'claude' explicitly for the headless Claude
+    # reviewer pane so it is distinct from app-Claude's 'claude-cockpit'.
     [string]$Owner = '',
 
     # Dot-source for tests: load functions, do not start the supervisor loop.
@@ -184,7 +184,7 @@ function Get-CliWorktreePathFor {
 # TRUE in the repo tree and FALSE in the DEPLOYED launcher: scripts/sync-4ai-panes-install.ps1
 # installs the pane tools into a FLAT dir (~/.rwn-auto/rwn-4AI-panes/), where
 # ../../scripts/ resolves to ~/scripts/ — which does not exist. Every pane-runner
-# (kimi, kiro, opencode, claude-auto) took that path, so the WHOLE fleet failed
+# (kimi, kiro, opencode, claude) took that path, so the WHOLE fleet failed
 # worktree setup and quarantined every handoff. Sibling dot-sources (fleet-clis.ps1,
 # notify.ps1) are fine because they ARE installed flat beside us; only the
 # repo-relative path broke.
@@ -880,13 +880,13 @@ function Resolve-ActorIdentity {
     param([string]$Actor)
     $a = $Actor.ToLower().Trim()
     switch ($a) {
-        { $_ -in @('claude','claude-auto','claude-code') }          { return 'claude-auto' }
+        { $_ -in @('claude','claude-auto','claude-code') }          { return 'claude' }
         'claude-cockpit'                                            { return 'claude-cockpit' }
-        { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli') }    { return 'kimai-auto' }
-        { $_ -in @('kimi-cockpit','kimai-cockpit') }                { return 'kimai-cockpit' }
-        { $_ -in @('kiro','kiro-auto','kiro-cli') }                 { return 'kiro-auto' }
+        { $_ -in @('kimi','kimai-auto','kimi-auto','kimi-cli') }    { return 'kimi' }
+        { $_ -in @('kimi-cockpit','kimai-cockpit') }                { return 'kimi-cockpit' }
+        { $_ -in @('kiro','kiro-auto','kiro-cli') }                 { return 'kiro' }
         'kiro-cockpit'                                              { return 'kiro-cockpit' }
-        { $_ -in @('opencode','opencode-auto','opencode-cli') }     { return 'opencode-auto' }
+        { $_ -in @('opencode','opencode-auto','opencode-cli') }     { return 'opencode' }
         'opencode-cockpit'                                          { return 'opencode-cockpit' }
         default                                                     { return $a }
     }
@@ -899,7 +899,6 @@ function Get-QueueNameFromActor {
     $a = (Resolve-ActorIdentity -Actor $Actor).ToLower()
     switch -Wildcard ($a) {
         'claude*'   { return 'claude' }
-        'kimai*'    { return 'kimi' }
         'kimi*'     { return 'kimi' }
         'kiro*'     { return 'kiro' }
         'opencode*' { return 'opencode' }
@@ -1018,7 +1017,7 @@ function Emit-NextStageHandoff {
 
     $deploy = Read-HandoffField -HandoffPath $donePath -FieldName 'Deploy'
     if ($deploy -and $deploy.Trim().ToLower() -eq 'yes') {
-        Write-Handoff -RecipientActor 'opencode-auto' -SubDir 'open' -Title "Deploy: $slug" -BodyLines @(
+        Write-Handoff -RecipientActor 'opencode' -SubDir 'open' -Title "Deploy: $slug" -BodyLines @(
             "## Goal",
             "Deploy the work from $base to the target environment.",
             "",
@@ -1181,7 +1180,7 @@ function Write-Heartbeat {
 #
 # Finer-grained than the per-project claim above: a sidecar per handoff so two
 # consumers never process the SAME to-<recipient>/open/ item (fixes the observed
-# Kiro-vs-Kiro / coder race and lets app-Claude and claude-auto coordinate). The
+# Kiro-vs-Kiro / coder race and lets app-Claude and claude coordinate). The
 # per-project claim still gates whole-project pickup; this gates the individual
 # handoff. Format + acquire/check/release/stale semantics are documented for
 # other consumers in .ai/handoffs/.claims/README.md.
@@ -1399,18 +1398,18 @@ function Clear-HandoffAttempts {
     if (Test-Path $p) { Remove-Item -Path $p -Force -ErrorAction SilentlyContinue }
 }
 
-# Claim owner identity for a pane's CLI. claude-auto (the headless reviewer pane,
-# ADR-0009) is a DISTINCT owner from claude-code (the interactive app-Claude), so
+# Claim owner identity for a pane's CLI. `claude` (the headless reviewer pane,
+# ADR-0009) is a DISTINCT owner from `claude-cockpit` (the interactive app-Claude), so
 # the two Claude instances never double-process a to-claude handoff.
 function Get-DefaultOwner {
     param([string]$CliName)
-    # Six-actor model: the auto pane is the default owner for every dispatchable
-    # CLI. Cockpit ownership is explicit only (claim-handoff.sh / Auto: no).
+    # Eight-actor model: the bare CLI name is the auto-pane identity. Cockpit
+    # ownership is explicit only (claim-handoff.sh / Auto: no).
     switch ($CliName) {
-        'claude'   { return 'claude-auto' }
-        'kimi'     { return 'kimai-auto' }
-        'kiro'     { return 'kiro-auto' }
-        'opencode' { return 'opencode-auto' }
+        'claude'   { return 'claude' }
+        'kimi'     { return 'kimi' }
+        'kiro'     { return 'kiro' }
+        'opencode' { return 'opencode' }
         default    { throw "Unknown CLI: $CliName" }
     }
 }

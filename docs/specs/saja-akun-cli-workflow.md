@@ -1,53 +1,54 @@
 # Saja-Project Cockpit / Auto Handoff Workflow
 
-**Scope:** framework-level design for the six-actor model discovered in
-`saja-qr` and intended as the reusable pattern for all `saja-*` repos.
+**Scope:** framework-level design for the eight-actor model intended as the
+reusable pattern for all `saja-*` repos.
 
 **Actors:**
 
 | Actor | Identity | Mode | Primary role |
 |-------|----------|------|--------------|
 | `claude-cockpit` | interactive Claude Code chat | cockpit | architecture, orchestration, final review, human relay |
-| `kimai-cockpit` | interactive Kimi CLI chat | cockpit | executor/tester, dispatcher to auto |
-| `claude-auto` | headless Claude pane-runner | auto | spec/plan design, final review |
-| `kimai-auto` | headless Kimi pane-runner | auto | backend + shell package implementation |
-| `kiro-auto` | headless Kiro pane-runner | auto | frontend implementation |
-| `opencode-auto` | headless OpenCode pane-runner | auto | deploy, GitHub ops |
+| `kimi-cockpit` | interactive Kimi CLI chat | cockpit | executor/tester, dispatcher to auto |
+| `kiro-cockpit` | interactive Kiro CLI chat | cockpit | frontend review, human relay |
+| `opencode-cockpit` | interactive OpenCode chat | cockpit | deploy review, human relay |
+| `claude` | headless Claude pane-runner | auto | spec/plan design, final review |
+| `kimi` | headless Kimi pane-runner | auto | backend + shell package implementation |
+| `kiro` | headless Kiro pane-runner | auto | frontend implementation |
+| `opencode` | headless OpenCode pane-runner | auto | deploy, GitHub ops |
 
-> Note: the bash tooling uses `kimi` as the queue/cli name; `owner_for()` maps
-> `kimi` and `kimi-auto` to the auto identity `kimai-auto`.
-> Handoff files should use the canonical eight-actor identity in `Sender:` /
-> `Recipient:` / `Owner:`.
+The bare CLI name is the auto-pane identity; the `-cockpit` suffix is the
+interactive cockpit identity. Handoff files use these canonical eight-actor
+identities in `Sender:` / `Recipient:` / `Owner:`.
 
 ## 1. Routing table — which task type goes to which actor
 
 | Task type | Primary actor | Why |
 |-----------|---------------|-----|
 | Architecture / ADR / big-picture design | `claude-cockpit` | owns cross-cutting decisions and SSOT |
-| Breaking a feature into staged handoffs | `claude-cockpit` or `claude-auto` | planning is spec work; cockpit does it when human steering matters |
-| Backend / shell package implementation | `kimai-auto` | executor/tester lane |
-| Frontend implementation | `kiro-auto` | frontend lane |
+| Breaking a feature into staged handoffs | `claude-cockpit` or `claude` | planning is spec work; cockpit does it when human steering matters |
+| Backend / shell package implementation | `kimi` | executor/tester lane |
+| Frontend implementation | `kiro` | frontend lane |
 | Code review (peer) | different actor than author (see §5) | author ≠ reviewer (ADR-0002) |
-| Final review | `claude-auto` or `claude-cockpit` | `claude-auto` for routine CI-green merges; cockpit for contentious or first-of-kind |
-| Deploy to staging | `opencode-auto` | Tier B, dry-run first |
-| Deploy to production | `opencode-auto` **after** explicit owner gate | Tier C, owner authorizes, orchestrator relays |
-| GitHub ops (PR open/merge, branch delete, release chore) | `opencode-auto` | Tier B once CI green |
-| Worktree/dispatcher/framework hygiene | `kimai-auto` or `opencode-auto` | who touches `.ai/tools/` / `scripts/` / `.github/` |
-| Human-relayed Risk-C actions | `claude-cockpit` or `kimai-cockpit` | cockpit records authorization and relays |
+| Final review | `claude` or `claude-cockpit` | `claude` for routine CI-green merges; cockpit for contentious or first-of-kind |
+| Deploy to staging | `opencode` | Tier B, dry-run first |
+| Deploy to production | `opencode` **after** explicit owner gate | Tier C, owner authorizes, orchestrator relays |
+| GitHub ops (PR open/merge, branch delete, release chore) | `opencode` | Tier B once CI green |
+| Worktree/dispatcher/framework hygiene | `kimi` or `opencode` | who touches `.ai/tools/` / `scripts/` / `.github/` |
+| Human-relayed Risk-C actions | `claude-cockpit` or `kimi-cockpit` | cockpit records authorization and relays |
 
 ## 2. Status-block conventions
 
 Use the protocol-v4 status block from `.ai/handoffs/template.md`. The
-six-actor model changes how three existing fields are interpreted:
+eight-actor model changes how three existing fields are interpreted:
 
 ### 2.1 `Sender:` / `Recipient:` / `Owner:` include mode
 
-Always use the six-actor identity:
+Always use the eight-actor identity:
 
 ```markdown
-Sender: kimai-cockpit
-Recipient: claude-auto
-Owner: claude-auto
+Sender: kimi-cockpit
+Recipient: claude
+Owner: claude
 ```
 
 `Owner:` is optional but recommended. It means "who currently owns this
@@ -84,8 +85,8 @@ Use the routing fields already present in the template:
 review/final-review/deploy, e.g.:
 
 ```markdown
-# Next: opencode-auto
-# Next: kimai-cockpit
+# Next: opencode
+# Next: kimi-cockpit
 ```
 
 When `Next:` points at a cockpit, the auto pane writes the next handoff with
@@ -120,19 +121,19 @@ Example: a feature that needs planning → backend → frontend → review → d
 
 ```text
 claude-cockpit
-  └── writes to-claude-auto/open/202607181530-plan-feature.md
-      └── claude-auto plans, writes to-kimai-auto/open/202607181600-backend-feature.md
-          └── kimai-auto implements backend, writes to-kiro-auto/open/202607181700-frontend-feature.md
-              └── kiro-auto implements frontend, writes to-kimai-auto/review/202607181800-review-frontend.md
-                  └── kimai-auto reviews, writes to-claude-auto/review/202607181900-final-review-feature.md
-                      └── claude-auto final-reviews, writes to-opencode-auto/open/202607182000-deploy-staging-feature.md
-                          └── opencode-auto deploys to staging, writes to-kimai-cockpit/open/202607182100-validate-staging.md
-                              └── kimai-cockpit validates in chat, closes loop
+  └── writes to-claude/open/202607181530-plan-feature.md
+      └── claude plans, writes to-kimi/open/202607181600-backend-feature.md
+          └── kimi implements backend, writes to-kiro/open/202607181700-frontend-feature.md
+              └── kiro implements frontend, writes to-kimi/review/202607181800-review-frontend.md
+                  └── kimi reviews, writes to-claude/review/202607181900-final-review-feature.md
+                      └── claude final-reviews, writes to-opencode/open/202607182000-deploy-staging-feature.md
+                          └── opencode deploys to staging, writes to-kimi-cockpit/open/202607182100-validate-staging.md
+                              └── kimi-cockpit validates in chat, closes loop
 ```
 
 Rules for the chain:
 
-1. **Plan from a spec actor.** `claude-auto` writes the plan unless the feature
+1. **Plan from a spec actor.** `claude` writes the plan unless the feature
    is architectural or contentious, in which case `claude-cockpit` plans.
 2. **Implementation panes run in parallel when independent.** If backend and
    frontend can be built against mocked contracts, dispatch both and add a
@@ -141,13 +142,13 @@ Rules for the chain:
    retire to `done/` before `FinalReview:` is dispatched. The dispatcher's
    polling order is oldest-first, but a cockpit can enforce sequencing by not
    creating the final-review handoff until the peer-review handoff is retired.
-4. **Final review gates deploy.** `FinalReview:` is either `claude-auto`
+4. **Final review gates deploy.** `FinalReview:` is either `claude`
    (routine) or `claude-cockpit` (first-of-kind or contentious).
 5. **Deploy is separate from merge.** Merge is Tier B; deploy to staging is Tier
    B; deploy to production is Tier C with owner gate. Never let a merge auto-trigger
    a deploy (principles.md §8 coupling rule).
 6. **Return to a cockpit at boundaries.** After staging deploy, return to a
-   cockpit (`kimai-cockpit` or `claude-cockpit`) for validation and the
+   cockpit (`kimi-cockpit` or `claude-cockpit`) for validation and the
    production-deploy decision.
 
 ## 5. Failure / retry / escalation
@@ -187,17 +188,17 @@ should never remove a live claim.
 
 ## 7. Activity-log identity
 
-Use the six-actor identity in the activity log:
+Use the eight-actor identity in the activity log:
 
 ```markdown
-## 2026-07-18 22:00 (UTC+7) — kimai-auto
+## 2026-07-18 22:00 (UTC+7) — kimi
 - Action: implemented backend per handoff 202607181600-backend-feature
 - Files: src/backend/...
 - Decisions: -
 ```
 
 The existing `cli-name` field in the activity-log header is sufficient; the
-name itself becomes the full identity (`kimai-auto`, `claude-cockpit`, etc.).
+name itself becomes the full identity (`kimi`, `claude-cockpit`, etc.).
 No new field is needed.
 
 ## 8. Tooling / SSOT changes required
@@ -205,7 +206,7 @@ No new field is needed.
 No tooling or SSOT changes are required. The current stack already supports
 this workflow:
 
-- `.ai/handoffs/template.md` has the six-actor `Sender:`/`Recipient:` identities
+- `.ai/handoffs/template.md` has the eight-actor `Sender:`/`Recipient:` identities
   and the v4 evidence fields.
 - `.ai/tools/dispatch-handoffs.sh` routes `Auto: yes` + Risk A/B to the auto
   pane and enforces `Observed-in`, `HYPOTHESIS`, and gate rules.
@@ -222,11 +223,11 @@ the routing discipline in §1–§4, and the README cross-reference.
 
 ## 9. Open questions resolved
 
-- **Should `Sender:`/`Recipient:` include mode?** Yes — use the full six-actor
-  identity (`kimai-cockpit`, `claude-auto`).
+- **Should `Sender:`/`Recipient:` include mode?** Yes — use the full eight-actor
+  identity (`kimi-cockpit`, `claude`).
 - **How encode the intended next actor when an auto pane finishes?** Use
   `ReviewBy:`, `FinalReview:`, `Deploy: yes`, or `Next:`.
 - **What is the cleanup rule for stale claim sidecars?** Remove only when
   heartbeat is dead, claimed handoff is gone, and claim age exceeds timeout.
-- **Does activity-log identity become `kimai-cockpit` vs `kimai-auto`?** Yes,
+- **Does activity-log identity become `kimi-cockpit` vs `kimi`?** Yes,
   use the full identity in the header; no new field is needed.

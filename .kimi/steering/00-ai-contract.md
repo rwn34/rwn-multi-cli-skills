@@ -3,7 +3,11 @@
 Multiple AI CLIs work in this project (Claude Code, Kimi CLI = you, Kiro CLI). They
 share state via `.ai/` so no CLI has to copy-paste another's output to stay coherent.
 
-## Your identity for the activity log: `kimi-cli`
+## Your identity for the activity log: `kimi-cockpit`
+
+You are the interactive Kimi cockpit session. The bare name `kimi` is the
+headless auto-pane identity; use `kimi-cockpit` for activity-log entries you
+prepend here.
 
 ## Single source of truth
 
@@ -19,7 +23,7 @@ ones to see what other CLIs did here.
 **Prepend** one entry after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
 
-    ## YYYY-MM-DD HH:MM (UTC+7) - kimi-cli
+    ## YYYY-MM-DD HH:MM (UTC+7) - kimi-cockpit
     - Action: <one-line summary>
     - Files: <paths, or "-">
     - Decisions: <non-obvious choices, or "-">
@@ -38,12 +42,11 @@ Never rewrite prior entries. Do not log trivial reads.
 When another CLI needs you to execute a change in `.kimi/` or in Kimi's portion of
 the shared docs, it writes a paste-ready instruction file to
 `.ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session
-starts or when the user references a handoff. Follow protocol v3 in
-`.ai/handoffs/README.md`: review, execute the steps, prepend an activity-log entry,
-report back, then self-retire — set the handoff's Status to `DONE` and move it from
-`open/` to `done/` yourself. The sender validates post-hoc. If blocked, leave the
-file in `open/`, set Status to `BLOCKED`, and append a `## Blocker` section with
-the verbatim blocker.
+starts or when the user references a handoff. Follow protocol v4 in `.ai/handoffs/README.md`: review, execute the steps,
+prepend an activity-log entry, report back, then self-retire — set the handoff's
+Status to `DONE` and move it from `open/` to `done/` yourself. The sender validates
+post-hoc. If blocked, leave the file in `open/`, set Status to `BLOCKED`, and append
+a `## Blocker` section with the verbatim blocker.
 
 You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
 `.ai/handoffs/to-kiro/open/` when you need those CLIs to change files in their
