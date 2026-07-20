@@ -233,6 +233,22 @@ wait "$busy_pid" 2>/dev/null || true
 check "sync-back busy dir exits 0" "$([ "$rc15" -eq 0 ] && echo 0 || echo 1)"
 check "sync-back busy dir removes or renames worktree .ai" "$( ([ ! -e "$WT/.ai" ] || [ -e "$WT/.ai.stale"* ]) && echo 0 || echo 1)"
 
+# 16. sync-back REFUSES to propagate a bare deletion of an open/review handoff
+#     that has no matching done/ entry. This is the ADR-0016 deletion-policy bug:
+#     if the snapshot fails to copy the handoff into the worktree, the canonical
+#     hash still matches the old manifest hash, so the old code deleted the open
+#     handoff from history. A handoff must only be removed from open/review when
+#     it is explicitly retired to done/ (or blocked).
+setup_canon
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+# Simulate the failure mode: the handoff is missing from the worktree snapshot
+# (snapshot did not copy it, or the executor deleted it without retiring it).
+rm -f "$WT/.ai/handoffs/to-kimi/open/h1.md"
+out16="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc16=$?
+check "sync-back refuses bare open-handoff deletion (non-zero exit)" "$([ "$rc16" -ne 0 ] && echo 0 || echo 1)"
+check "sync-back preserves canonical open handoff" "$([ -f "$CANON/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
+check "sync-back error names the refused deletion" "$(echo "$out16" | grep -qi 'refuse.*delete.*open.*handoff\|handoff.*h1\.md.*no.*done' && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1

@@ -848,6 +848,35 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 continue
             fi
 
+            # Verify the dispatched handoff actually arrived in the worktree.
+            # If snapshot-copy silently dropped it (e.g. tar race or junction
+            # churn), launching the CLI would eventually cause sync-back to
+            # delete the canonical open handoff (ADR-0016 deletion-policy bug).
+            if [ ! -f "$wt_path/$rel" ]; then
+                echo "FAIL  [$cli] $rel — handoff file missing from worktree after .ai/ snapshot" >&2
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (.ai/ snapshot incomplete)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Stage: .ai/ snapshot-copy verification (ADR-0016) — never reached CLI invocation"
+                    echo ""
+                    echo "Triage: the dispatcher snapshot-copied canonical .ai/ into the worktree,"
+                    echo "but the dispatched handoff file is not present. Inspect the snapshot manifest:"
+                    echo "  $wt_path/.ai/.snapshot-manifest"
+                    echo "This is usually caused by a concurrent modification, a tar race during"
+                    echo "snapshot, or a stale .ai/ directory in the worktree. The handoff stays OPEN."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$(owner_for "$cli")" || true
+                rm -f "$claim"
+                continue
+            fi
+
             # Declared-base branch cut (second, independent defect from the
             # shared-HEAD one): never leave the worktree on ambient HEAD.
             if ! base="$(base_for "$f")"; then

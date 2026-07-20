@@ -283,6 +283,43 @@ cmd_sync_back() {
         fi
     done < "$manifest_new"
 
+    # Deletion-policy guard (ADR-0016): a handoff may only disappear from
+    # open/ or review/ if it is explicitly retired to done/. If a handoff
+    # file was in the old snapshot but is missing from the worktree with no
+    # matching done/<basename> entry, refuse the sync-back instead of silently
+    # deleting canonical history.
+    local refused=""
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        local rel_del old_hash_del
+        old_hash_del="${line%%  *}"
+        rel_del="${line#*  }"
+        case "$rel_del" in
+            handoffs/to-*/open/*.md|handoffs/to-*/review/*.md)
+                # If it still exists in the worktree, not a deletion.
+                if awk -v r="$rel_del" '$2==r {found=1} END {exit !found}' "$manifest_new"; then
+                    continue
+                fi
+                local recipient_del basename_del done_rel
+                recipient_del="${rel_del#handoffs/to-}"
+                recipient_del="${recipient_del%%/*}"
+                basename_del="$(basename "$rel_del")"
+                done_rel="handoffs/to-$recipient_del/done/$basename_del"
+                # Accept the deletion only if the done/ counterpart exists.
+                if ! [ -e "$canon_ai/$done_rel" ] && \
+                   ! awk -v r="$done_rel" '$2==r {found=1} END {exit !found}' "$manifest_new"; then
+                    refused="${refused}  - $rel_del (no matching $done_rel)\n"
+                fi
+                ;;
+        esac
+    done < "$manifest_old"
+    if [ -n "$refused" ]; then
+        echo "REFUSE: sync-back would delete open/review handoff(s) without a done/ counterpart:" >&2
+        printf '%b' "$refused" >&2
+        echo "Aborting sync-back to prevent data loss." >&2
+        return 1
+    fi
+
     # Files in old manifest but not new -> deletion. Only replay deletions of
     # actual handoff files moving out of open/ or review/ (handoff retirement
     # moves). Never delete .gitkeep files, done/ history, reports, logs, etc.

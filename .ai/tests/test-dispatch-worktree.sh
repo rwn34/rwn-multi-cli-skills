@@ -747,6 +747,48 @@ check "ADR-0016: new report created in worktree .ai/ synced back to canonical" "
 make_stub "kimi" "$LOGS/kimi.log"
 
 # ==============================================================================
+# ADR-0016b. Snapshot-copy fail-fast: if the dispatched handoff file is missing
+# from the worktree after snapshot, the dispatcher must abort BEFORE launching
+# the CLI. Regression for the sync-back deletion bug where a missing handoff
+# caused canonical .ai/ history to be destroyed.
+# ==============================================================================
+# Wrap sync-ai-state.sh in the sandbox so it snapshots normally then deletes
+# the target handoff from the worktree .ai/, simulating a snapshot race.
+wrap_sync_ai_state() {
+    local target_rel="$1"
+    local real_sync="$PROJECT/.ai/tools/sync-ai-state.sh.real"
+    mv "$PROJECT/.ai/tools/sync-ai-state.sh" "$real_sync"
+    cat > "$PROJECT/.ai/tools/sync-ai-state.sh" <<EOF
+#!/bin/bash
+bash "$real_sync" "\$@"
+rc=\$?
+if [ "\$1" = "snapshot" ] && [ "\$rc" -eq 0 ]; then
+    wt_ai="\$3"
+    rm -f "\$wt_ai/$target_rel"
+fi
+exit \$rc
+EOF
+    chmod +x "$PROJECT/.ai/tools/sync-ai-state.sh"
+}
+unwrap_sync_ai_state() {
+    local real_sync="$PROJECT/.ai/tools/sync-ai-state.sh.real"
+    if [ -f "$real_sync" ]; then
+        mv "$real_sync" "$PROJECT/.ai/tools/sync-ai-state.sh"
+    fi
+}
+wrap_sync_ai_state "handoffs/to-kimi/open/202607110020-adr0016b-missing-handoff.md"
+mk_handoff kimi 202607110020-adr0016b-missing-handoff
+rm -f "$LOGS/kimi.log"
+out_adr0016b="$(run_dispatcher --only kimi --handoff .ai/handoffs/to-kimi/open/202607110020-adr0016b-missing-handoff.md 2>&1)"
+rc_adr0016b=$?
+unwrap_sync_ai_state
+check "ADR-0016b: dispatcher exits non-zero when handoff missing from snapshot" "$([ "$rc_adr0016b" -ne 0 ] && echo 0 || echo 1)"
+check "ADR-0016b: dispatcher reports snapshot-incomplete failure" "$(echo "$out_adr0016b" | grep -qi 'handoff file missing from worktree after \.ai/ snapshot' && echo 0 || echo 1)"
+check "ADR-0016b: handoff stays OPEN" "$(grep -q '^Status: OPEN' "$PROJECT/.ai/handoffs/to-kimi/open/202607110020-adr0016b-missing-handoff.md" && echo 0 || echo 1)"
+check "ADR-0016b: stub was not invoked" "$([ ! -f "$LOGS/kimi.log" ] && echo 0 || echo 1)"
+rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110020-adr0016b-missing-handoff.md"
+
+# ==============================================================================
 # --one mode: dispatch exactly one handoff even when multiple are open.
 # ==============================================================================
 # Remove the ADR-0016 handoff so it is not picked up before the --one targets.
