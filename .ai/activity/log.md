@@ -1,3 +1,8 @@
+## 2026-07-20 15:29 (UTC+7) - kimi-cli
+- Action: Implement master→main default-branch normalization in install-template.sh and add dispatcher fallback for stale `Base: origin/master` handoffs; push to main as 459814c; refresh executor worktrees.
+- Files: scripts/install-template.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh, .ai/tests/test-install-template-default-branch.sh, CHANGELOG.md
+- Decisions: Installer now renames `master`→`main` or creates `main` from `master` during pre-flight, closing the origin/master resolution failures for new adopters. Dispatcher validates explicit `Base:` and warns/falls back for origin/master. Full framework test suite (268 assertions) passes. Worktrees refreshed to main HEAD (459814c); fleet-health clean.
+
 ## 2026-07-20 14:14 (UTC+7) - kimi-cli
 - Action: Closed local tracker issue #1 (Kiro subagent hook inheritance) as "not planned"; bug is upstream at kirodotdev/Kiro#7671 and mitigations are documented in .ai/known-limitations.md.
 - Files: -
