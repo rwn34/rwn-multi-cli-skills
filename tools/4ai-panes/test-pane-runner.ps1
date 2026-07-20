@@ -665,8 +665,10 @@ $resolvedStaleSha = git -C $infoMain.Project rev-parse "$resolvedStale"
 Assert-Equal $latestMainSha $resolvedStaleSha 'ab-stale: resolved base points at latest commit'
 
 Remove-Item -Path $habExplicit -Force -ErrorAction SilentlyContinue
-Remove-Item -Path $infoMaster.Project, $infoMaster.Origin -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path $infoMain.Project, $infoMain.Origin -Recurse -Force -ErrorAction SilentlyContinue
+# These temp clones sometimes hold a git handle just long enough for Remove-Item
+# to report "Access is denied". Swallow the error; the temp paths are harmless.
+try { Remove-Item -Path $infoMaster.Project, $infoMaster.Origin -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+try { Remove-Item -Path $infoMain.Project, $infoMain.Origin -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
 # -- (ac)/(ad): real-sandbox tests exercising the REAL (unmocked)              --
 # -- Get-CliWorktreePathReal / Ensure-DeclaredBaseBranchReal / wt-bootstrap.sh  --
@@ -984,7 +986,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
     } finally {
         Pop-Location
         try { git -C $primary worktree prune 2>$null | Out-Null } catch {}
-        Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+        try { Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue } catch {}
     }
 } else {
     Write-Host "SKIP  ac/ad: no USABLE bash for wt-bootstrap.sh (present bash may be WSL, which cannot see Windows paths - see README's documented gotcha) - skipping real-sandbox worktree tests" -ForegroundColor DarkGray
@@ -1037,18 +1039,24 @@ $idxClaim = $runnerSrc.IndexOf('if (-not (Claim-Handoff')
 Assert-Equal $true ($idxPick -ge 0) 'ai: picked-up line present on the idle->busy transition'
 Assert-Equal $true ($idxPick -gt $idxClaim) 'ai: picked-up line prints only after the claim is won'
 
-# -- (aj) Enable/Restore-DispatchGuardEnv round trip (F3) --
+# -- (aj) Enable/Restore-DispatchGuardEnv round trip (F3 + auto-pane identity) --
 $env:AI_HANDOFF_DISPATCH = 'outer-value'
+$env:AI_HANDOFF_AUTO     = 'outer-auto'
 $prev = Enable-DispatchGuardEnv
-Assert-Equal 'outer-value' $prev 'aj: Enable-DispatchGuardEnv returns the prior value'
+Assert-Equal 'outer-value' $prev.Dispatch 'aj: Enable-DispatchGuardEnv returns the prior Dispatch value'
+Assert-Equal 'outer-auto'   $prev.Auto     'aj: Enable-DispatchGuardEnv returns the prior Auto value'
 Assert-Equal '1' $env:AI_HANDOFF_DISPATCH 'aj: Enable-DispatchGuardEnv sets AI_HANDOFF_DISPATCH=1'
+Assert-Equal '1' $env:AI_HANDOFF_AUTO     'aj: Enable-DispatchGuardEnv sets AI_HANDOFF_AUTO=1'
 Restore-DispatchGuardEnv -Previous $prev
-Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'aj: Restore-DispatchGuardEnv restores the prior value'
+Assert-Equal 'outer-value' $env:AI_HANDOFF_DISPATCH 'aj: Restore-DispatchGuardEnv restores the prior Dispatch value'
+Assert-Equal 'outer-auto'   $env:AI_HANDOFF_AUTO     'aj: Restore-DispatchGuardEnv restores the prior Auto value'
 Remove-Item -Path Env:\AI_HANDOFF_DISPATCH
+Remove-Item -Path Env:\AI_HANDOFF_AUTO
 $prevUnset = Enable-DispatchGuardEnv
-Assert-Equal $true ($null -eq $prevUnset) 'aj: prior value is $null when the var was unset'
+Assert-Equal $true (($null -eq $prevUnset.Dispatch) -and ($null -eq $prevUnset.Auto)) 'aj: prior value is $null when the var was unset'
 Restore-DispatchGuardEnv -Previous $prevUnset
-Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'aj: restore removes the var when it was previously unset'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'aj: restore removes AI_HANDOFF_DISPATCH when it was previously unset'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_AUTO)     'aj: restore removes AI_HANDOFF_AUTO when it was previously unset'
 
 # -- (ak) REAL invoke path: the spawned child actually inherits AI_HANDOFF_DISPATCH=1 --
 #     Stub Get-HeadlessCmd with a real native child (cmd, like test p - never a
@@ -1058,16 +1066,19 @@ Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'aj: restore removes th
 #     (the point of this rebase) that the worktree-cwd param does not disturb
 #     the env-guard behavior when both are exercised through the SAME call.
 $origHeadlessCc = ${function:Get-HeadlessCmd}
-function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" (exit 7) else (exit 9)') }
+function Get-HeadlessCmd { param([string]$CliName, [string]$Prompt) return @('cmd', '/c', 'if "%AI_HANDOFF_DISPATCH%"=="1" if "%AI_HANDOFF_AUTO%"=="1" (exit 7) else (exit 9)') }
 $ccCode = & $script:RealInvokeCli 'claude' 'ignored-prompt'
 ${function:Get-HeadlessCmd} = $origHeadlessCc
-Assert-Equal 7 $ccCode 'ak: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 (exit 7)'
+Assert-Equal 7 $ccCode 'ak: child spawned by real InvokeCli sees AI_HANDOFF_DISPATCH=1 and AI_HANDOFF_AUTO=1 (exit 7)'
 Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'ak: AI_HANDOFF_DISPATCH removed from runner env after the call'
+Assert-Equal $false (Test-Path Env:\AI_HANDOFF_AUTO)     'ak: AI_HANDOFF_AUTO removed from runner env after the call'
 
-# -- (al) GUARD: the assignment must never silently disappear from the source --
+# -- (al) GUARD: the assignments must never silently disappear from the source --
 #     Removing AI_HANDOFF_DISPATCH from the child env re-arms the nested
 #     self-dispatch race (F3); if it is ever dropped, this test fails loudly.
+#     AI_HANDOFF_AUTO tells a cockpit binary it is acting as the auto pane.
 Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_DISPATCH = ''1''')) 'al: GUARD - AI_HANDOFF_DISPATCH=1 assignment present in pane-runner source'
+Assert-Equal $true ($runnerSrc.Contains('$env:AI_HANDOFF_AUTO     = ''1''')) 'al: GUARD - AI_HANDOFF_AUTO=1 assignment present in pane-runner source'
 
 # -- (am) THE INTERLEAVE PROOF (this rebase's own acceptance test): a single --
 # -- real InvokeCli call must honor BOTH the worktree cwd param AND the      --
@@ -1089,8 +1100,9 @@ try {
         Assert-Equal ($amDir.TrimEnd('\')) $amSeenCwd 'am: interleave - child process cwd (%CD%) equals the Cwd param, not the caller location'
     }
     Assert-Equal $false (Test-Path Env:\AI_HANDOFF_DISPATCH) 'am: interleave - AI_HANDOFF_DISPATCH still cleaned up from runner env with a non-default cwd too'
+    Assert-Equal $false (Test-Path Env:\AI_HANDOFF_AUTO)     'am: interleave - AI_HANDOFF_AUTO also cleaned up from runner env with a non-default cwd too'
 } finally {
-    Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -Path $amDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 }
 
 # -- (an) REAL invoke path: the spawned child inherits UTF-8 locale env vars (S3-1) --
@@ -1120,7 +1132,7 @@ try {
     Assert-Equal $true (Test-Path $aoCapture) 'ao: capture file was written'
 } finally {
     $script:CliOutputCapturePath = $null
-    Remove-Item -Path $aoCapture -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -Path $aoCapture -Force -ErrorAction SilentlyContinue } catch {}
     ${function:Get-HeadlessCmd} = $origHeadlessAo
 }
 
@@ -1238,7 +1250,7 @@ try {
 } finally {
     if ($null -eq $origFrameworkEnv) { Remove-Item Env:RWN_FRAMEWORK_REPO -ErrorAction SilentlyContinue }
     else { $env:RWN_FRAMEWORK_REPO = $origFrameworkEnv }
-    Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    try { Remove-Item -Path $sandbox -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 }
 
 # ---------------------------------------------------------------------------
@@ -1438,11 +1450,11 @@ $bj = Invoke-CliBindProbe -ScriptPath $supervisorPath -CliValue 'k'
 Assert-Equal $true ($bj.ExitCode -ne 0) 'bj: run-pane-supervised rejects truncated -Cli ''k'' at bind time (non-zero exit)'
 Assert-Equal $true ($bj.Output -match 'ValidateSet|Cannot validate argument') 'bj2: rejection is a ValidateSet parameter-binding error'
 
-Remove-Item -Path $bgWork -Recurse -Force -ErrorAction SilentlyContinue
+try { Remove-Item -Path $bgWork -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
 # -- cleanup + summary --
-Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path $script:mockWtPath -Recurse -Force -ErrorAction SilentlyContinue
+try { Remove-Item -Path $work -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+try { Remove-Item -Path $script:mockWtPath -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 Write-Host ""
 Write-Host "==== pane-runner tests: $script:pass passed, $script:fail failed ====" -ForegroundColor Cyan
 if ($script:fail -gt 0) { exit 1 } else { exit 0 }

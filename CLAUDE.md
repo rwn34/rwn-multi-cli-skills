@@ -52,12 +52,17 @@ is what your budget is for. This is a cost rule, not a permission rule: it
 relaxes no Tier-C gate and moves no lane boundary. Note it does NOT conflict
 with the owner-interaction preference above — don't ask, *do* hand off.
 
-## Your identity for the activity log: `claude-cockpit`
+## Your identity for the activity log
 
-You are the interactive Claude Code cockpit session. The bare name `claude` is
-the headless auto-pane identity; use `claude-cockpit` for activity-log entries
-you prepend here. (`claude-code` is the git committer name, not the actor-model
-identity.)
+- **Interactive cockpit session** (the normal Claude Code window): use `claude-cockpit`.
+- **Headless auto-pane dispatch** (launched by `pane-runner.ps1` / `run-pane-supervised.ps1` with `AI_HANDOFF_AUTO=1`): use `claude` (the bare auto-pane identity).
+
+When you see `AI_HANDOFF_AUTO=1` in your environment, you are the `claude` auto pane, not the cockpit. In that mode:
+  - Process the assigned handoff directly.
+  - Do **not** run `claim-handoff.sh`; the pane-runner has already claimed it on your behalf.
+  - Use identity `claude` for activity-log entries and `Sender:` lines.
+
+(`claude-code` is the git committer name, not the actor-model identity.)
 
 ## Execution environment — Windows 11 + PowerShell (NOT Linux, NOT WSL)
 
@@ -77,8 +82,10 @@ here — the fleet keeps paying for Linux assumptions.
 - The bash guard refuses unparseable constructs (e.g. a leading option before a
   command). Write plain, boring commands.
 - No Linux userland — no `apt`, no guaranteed `/usr/bin`, `/tmp`, or GNU flags.
-- `.ai/` is a Windows **junction** (`mklink /J`), not a POSIX symlink, and it
-  behaves differently under git. See `docs/specs/junction-reverse-write-guard.md`.
+- `.ai/` in executor worktrees is a **snapshot copy** populated by the dispatcher
+  (`pane-runner.ps1` / `dispatch-handoffs.sh`) and synced back after the CLI exits.
+  It is no longer a junction/symlink. See `docs/architecture/0016-snapshot-copy.md`
+  (or `docs/specs/junction-reverse-write-guard.md` for historical context).
 
 ## Single source of truth
 
@@ -106,6 +113,9 @@ non-obvious decisions, finishing a task):
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">
 
+Use `claude` instead of `claude-cockpit` when the work was performed in headless
+auto-pane mode (`AI_HANDOFF_AUTO=1`).
+
 **Timestamp rule:** `HH:MM` = your current local wall-clock time at the moment you
 prepend (finish time of the work, not start time). Prepend order is the authoritative
 sequencing across CLIs; timestamps are annotations and may not sort monotonically if
@@ -124,14 +134,24 @@ entries use local wall-clock, but the filename does not. Before starting new
 non-trivial work, glance at `.ai/handoffs/to-claude/open/` — anything there is a
 task addressed to you. Re-check between tasks — poll, don't wait to be told.
 
-**Protocol v3 (2026-07-09):** handoffs carry `Auto:` (default `yes`) and
-`Risk:` (A/B/C). Auto+Risk-A/B dispatch headless via
-`bash .ai/tools/dispatch-handoffs.sh --exec`; Risk C is always human-relayed.
-When you are the **recipient**, self-retire on completion: set Status `DONE` and
-move the handoff from `open/` to `done/` yourself; the sender validates post-hoc.
-Blocked → leave in `open/` as `BLOCKED` with a verbatim `## Blocker`.
+**Protocol v4 (2026-07-17):** handoffs carry `Status:` (`OPEN`/`DONE`/`BLOCKED`),
+`Sender:`, `Recipient:`, `Auto:` (`yes`/`no`), `Risk:` (`A`/`B`/`C`), `Evidence:`
+(`VERIFIED ...` or `HYPOTHESIS (unverified)`), and `Observed-in:`
+(`<branch>@<sha>`). See `.ai/handoffs/README.md` and `docs/architecture/0015-handoff-protocol-v4.md`.
 
-The `Auto:` tag is the ownership boundary: `Auto: yes` + Risk A/B belongs to the auto pane (a cockpit must not hand-take it), `Auto: no` / Risk C is cockpit-owned; a cockpit takes an `Auto: yes` handoff only by first running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` + claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
+- `Auto: yes` + `Risk: A|B` → auto-pane dispatch (`pane-runner.ps1` or
+  `bash .ai/tools/dispatch-handoffs.sh --exec`).
+- `Risk: C` or `Auto: no` → cockpit/human-relayed.
+- When you are the **recipient**, self-retire on completion: set `Status: DONE`
+  and move the handoff from `open/` (or `review/`) to `done/` yourself.
+- Blocked → leave in `open/` as `Status: BLOCKED` with a verbatim `## Blocker`.
+
+**Auto-pane mode for Claude:** when the pane-runner launches you headlessly with
+`AI_HANDOFF_AUTO=1`, you are the `claude` auto pane. Process the handoff directly
+and do not call `claim-handoff.sh`. In all other cases the `Auto:` boundary still
+applies: an interactive cockpit may take an `Auto: yes` handoff only by first
+running `bash .ai/tools/claim-handoff.sh <path>` (atomically flips `Auto: no` +
+claim sidecar; `release-handoff.sh` reverts). See ADR-0013.
 
 ## Root file policy
 

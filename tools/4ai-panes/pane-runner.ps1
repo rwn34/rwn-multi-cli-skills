@@ -603,10 +603,20 @@ $script:EnsureDeclaredBaseBranch = {
 # into the process env (inherited by every child we spawn) for ALL CLIs -
 # harmless for CLIs whose hooks don't read it, correct for the one that does.
 # A per-CLI carve-out is how this bug got in; do not reintroduce one.
+#
+# AI_HANDOFF_AUTO=1 is an additional identity signal: it tells a CLI that is
+# normally a cockpit (claude) that this headless invocation is the auto pane,
+# not an interactive cockpit. The CLI should therefore act as its auto-pane
+# identity, process the handoff directly, and not attempt to claim an already-
+# claimed auto handoff. See CLAUDE.md "Headless auto-pane mode".
 function Enable-DispatchGuardEnv {
     # Returns the prior value ($null if unset) so the caller can restore it.
-    $prev = $env:AI_HANDOFF_DISPATCH
+    $prev = @{
+        Dispatch = $env:AI_HANDOFF_DISPATCH
+        Auto     = $env:AI_HANDOFF_AUTO
+    }
     $env:AI_HANDOFF_DISPATCH = '1'
+    $env:AI_HANDOFF_AUTO     = '1'
     return $prev
 }
 
@@ -614,8 +624,18 @@ function Restore-DispatchGuardEnv {
     param([object]$Previous)
     if ($null -eq $Previous) {
         Remove-Item -Path Env:\AI_HANDOFF_DISPATCH -ErrorAction SilentlyContinue
+        Remove-Item -Path Env:\AI_HANDOFF_AUTO     -ErrorAction SilentlyContinue
     } else {
-        $env:AI_HANDOFF_DISPATCH = [string]$Previous
+        if ($Previous.Dispatch) {
+            $env:AI_HANDOFF_DISPATCH = [string]$Previous.Dispatch
+        } else {
+            Remove-Item -Path Env:\AI_HANDOFF_DISPATCH -ErrorAction SilentlyContinue
+        }
+        if ($Previous.Auto) {
+            $env:AI_HANDOFF_AUTO = [string]$Previous.Auto
+        } else {
+            Remove-Item -Path Env:\AI_HANDOFF_AUTO -ErrorAction SilentlyContinue
+        }
     }
 }
 
