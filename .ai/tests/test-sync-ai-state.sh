@@ -257,6 +257,47 @@ check "sync-back refuses bare open-handoff deletion (non-zero exit)" "$([ "$rc16
 check "sync-back preserves canonical open handoff" "$([ -f "$CANON/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
 check "sync-back error names the refused deletion" "$(echo "$out16" | grep -qi 'refuse.*delete.*open.*handoff\|handoff.*h1\.md.*no.*done' && echo 0 || echo 1)"
 
+# 17. sync-back copies a NEW activity/entries/*.md file from worktree to
+#     canonical (ADR-0010 spool). This is the common case: no filename
+#     collision, entry syncs like any other new file.
+setup_canon
+mkdir -p "$CANON/.ai/activity/entries"
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+echo '## entry from worktree' > "$WT/.ai/activity/entries/20260720T120000Z-kiro-test-aaaa.md"
+out17="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc17=$?
+check "sync-back new entry file exits 0" "$([ "$rc17" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back copies new entry file to canonical" "$([ -f "$CANON/.ai/activity/entries/20260720T120000Z-kiro-test-aaaa.md" ] && echo 0 || echo 1)"
+
+# 18. sync-back is a no-op for an entry file whose content is byte-identical
+#     in canonical already (idempotent re-sync, e.g. a retried dispatch).
+setup_canon
+mkdir -p "$CANON/.ai/activity/entries"
+echo '## identical entry' > "$CANON/.ai/activity/entries/20260720T130000Z-kiro-idem-bbbb.md"
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+out18="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc18=$?
+check "sync-back idempotent entry re-sync exits 0" "$([ "$rc18" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back idempotent entry unchanged" "$(grep -qF 'identical entry' "$CANON/.ai/activity/entries/20260720T130000Z-kiro-idem-bbbb.md" && echo 0 || echo 1)"
+
+# 19. sync-back REFUSES to overwrite an entry file when canonical and
+#     worktree disagree on content under the same filename (the ADR-0010
+#     invariant: no writer ever rewrites another writer's entry). This
+#     models a filename-collision bug, not a normal outcome — the fix must
+#     never silently destroy either side's content.
+setup_canon
+mkdir -p "$CANON/.ai/activity/entries"
+bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+# Canonical gains an entry at this filename from another actor while this
+# executor's worktree independently produces a *different* body at the same
+# filename (simulated collision).
+echo '## canonical writer body' > "$CANON/.ai/activity/entries/20260720T140000Z-kiro-collide-cccc.md"
+mkdir -p "$WT/.ai/activity/entries"
+echo '## worktree writer body (different)' > "$WT/.ai/activity/entries/20260720T140000Z-kiro-collide-cccc.md"
+out19="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc19=$?
+check "sync-back collision refuse exits 0 (non-fatal warn)" "$([ "$rc19" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back collision preserves canonical body" "$(grep -qF 'canonical writer body' "$CANON/.ai/activity/entries/20260720T140000Z-kiro-collide-cccc.md" && echo 0 || echo 1)"
+check "sync-back collision does not adopt worktree body" "$(grep -qF 'worktree writer body' "$CANON/.ai/activity/entries/20260720T140000Z-kiro-collide-cccc.md" && echo 1 || echo 0)"
+check "sync-back collision warns" "$(echo "$out19" | grep -qi 'REFUSING to overwrite existing entry file' && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1

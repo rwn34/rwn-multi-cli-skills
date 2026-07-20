@@ -300,13 +300,33 @@ cmd_sync_back() {
         old_hash="$(awk -v r="$rel" '$2==r {print $1}' "$manifest_old" || true)"
         if [ "$old_hash" != "$new_hash" ]; then
             mkdir -p "$(dirname "$canon_ai/$rel")"
-            if [ "$rel" = "activity/log.md" ]; then
-                merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
-                mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
-            else
-                cp -a "$wt_ai/$rel" "$canon_ai/$rel"
-            fi
-            log "sync-back: $rel"
+            case "$rel" in
+                activity/log.md)
+                    merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
+                    mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
+                    log "sync-back: $rel"
+                    ;;
+                activity/entries/*)
+                    # ADR-0010 invariant: no writer ever rewrites another
+                    # writer's entry file. Unlike the generic path below
+                    # (which trusts the worktree-vs-worktree-snapshot diff
+                    # alone and never looks at canonical's current content),
+                    # an entries/ path is compared against canonical's
+                    # current file, byte-for-byte, before any write.
+                    if [ ! -e "$canon_ai/$rel" ]; then
+                        cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+                        log "sync-back: $rel"
+                    elif cmp -s "$wt_ai/$rel" "$canon_ai/$rel"; then
+                        : # identical — idempotent re-sync (e.g. retried dispatch), nothing to do
+                    else
+                        warn "REFUSING to overwrite existing entry file: $rel (canonical and worktree differ — this must never happen under normal filename generation; investigate the filename collision instead of forcing a copy)"
+                    fi
+                    ;;
+                *)
+                    cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+                    log "sync-back: $rel"
+                    ;;
+            esac
         fi
     done < "$manifest_new"
 
