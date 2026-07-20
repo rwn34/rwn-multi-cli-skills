@@ -1,3 +1,8 @@
+## 2026-07-20 09:49 (UTC+7) - kimi-cli
+- Action: Include framework version in all dispatch-failure reports; add regression test.
+- Files: .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
+- Decisions: New framework_version() helper reads .ai/.framework-version; dispatch-failure report headers now include a "- Framework:" line. Committed and pushed to main (4699af5).
+
 ## 2026-07-20 09:41 (UTC+7) - kimi-cli
 - Action: Fix ADR-0016 sync-back deletion-policy bug; add dispatcher snapshot handoff verification and regression tests.
 - Files: .ai/tools/sync-ai-state.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-sync-ai-state.sh, .ai/tests/test-dispatch-worktree.sh
