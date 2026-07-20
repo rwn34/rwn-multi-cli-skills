@@ -1,6 +1,6 @@
 # Smoke test: kimi cross-queue write
 
-Status: OPEN
+Status: DONE
 Sender: claude-code
 Recipient: kimi
 Created: 2026-07-20 14:00 (UTC+7)
