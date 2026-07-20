@@ -18,9 +18,12 @@ promotion happened.
 
 ## [Unreleased]
 
+## [0.0.51] - 2026-07-20
+
 ### Changed
 
 - Reverted actor model from eight actors to six actors: only `claude-cockpit`, `kimi-cockpit`, `claude`, `kimi`, `kiro`, and `opencode` remain. Removed `kiro-cockpit` and `opencode-cockpit` identities from SSOT, replicas, tooling, and disk queues. Updated all docs, templates, tests, and pane-runner identity normalization accordingly.
+- Updated Kiro contract activity-log identity from `kiro-cockpit` to `kiro`.
 
 ## [0.0.50] - 2026-07-20
 
