@@ -85,7 +85,7 @@ here — the fleet keeps paying for Linux assumptions.
 - `.ai/` in executor worktrees is a **snapshot copy** populated by the dispatcher
   (`pane-runner.ps1` / `dispatch-handoffs.sh`) and synced back after the CLI exits.
   It is no longer a junction/symlink. See `docs/architecture/0016-snapshot-copy.md`
-  (or `docs/specs/junction-reverse-write-guard.md` for historical context).
+  (or `docs/specs/ai-snapshot-sync.md` for the sync contract).
 
 ## Single source of truth
 

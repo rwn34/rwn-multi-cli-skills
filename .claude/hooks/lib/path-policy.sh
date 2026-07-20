@@ -172,7 +172,7 @@ classify_path() {
         */.wt/*/*)
             case "$rel" in
                 /*|[A-Za-z]:/*)
-                    echo "BLOCK:2.6:Worktree confinement (ADR-0004): this session runs in executor worktree '$project_root' and may write only inside it (+ the junctioned .ai/). Escaping to '$rel' is blocked — cross-tree changes go through .ai/handoffs/."; return 0 ;;
+                    echo "BLOCK:2.6:Worktree confinement (ADR-0004/ADR-0016): this session runs in executor worktree '$project_root' and may write only inside it (+ the snapshot-copied .ai/). Escaping to '$rel' is blocked — cross-tree changes go through .ai/handoffs/."; return 0 ;;
                 ..|../*|*/..|*/../*)
                     echo "BLOCK:2.6:Worktree confinement (ADR-0004): relative path escapes the worktree ('$rel'). Write only inside this worktree; cross-tree changes go through .ai/handoffs/."; return 0 ;;
             esac ;;
