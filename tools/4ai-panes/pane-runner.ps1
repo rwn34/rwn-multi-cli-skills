@@ -958,7 +958,7 @@ function Emit-NextStageHandoff {
         return
     }
 
-    $ts = (Get-Date -Format 'yyyyMMddHHmm')
+    $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmm')
     $slug = [System.IO.Path]::GetFileNameWithoutExtension($base)
 
     # Helper to write a handoff file. $RecipientActor is the full six-actor

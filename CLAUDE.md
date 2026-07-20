@@ -57,10 +57,14 @@ with the owner-interaction preference above — don't ask, *do* hand off.
 - **Interactive cockpit session** (the normal Claude Code window): use `claude-cockpit`.
 - **Headless auto-pane dispatch** (launched by `pane-runner.ps1` / `run-pane-supervised.ps1` with `AI_HANDOFF_AUTO=1`): use `claude` (the bare auto-pane identity).
 
-When you see `AI_HANDOFF_AUTO=1` in your environment, you are the `claude` auto pane, not the cockpit. In that mode:
+`AI_HANDOFF_AUTO=1` is the ONLY authoritative signal that you are the `claude` auto pane. Do not infer identity from `.ai/.claim-claude.json`, heartbeat sidecars, or any other runtime file — those can be stale across pane restarts and dispatches.
+
+When `AI_HANDOFF_AUTO=1`:
   - Process the assigned handoff directly.
-  - Do **not** run `claim-handoff.sh`; the pane-runner has already claimed it on your behalf.
+  - Do **not** run `claim-handoff.sh`; the dispatcher/pane-runner has already claimed it on your behalf.
   - Use identity `claude` for activity-log entries and `Sender:` lines.
+
+When `AI_HANDOFF_AUTO` is unset or not `1`, you are the interactive cockpit (`claude-cockpit`). In that mode you may touch an `Auto: yes` handoff in `to-claude/open/` or `to-claude/review/` **only after** first running `bash .ai/tools/claim-handoff.sh <path>` (which flips `Auto:` to `no`). The `pretool-write-edit.sh` hook will block edits to claimed auto handoffs from the cockpit.
 
 (`claude-code` is the git committer name, not the actor-model identity.)
 

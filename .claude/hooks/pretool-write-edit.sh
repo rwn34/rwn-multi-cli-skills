@@ -62,9 +62,54 @@ rel=$(canonicalize_and_relativize "$path" "$project_root") || block "$rel"
 # Ask the single shared classifier for the verdict.
 verdict=$(classify_path "$rel" "$project_root" "$agent_type")
 case "$verdict" in
-    ALLOW)   exit 0 ;;
     BLOCK:*) block "${verdict#BLOCK:*:}" ;;
-    *)       block "policy classifier returned an unrecognized verdict ('$verdict') — refusing to fail open." ;;
+    ALLOW|*) : ;;
 esac
+
+# --- Auto-handoff mutual-exclusion guard (Claude-specific) ---
+# An interactive cockpit must not edit an Auto: yes handoff that is already
+# claimed by the auto pane. The auto pane (AI_HANDOFF_AUTO=1) owns the claim
+# acquired by the dispatcher on its behalf; any other process must either claim
+# it first (flipping Auto: no) or leave it alone.
+#
+# This closes the double-execution race observed 2026-07-20 where a headless
+# dispatch and an interactive cockpit both processed the same to-claude/open/
+# Auto: yes handoff.
+block_if_claimed_auto_handoff() {
+    local r="$1" root="$2"
+    # Only applies to Claude's own handoff queues in the canonical tree.
+    case "$r" in
+        .ai/handoffs/to-claude/open/*.md|.ai/handoffs/to-claude/review/*.md) : ;;
+        *) return 0 ;;
+    esac
+    # Auto pane is always authorized; the dispatcher claimed it for us.
+    [ "${AI_HANDOFF_AUTO:-}" = "1" ] && return 0
+
+    local slug recipient claim chost cpid myhost mypid
+    slug=$(basename "$r" .md) || return 0
+    recipient=$(printf '%s' "$r" | sed -n 's|\.ai/handoffs/to-\([^/]*\)/.*|\1|p')
+    [ -n "$recipient" ] || return 0
+    claim="$root/.ai/handoffs/.claims/${recipient}__${slug}.claim.json"
+    [ -f "$claim" ] || return 0
+
+    # Stale by mtime (>15 min) -> reclaimable, not live.
+    [ -n "$(find "$claim" -mmin -15 2>/dev/null)" ] || return 0
+
+    myhost=$(hostname 2>/dev/null)
+    mypid=$$
+    chost=$(grep -oE '"host"[[:space:]]*:[[:space:]]*"[^"]*"' "$claim" 2>/dev/null | sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/')
+    cpid=$(grep -oE '"pid"[[:space:]]*:[[:space:]]*[0-9]+' "$claim" 2>/dev/null | grep -oE '[0-9]+$')
+
+    if [ -n "$chost" ] && [ "$chost" = "$myhost" ] && [ -n "$cpid" ]; then
+        if [ "$cpid" = "$mypid" ]; then
+            return 0   # we hold the claim
+        fi
+        kill -0 "$cpid" 2>/dev/null || return 0   # claim owner is dead -> stale
+    fi
+    # Foreign host or unverifiable pid: trust the mtime freshness check above.
+    block "auto-handoff claim held by another process (claim: ${claim#$root/}, pid: ${cpid:-?}). Interactive cockpit may not edit an Auto: yes handoff without first running claim-handoff.sh."
+}
+
+block_if_claimed_auto_handoff "$rel" "$project_root"
 
 exit 0

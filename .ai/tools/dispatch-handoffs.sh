@@ -1050,6 +1050,12 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
                 continue
             fi
 
+            # Remove any stale pane-runner global claim that snapshot copied into
+            # the worktree. The claim belongs to a previous pane-runner process
+            # (pid may be dead) and must not be visible to the new headless CLI,
+            # which determines identity from AI_HANDOFF_AUTO, not from sidecars.
+            rm -f "$wt_path/.ai/.claim-$cli.json" "$wt_path/.ai/.heartbeat-$cli.json" 2>/dev/null || true
+
             echo "DISPATCH [$cli] $rel — worktree: ${wt_path#$root/} branch: exec/$cli/$slug (base: $base)"
             owner=$(owner_for "$cli")
             # PICKED notify — right as we commit to dispatching, before launch.
