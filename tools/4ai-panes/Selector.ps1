@@ -635,7 +635,7 @@ function Install-Framework($targetDir) {
 # Opens a NEW WT tab that runs the bash installer against the target directory.
 # No CLI is launched — this is pure framework onboarding/adoption. Works for both
 # fresh installs and updates (install-template.sh detects the .ai/.framework-version
-# marker and enters UPDATE_MODE).
+# marker and enters UPDATE_MODE). Both 'i' and 'u' invoke this path.
 function Install-Framework-In-NewTab($targetDir) {
     if ([string]::IsNullOrWhiteSpace($targetDir)) {
         Write-Host "No directory selected; cannot install framework." -ForegroundColor Yellow
@@ -1067,7 +1067,7 @@ function Draw-Menu {
     $footer = if ($script:marked.Count -gt 0) {
         " Space:mark($($script:marked.Count))  Enter:launch marked  b:browse  o:order  q:quit"
     } else {
-        " Up/Dn  Space:mark  Enter  b:browse  i:install  n:new  w:nodir  o:order  q:quit"
+        " Up/Dn  Space:mark  Enter  b:browse  i/u:install/update  n:new  w:nodir  o:order  q:quit"
     }
     if ($footer.Length -gt $innerW) { $footer = $footer.Substring(0, $innerW) }
     Write-Host ("|" + $footer.PadRight($innerW) + "|") -ForegroundColor DarkGray
@@ -1268,7 +1268,7 @@ function Show-FolderBrowser {
         $help = if ($script:browseMarked.Count -gt 0) {
             " Space:mark($($script:browseMarked.Count))  Enter:launch marked  Left:up  Esc:cancel"
         } else {
-            " Up/Dn  Space:mark  Enter/Right:open  Left:up  i:install  c:select  Esc:cancel"
+            " Up/Dn  Space:mark  Enter/Right:open  Left:up  i/u:install/update  c:select  Esc:cancel"
         }
         if ($help.Length -gt $innerW) { $help = $help.Substring(0, $innerW) }
         Write-Host ("|" + $help.PadRight($innerW) + "|") -ForegroundColor DarkGray
@@ -1345,7 +1345,7 @@ function Show-FolderBrowser {
                     Open-ProjectTabs -TargetDirs @($dirToOpen)
                     continue
                 }
-                elseif ($ch -eq 'i') {
+                elseif ($ch -eq 'i' -or $ch -eq 'u') {
                     if ($items.Count -gt 0) {
                         $installDir = if ($items[$sel].type -eq 'parent') { $current } else { $items[$sel].path }
                         Install-Framework-In-NewTab -targetDir $installDir
@@ -1415,14 +1415,14 @@ while ($true) {
                 if ($ch -eq 'b') {
                     Invoke-Browse | Out-Null
                 }
-                elseif ($ch -eq 'i') {
+                elseif ($ch -eq 'i' -or $ch -eq 'u') {
                     $cur = $script:menuItems[$script:selected]
                     if ($cur.type -eq 'project') {
                         Install-Framework-In-NewTab -targetDir (Join-Path $projectsDir $cur.name)
                     }
                     elseif ($cur.type -eq 'browse') {
-                        # Install-framework shortcut in browse mode: open the browser,
-                        # then install the directory the user confirms with 'c'.
+                        # Install/update shortcut in browse mode: open the browser,
+                        # then install/update the directory the user confirms with 'c'.
                         $picked = Show-FolderBrowser -Root $projectsDir
                         if ($picked) { Install-Framework-In-NewTab -targetDir $picked }
                     }
