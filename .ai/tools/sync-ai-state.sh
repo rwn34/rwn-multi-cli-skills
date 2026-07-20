@@ -191,7 +191,11 @@ manifest_for() {
                 continue
             fi
             printf '%s  %s\n' "$hash" "${f#./}"
-        done < <(find . -type f ! -path "./$MANIFEST_NAME" -print0 2>/dev/null) | LC_ALL=C sort -k2 > "$tmp_manifest" )
+        done < <(find . -type f \
+            ! -path "./$MANIFEST_NAME" \
+            ! -path "./handoffs/.quarantine/*" \
+            ! -path "./activity/archive/*" \
+            -print0 2>/dev/null) | LC_ALL=C sort -k2 > "$tmp_manifest" )
         if [ ! -s "$tmp_warnings" ]; then
             cat "$tmp_manifest"
             rm -f "$tmp_manifest" "$tmp_warnings"

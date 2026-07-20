@@ -54,6 +54,10 @@
 
 set -u
 
+# Prevent any git subcommand from blocking on an interactive credential prompt
+# when running headless. A failed fetch is always handled fail-open below.
+export GIT_TERMINAL_PROMPT=0
+
 MODE="dry-run"
 ONLY=""
 HANDOFF=""
