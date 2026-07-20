@@ -24,7 +24,7 @@ if git ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
 else
   ENTRIES_DIR=.ai/activity/entries
   echo '--- Recent cross-CLI activity (newest 8 entries in .ai/activity/entries/) ---'
-  ls "$ENTRIES_DIR"/*.md 2>/dev/null | sort -r | head -n 8 | xargs -r cat | head -60
+  ls "$ENTRIES_DIR"/*.md 2>/dev/null | LC_ALL=C sort -r | head -n 8 | xargs -r cat | head -60
   echo '--- end ---'
 fi
 echo ''
@@ -37,7 +37,7 @@ fi
 echo ''
 HANDOFFS=$(ls .ai/handoffs/to-kiro/open/*.md 2>/dev/null)
 if [ -n "$HANDOFFS" ]; then
-  echo '--- Open handoffs for kiro-cli ---'
+  echo '--- Open handoffs for kiro ---'
   echo "$HANDOFFS"
   echo '--- end ---'
 fi
