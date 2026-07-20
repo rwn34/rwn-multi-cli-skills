@@ -20,11 +20,16 @@ promotion happened.
 
 ### Added
 
-- [TODO]
+- ADR-0016 sync-back deletion-policy guard: refuses to propagate bare deletions of open/review handoffs with no matching done/ entry.
+- Dispatcher snapshot verification: aborts dispatch if the handed-off file is missing from the worktree `.ai/` snapshot.
+- Framework version is now included in every dispatch-failure report header.
+- New regression tests for install-template branch recovery when a target repo is left on `ai-template-install`.
 
 ### Changed
 
-- [TODO]
+- Removed the legacy `to-kimi-executor/` and `to-kiro-executor/` handoff queues and all code references; the framework now uses only the eight canonical queues (`to-<cli>/` and `to-<cli>-cockpit/`).
+- Clarified `.ai/handoffs/README.md` that the auto pane uses the base `to-<cli>/` queue and there is no separate `-auto` queue.
+- `install-template.sh` now recovers the original branch when the target is already on `ai-template-install` from a previous aborted install/update, so reruns no longer require manual branch cleanup.
 
 ## [0.0.46] - 2026-07-19
 
