@@ -1,3 +1,8 @@
+## 2026-07-20 11:59 (UTC+7) - kimi-cli
+- Action: Remove orphaned to-claude-auto/ queue directory and clarify README that there is no separate -auto queue.
+- Files: .ai/handoffs/README.md
+- Decisions: Filesystem now contains only the eight canonical queues: to-<cli>/ (auto pane) and to-<cli>-cockpit/ (cockpit) for claude/kimi/kiro/opencode. Added explicit note to README that the auto pane uses the base queue and older -executor/-auto directories are gone. No code changes required; dispatch-handoffs.sh and pane-runner.ps1 already map auto identities to base queues.
+
 ## 2026-07-20 11:49 (UTC+7) - kimi-cli
 - Action: Remove kimi-executor/kiro-executor handoff queues and code references; enforce eight-actor model (4 auto + 4 cockpit).
 - Files: .ai/handoffs/README.md, .ai/handoffs/template.md, .ai/tools/dispatch-handoffs.sh, .ai/tools/fleet-health.sh, .ai/tools/test-fleet-health.sh, .ai/tests/test-dispatch-owner-for.sh, scripts/wt-bootstrap.sh, tools/4ai-panes/pane-runner.ps1, docs/specs/saja-akun-cli-workflow.md
