@@ -84,7 +84,7 @@ Concretely, for any change to `.claude/hooks/**`:
    hook-enforced block in the primary tree.
 2. **A change MAY be authored on an `exec/*` branch in a worktree** (ADR-0004
    topology). That is the only place enforcement-layer edits are permitted.
-3. **It reaches master ONLY via a PR that:**
+3. **It reaches main ONLY via a PR that:**
    - (a) is reviewed by a **different CLI than the author** (author ≠ reviewer,
      per ADR-0002's review flow);
    - (b) passes the required CI gates — `gates` and `framework-check`; and
@@ -103,7 +103,7 @@ This ADR authorizes the target state; it does **not** describe a fully built
 system. What exists today, stated exactly:
 
 - **Built and live:** `gates` and `framework-check` **are** required status
-  checks on `master` — branch protection was applied 2026-07-12 per handoff
+  checks on `main` — branch protection was applied 2026-07-12 per handoff
   `.ai/handoffs/to-opencode/done/202607121900-gates-required-check.md` (now
   `done/`), with `enforce_admins=false`, no restrictions, and deliberately **no**
   GitHub-level required PR-review approval (forcing one mechanically risked
@@ -152,7 +152,7 @@ The new control requires **three** simultaneous compromises: the **author** CLI
 must write the weakening, an **independent reviewer** CLI (a different model, a
 different session, a different token budget) must pass it, and **CI** must go
 green on it — with the change permanently recorded as a reviewable diff on
-master, attributable to a named committer identity, in a PR merged by neither
+main, attributable to a named committer identity, in a PR merged by neither
 author nor reviewer. Collusion across two independent CLIs plus a CI gate is a
 strictly harder bar than one unread patch file. Anyone arguing this ADR weakens
 the enforcement layer must explain why "one agent + one non-reading human" is a
@@ -170,13 +170,13 @@ and a CI verdict attached.
   merge, an agent's *own worktree* may contain a hook file whose guard is weakened
   — and that weakened guard is the one governing that worktree's session. This is
   real and it is new. It is **bounded** (the primary tree is still hook-blocked;
-  the branch cannot reach master without a peer review and CI) and **detectable**
+  the branch cannot reach main without a peer review and CI) and **detectable**
   (`.ai/tools/reverse-write-detector.sh` catches a linked worktree writing back
   into the primary; the SSOT drift checks catch divergence), but "bounded and
   detectable" is not "impossible." Naming it is the point.
 - **CI becomes part of the trust boundary.** A PR that edits
   `.github/workflows/**` could in principle weaken the very gate that enforces
-  Decision 4. Required status checks on `master` (`gates`, `framework-check`) are
+  Decision 4. Required status checks on `main` (`gates`, `framework-check`) are
   the mitigation and are **already in place** as of 2026-07-12 — but they were
   configured with `enforce_admins=false` and with no GitHub-level required review,
   so an admin-token actor can still bypass, and a workflow-file change is reviewed
@@ -192,11 +192,11 @@ and a CI verdict attached.
 ### Positive
 
 - **Good enforcement-layer changes can land again.** The fleet-health alert — and
-  every future guard improvement — has a path to master that does not require the
+  every future guard improvement — has a path to main that does not require the
   owner to read a patch.
 - **Every guard change is reviewed by someone qualified to review it** (a peer
   CLI), instead of by someone who by their own account cannot.
-- **Auditability.** Author, reviewer, CI verdict and diff, permanently on master.
+- **Auditability.** Author, reviewer, CI verdict and diff, permanently on main.
 - **The owner's time is returned to the one gate that is actually theirs** —
   production deploy. Consistent with the owner-interaction preference (2026-07-11)
   and §8.
@@ -245,7 +245,7 @@ and a CI verdict attached.
 - `docs/architecture/0011-git-ops-execution-to-opencode.md` — the merge lane that
   performs clause (c).
 - `.ai/handoffs/to-opencode/done/202607121900-gates-required-check.md` — the work
-  that made `gates` + `framework-check` required status checks on `master`
+  that made `gates` + `framework-check` required status checks on `main`
   (landed 2026-07-12; `enforce_admins=false`, no GitHub-required review).
 - `.ai/handoffs/to-claude/open/202607130332-surface-fleet-health-in-stop-reminder.md`
   (+ its `.patch`) — the change Rule 1.5 blocked across three sessions; the

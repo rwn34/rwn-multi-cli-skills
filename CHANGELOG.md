@@ -18,6 +18,8 @@ promotion happened.
 
 ## [Unreleased]
 
+## [0.0.50] - 2026-07-20
+
 ### Changed
 
 - Updated current-behavior ADRs (0012, 0013, 0014, 0015) and `.claude/agents/release-engineer.md` to reference `main` / `origin/main` instead of the legacy `master` default branch.

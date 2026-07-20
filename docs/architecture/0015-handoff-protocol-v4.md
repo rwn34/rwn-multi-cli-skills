@@ -104,7 +104,7 @@ modes:
   abbreviated SHA is never string-equal to a 40-character one, so a handoff
   written exactly as documented is guaranteed to FAIL with an evidence-base
   mismatch. The test suite does not catch this because `v4-5` feeds a full SHA
-  from `git rev-parse origin/master`. The tests encode the happy path and hide
+  from `git rev-parse origin/main`. The tests encode the happy path and hide
   the documented path.
 - **Equality is the wrong relation.** The dispatch base advances every time
   anything merges. A handoff whose evidence was accurate when written FAILs the
@@ -300,9 +300,7 @@ control; a self-asserted "the owner said yes" is not.
   default-branch discovery.
 - In-flight handoffs without the new fields continue to work, per the spec's
   migration section.
-- The tests `v4-1`..`v4-5` were repointed from `origin/master` to `origin/main`
-  as part of the master→main migration. The ADR text above predates that
-  cleanup.
+- The tests `v4-1`..`v4-5` use `origin/main`.
 - `v4-3` currently asserts the behavior Decision 3 refuses. It must be rewritten
   to assert that a hard-gate `Gate:` value HOLDs even with `Gate-satisfied-by`
   present.
