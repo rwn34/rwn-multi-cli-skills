@@ -1,3 +1,8 @@
+## 2026-07-20 09:41 (UTC+7) - kimi-cli
+- Action: Fix ADR-0016 sync-back deletion-policy bug; add dispatcher snapshot handoff verification and regression tests.
+- Files: .ai/tools/sync-ai-state.sh, .ai/tools/dispatch-handoffs.sh, .ai/tests/test-sync-ai-state.sh, .ai/tests/test-dispatch-worktree.sh
+- Decisions: Fail-closed guard in sync-back refuses bare open/review handoff deletions with no matching done/ entry; dispatcher verifies dispatched handoff exists in worktree after snapshot before launching CLI. Committed and pushed to main (e1242eb).
+
 ## 2026-07-19 22:52 (UTC+7) - claude-code
 - Action: Re-check (owner re-invoked) of handoff 202607191459-commit-tier-b-no-ask-rule — already fully processed and terminal at the 22:35 retirement below (shared `.ai/` junction). Independently re-verified the end-state via two infra-engineer runs: `origin/main` = `c90bdcaf26ba9c683230dfd489419960c1f2ced9` (push reported "Everything up-to-date" — already landed), `check-ssot-drift.sh` → `Checked: 24 replicas, Drift: 0`, four committed operating-prompt files clean in tree, only pre-existing noise (`.ai/handoffs/template.md` etc.) remaining. Handoff Status DONE + full completion note present, file already in `to-claude/done/`. No further mutation — re-editing a retired handoff would be noise.
 - Files: — (verification only)
