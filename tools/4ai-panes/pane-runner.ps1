@@ -501,8 +501,17 @@ $script:GetDeclaredBase = { param([string]$HandoffPath) return (Get-DeclaredBase
 # loses no failure signal: every call's outcome is already judged by $LASTEXITCODE,
 # never by whether it threw.
 function Ensure-DeclaredBaseBranchReal {
-    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir)
     $branch = "exec/$CliName/$Slug"
+
+    # Fail loud if the caller passes a non-repo ProjectDir. This catches future
+    # path-derivation mistakes immediately instead of producing a confusing
+    # "declared base does not resolve" message.
+    git -C $ProjectDir rev-parse --is-inside-work-tree *>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  ERROR: ProjectDir '$ProjectDir' is not a git worktree (Ensure-DeclaredBaseBranchReal caller bug)" -ForegroundColor Red
+        return $false
+    }
 
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -520,18 +529,14 @@ function Ensure-DeclaredBaseBranchReal {
             Write-Host "  WARN: git fetch origin failed in $WtPath - using cached '$Base'" -ForegroundColor Yellow
         }
 
-        # Resolve the base ref in the PRIMARY checkout. Worktrees share
-        # remote-tracking refs but local branch visibility can vary; a local
-        # 'main' may resolve in the project root but not inside the worktree.
-        # Use the commit SHA for all worktree operations so the branch is cut
-        # from the exact declared base.
-        $wtContainer = Split-Path -Parent $WtPath           # .../.wt/<project>
-        $projectName = Split-Path -Leaf $wtContainer        # <project>
-        $parentDir = Split-Path -Parent $wtContainer        # parent of .wt
-        $projectDir = Join-Path $parentDir $projectName     # primary checkout
-        $baseSha = git -C $projectDir rev-parse --verify --quiet "$Base^{commit}" 2>$null
+        # Resolve the base ref in the PRIMARY checkout passed by the caller.
+        # Worktrees share remote-tracking refs but local branch visibility can
+        # vary; a local 'main' may resolve in the project root but not inside the
+        # worktree. Use the commit SHA for all worktree operations so the branch
+        # is cut from the exact declared base.
+        $baseSha = git -C $ProjectDir rev-parse --verify --quiet "$Base^{commit}" 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $baseSha) {
-            Write-Host "  ERROR: declared base '$Base' does not resolve in $projectDir (no network + no local cache?)" -ForegroundColor Red
+            Write-Host "  ERROR: declared base '$Base' does not resolve in $ProjectDir (no network + no local cache?)" -ForegroundColor Red
             return $false
         }
         git rev-parse --verify --quiet "$baseSha^{commit}" *> $null
@@ -585,8 +590,8 @@ function Ensure-DeclaredBaseBranchReal {
 }
 
 $script:EnsureDeclaredBaseBranch = {
-    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
-    return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base)
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir)
+    return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base -ProjectDir $ProjectDir)
 }
 
 # -- Dispatch-guard child env (F3: nested self-dispatch race) --
@@ -1478,7 +1483,7 @@ function Invoke-HandoffRun {
             Write-Host "== FAIL [$CliName] $rel - could not resolve a declared base ==" -ForegroundColor Red
             return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
         }
-        if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base)) {
+        if (-not (& $script:EnsureDeclaredBaseBranch $wtPath $CliName $slug $base $ProjectDir)) {
             Write-Host "== FAIL [$CliName] $rel - could not establish declared-base branch (base=$base) ==" -ForegroundColor Red
             return @{ Result = 'WORKTREE_FAIL'; Continues = 0; Invocations = 0 }
         }

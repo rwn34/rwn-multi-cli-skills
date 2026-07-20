@@ -156,8 +156,8 @@ $script:GetCliWorktreePath = {
     return $script:mockWtPath
 }
 $script:EnsureDeclaredBaseBranch = {
-    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
-    $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+    param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir)
+    $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base; ProjectDir = $ProjectDir }
     if ($script:mockBranchFails) { return $false }
     return $true
 }
@@ -734,7 +734,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         Push-Location $realWt1
         git checkout --quiet -b 'some-other-branch' 2>$null
         Pop-Location
-        $baseOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'ac-test-slug' -Base 'origin/master'
+        $baseOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'ac-test-slug' -Base 'origin/master' -ProjectDir $primary
         Assert-Equal $true $baseOk 'ac: Ensure-DeclaredBaseBranchReal succeeds'
         Push-Location $realWt1
         $branchNow = git branch --show-current
@@ -747,7 +747,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         'dirty' | Set-Content -Path (Join-Path $realWt1 'dirty.txt')
         $dirtyBranchBefore = git branch --show-current
         Pop-Location
-        $dirtyOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'should-not-cut' -Base 'origin/master'
+        $dirtyOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'should-not-cut' -Base 'origin/master' -ProjectDir $primary
         Assert-Equal $true $dirtyOk 'ac: dirty tree -> Ensure-DeclaredBaseBranchReal still returns true (WARN + reuse)'
         Push-Location $realWt1
         $dirtyBranchAfter = git branch --show-current
@@ -793,7 +793,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         $auPrevEAP = $ErrorActionPreference
         $ErrorActionPreference = 'Stop'   # exactly what pane-runner.ps1 sets at load
         try {
-            $auOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'au-stderr-slug' -Base 'origin/master'
+            $auOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'au-stderr-slug' -Base 'origin/master' -ProjectDir $primary
         } catch {
             $auThrew = $true
             Write-Host "    (au) threw: $($_.Exception.GetType().Name): $(($_.Exception.Message -split "`n")[0])" -ForegroundColor DarkYellow
@@ -816,13 +816,34 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         Assert-Equal $true ($auSrc -match '\$ErrorActionPreference\s*=\s*\$prevEAP') `
             'au3: anti-rot - Ensure-DeclaredBaseBranchReal restores the prior EAP in finally'
 
+        # (bk) Base: main regression — the primary checkout has local `main` and the
+        # worktree is on a different branch, so a naive resolve-inside-worktree would
+        # fail. With the explicit ProjectDir fix, Base: main must still resolve and
+        # cut exec/<cli>/<slug> from it. This reproduces the production failure where
+        # a return handoff addressed to claude-auto carried Base: main and the claude
+        # worktree had no local main branch.
+        Push-Location $primary
+        git branch -M main
+        git push --quiet -u origin main
+        git remote set-head origin main
+        Pop-Location
+        Push-Location $realWt1
+        git checkout --quiet -B 'bk-not-main' 2>$null
+        Pop-Location
+        $bkOk = Ensure-DeclaredBaseBranchReal -WtPath $realWt1 -CliName 'kiro' -Slug 'bk-main-base-slug' -Base 'main' -ProjectDir $primary
+        Assert-Equal $true $bkOk 'bk: Base: main resolves via explicit ProjectDir'
+        Push-Location $realWt1
+        $bkBranch = git branch --show-current
+        Pop-Location
+        Assert-Equal 'exec/kiro/bk-main-base-slug' $bkBranch 'bk: branch cut from Base: main lands on exec/<cli>/<slug>'
+
         # (ad) THE REGRESSION TEST: two concurrent Invoke-HandoffRun calls for two
         # DIFFERENT CLIs, each resolving its OWN real worktree via the real
         # (unmocked) functions, must never perturb each other's HEAD/files, and
         # the PRIMARY checkout's HEAD must be unchanged throughout. This is the
         # Kimi-in-the-primary-checkout incident, reproduced and asserted against.
         $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
-        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base -ProjectDir $ProjectDir) }
 
         $adOpenKiro = Join-Path $primary '.ai/handoffs/to-kiro/open'
         $adOpenClaude = Join-Path $primary '.ai/handoffs/to-claude/open'
@@ -873,8 +894,8 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
             return $script:mockWtPath
         }
         $script:EnsureDeclaredBaseBranch = {
-            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
-            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base; ProjectDir = $ProjectDir }
             if ($script:mockBranchFails) { return $false }
             return $true
         }
@@ -929,7 +950,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
 
         # Use the real worktree and branch-cut functions for this regression test.
         $script:GetCliWorktreePath = { param([string]$ProjectDir, [string]$CliName) return (Get-CliWorktreePathReal -ProjectDir $ProjectDir -CliName $CliName) }
-        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base) }
+        $script:EnsureDeclaredBaseBranch = { param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir) return (Ensure-DeclaredBaseBranchReal -WtPath $WtPath -CliName $CliName -Slug $Slug -Base $Base -ProjectDir $ProjectDir) }
 
         $avWt = Get-CliWorktreePathFor -ProjectDir $primary -CliName 'kimi'
         $avResult = Invoke-HandoffRun -ProjectDir $primary -CliName 'kimi' -HandoffPath $avHandoff -MaxContinues 1
@@ -945,8 +966,8 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
             return $script:mockWtPath
         }
         $script:EnsureDeclaredBaseBranch = {
-            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base)
-            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base }
+            param([string]$WtPath, [string]$CliName, [string]$Slug, [string]$Base, [string]$ProjectDir)
+            $script:lastBranchArgs = @{ WtPath = $WtPath; CliName = $CliName; Slug = $Slug; Base = $Base; ProjectDir = $ProjectDir }
             if ($script:mockBranchFails) { return $false }
             return $true
         }
