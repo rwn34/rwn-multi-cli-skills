@@ -559,6 +559,7 @@ Assert-Equal $false ($script:lastInvokeCwd -eq $work) 'y: InvokeCli cwd is NOT $
 # -- the primary checkout. --
 $script:mockWtFails = $true
 $script:mockCalls = 0
+$syncBackBeforeZ = $script:syncBackCalls.Count
 $hz = New-TestHandoff -Slug 'z-worktree-fail'
 $script:mockHandoffPath = $hz
 $rz = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $hz -MaxContinues 5
@@ -566,17 +567,20 @@ Assert-Equal 'WORKTREE_FAIL' $rz.Result 'z: worktree setup failure -> Result=WOR
 Assert-Equal 0 $rz.Invocations 'z: worktree setup failure -> CLI NEVER invoked (Invocations=0)'
 Assert-Equal 0 $script:mockCalls 'z: worktree setup failure -> mock InvokeCli call count is 0 (no fallback run)'
 Assert-Equal $true (Test-Path $hz) 'z: worktree setup failure -> handoff stays OPEN (file still present)'
+Assert-Equal $syncBackBeforeZ $script:syncBackCalls.Count 'z: worktree setup failure -> SyncBackAi NOT called (no sync-back on failed dispatch)'
 $script:mockWtFails = $false
 
 # -- (aa) declared-base-branch failure -> WORKTREE_FAIL, CLI NEVER invoked --
 $script:mockBranchFails = $true
 $script:mockCalls = 0
+$syncBackBeforeAA = $script:syncBackCalls.Count
 $haa = New-TestHandoff -Slug 'aa-branch-fail'
 $script:mockHandoffPath = $haa
 $raa = Invoke-HandoffRun -ProjectDir $work -CliName 'claude' -HandoffPath $haa -MaxContinues 5
 Assert-Equal 'WORKTREE_FAIL' $raa.Result 'aa: declared-base-branch failure -> Result=WORKTREE_FAIL'
 Assert-Equal 0 $raa.Invocations 'aa: declared-base-branch failure -> CLI NEVER invoked'
 Assert-Equal 0 $script:mockCalls 'aa: declared-base-branch failure -> mock InvokeCli call count is 0'
+Assert-Equal $syncBackBeforeAA $script:syncBackCalls.Count 'aa: declared-base-branch failure -> SyncBackAi NOT called (no sync-back on failed dispatch)'
 $script:mockBranchFails = $false
 
 # -- (ab) Get-DeclaredBase reads a handoff's Base: field; discovers the repo's  --

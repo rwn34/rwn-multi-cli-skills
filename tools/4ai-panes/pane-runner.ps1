@@ -1463,8 +1463,13 @@ function Invoke-HandoffRun {
     }
     $snapshotOk = $true
 
-    # Use try/finally so the worktree .ai/ copy is always synced back (or removed)
-    # before we return, even on early exits.
+    # Use try/finally so a successfully-started run always syncs the worktree
+    # .ai/ copy back (or removes it) before we return. Do NOT sync back when the
+    # dispatch failed before the CLI was ever invoked: a failed snapshot/branch-cut
+    # leaves the worktree .ai/ in an indeterminate state, and syncing it back can
+    # wipe legitimate canonical state written by a concurrent headless dispatch.
+    $continues = 0
+    $invocations = 0
     try {
         # Declared-base branch cut: never leave the worktree on ambient HEAD.
         $slug = Get-HandoffBasename -HandoffPath $HandoffPath
@@ -1479,8 +1484,6 @@ function Invoke-HandoffRun {
         }
         Write-Host "-- worktree: $wtPath  branch: exec/$CliName/$slug (base: $base) --" -ForegroundColor DarkCyan
 
-        $continues = 0
-        $invocations = 0
         while ($true) {
             $prompt = if ($continues -eq 0) { Get-InitialPrompt -RelPath $rel } else { Get-ContinuePrompt -RelPath $rel }
             if ($continues -eq 0) {
@@ -1518,7 +1521,7 @@ function Invoke-HandoffRun {
             $continues++
         }
     } finally {
-        if ($snapshotOk) {
+        if ($snapshotOk -and $invocations -gt 0) {
             & $script:SyncBackAi $ProjectDir $wtPath
         }
     }

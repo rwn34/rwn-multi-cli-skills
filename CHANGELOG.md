@@ -29,6 +29,7 @@ promotion happened.
 ### Changed
 
 - Explicit `Base:` lines in handoffs are now validated before use; an unresolvable base other than `origin/master` fails early with a clear error.
+- `tools/4ai-panes/pane-runner.ps1` no longer syncs worktree `.ai/` state back to the canonical tree when a dispatch fails before the CLI is invoked (WORKTREE_FAIL). This closes a race where a failed pane-runner dispatch could wipe files written by a concurrent headless dispatch.
 
 ## [0.0.47] - 2026-07-20
 
