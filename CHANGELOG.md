@@ -20,6 +20,16 @@ promotion happened.
 
 ### Added
 
+- [TODO]
+
+### Changed
+
+- [TODO]
+
+## [0.0.47] - 2026-07-20
+
+### Added
+
 - ADR-0016 sync-back deletion-policy guard: refuses to propagate bare deletions of open/review handoffs with no matching done/ entry.
 - Dispatcher snapshot verification: aborts dispatch if the handed-off file is missing from the worktree `.ai/` snapshot.
 - Framework version is now included in every dispatch-failure report header.
