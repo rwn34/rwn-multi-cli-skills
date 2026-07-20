@@ -1,3 +1,8 @@
+## 2026-07-20 18:55 (UTC+7) - kimi
+- Action: Fixed cross-queue write failure for headless auto panes. Root cause: dispatcher snapshot-copied canonical .ai/ before cutting the declared-base branch; ensure_declared_base_branch() then restored the worktree from the base, and on Windows/MSYS the ':!.ai' pathspec could be mangled, wiping the snapshot. Fix: moved snapshot_ai() after ensure_declared_base_branch(). Added ADR-0016c regression test. Framework suite green: dispatch-worktree 106/106, sync-ai-state 42/42, fleet-health 14/14. Kimi smoke test successfully wrote cross-queue return to to-claude/open/kimi-smoke-return.md. Opencode smoke test timed out (separate upstream issue #1).
+- Files: .ai/tools/dispatch-handoffs.sh, .ai/tests/test-dispatch-worktree.sh
+- Decisions: -
+
 ## 2026-07-20 18:40 (UTC+7) - kimi
 - Action: Executed smoke-test handoff 202607201400-smoke-kimi-cross-queue.md: wrote cross-queue return to to-claude/open/kimi-smoke-return.md, retired source to to-kimi/done/.
 - Files: .ai/handoffs/to-claude/open/kimi-smoke-return.md, .ai/handoffs/to-kimi/done/202607201400-smoke-kimi-cross-queue.md
