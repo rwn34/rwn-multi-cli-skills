@@ -87,6 +87,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Headless git operations must never block on an interactive credential prompt.
+# This applies to every `git fetch` / `git remote set-head` in Resolve-DefaultBase
+# and Ensure-DeclaredBaseBranchReal.
+[Environment]::SetEnvironmentVariable('GIT_TERMINAL_PROMPT', '0', 'Process')
+
 # SINGLE SOURCE for the fleet CLI list ($FleetClis / $FleetCliProper). The -Cli
 # ValidateSet above must stay a literal (PowerShell requirement); this dot-source
 # provides the list to any runtime use. Resolve via $PSScriptRoot so it works both
