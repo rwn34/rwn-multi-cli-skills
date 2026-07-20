@@ -1,3 +1,8 @@
+## 2026-07-20 12:25 (UTC+7) - kimi-cli
+- Action: Refresh the four executor worktrees (claude/kimi/kiro/opencode) to main HEAD using wt-bootstrap.sh --remove + recreate; clean fleet-health report.
+- Files: -
+- Decisions: Worktrees were stale after several main commits and fleet-health flagged them behind origin/main. Removed and recreated all four on fresh exec/<cli>/init branches at 022d7a9. The .wt-infra/rwn-multi-cli-skills/bash-path-mangling worktree is outside the project's normal container and was left untouched. Fleet-health now reports all panes OK or down-idle with no framework warnings.
+
 ## 2026-07-20 12:14 (UTC+7) - kimi-cli
 - Action: Fix install-template.sh so it recovers the original branch when the target repo was left on ai-template-install by a previous aborted install/update.
 - Files: scripts/install-template.sh, .ai/tests/test-install-template-branch-cleanup.sh
