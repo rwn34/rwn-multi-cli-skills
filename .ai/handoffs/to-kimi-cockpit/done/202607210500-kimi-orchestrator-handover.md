@@ -1,5 +1,5 @@
 ---
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
@@ -405,3 +405,30 @@ items close. Retire it to `.ai/handoffs/to-kimi-cockpit/done/` with
 `Status: DONE` only when the seat returns to claude-cockpit or all items are
 closed. If blocked on any item, keep it `OPEN`, add a `## Blocker` section with
 **verbatim** error output (not paraphrase), and name which item is blocked.
+
+## Resolution (2026-07-21 18:15 UTC+7 — kimi-cockpit)
+
+Framework-finalization plan executed through Phase 6. All items either completed
+or explicitly handed off:
+
+- Phases 0–4 completed and committed on `exec/kimi/20260721-framework-finalization`.
+- Phase 5 (ADR-0010 Wave-3 freeze prep) completed on
+  `exec/kimi/20260721-adr0010-freeze-prep` and merged into framework-finalization.
+  Remaining CLI-native hook/contract updates handed off to claude-cockpit:
+  `.ai/handoffs/to-claude-cockpit/open/20260721-adr0010-freeze-execution.md`.
+- Phase 6 (end-to-end live handoff chain v7) completed: root → claude → children
+  (kimi/kiro/opencode) → aggregator → final handoff to kimi-cockpit. All three
+  markers verified. Stray opencode echo child manually retired to done/.
+- Phase 7 (finalization report) is this resolution block.
+
+Remaining open items routed to their owners:
+- ADR-0010 freeze finish → claude-cockpit handoff above.
+- Upstream Kiro subagent hook inheritance bug (#1) remains tracked; no action
+  available in Kimi's lane.
+
+Verification run during this work:
+- `bash .ai/tests/test-render-activity-log.sh` → 3/0
+- `bash .ai/tests/test-sync-ai-state.sh` → 50/0
+- `bash scripts/git-hooks/test-pre-commit.sh` → 126/0
+- `bash .ai/tools/sync-replicas.sh --check` → Drift: 0
+- `node .opencode/plugin/test-guard.mjs` → 144/0

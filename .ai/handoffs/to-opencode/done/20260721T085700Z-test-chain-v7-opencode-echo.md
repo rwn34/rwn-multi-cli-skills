@@ -1,5 +1,5 @@
 # Test chain v7 — opencode echo child
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: opencode
 Owner: opencode
