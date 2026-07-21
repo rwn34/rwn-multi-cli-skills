@@ -18,21 +18,12 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      # Non-versioned coordination-plane churn. The version-bump detective
-      # check (ADR-0012) only cares about shipped framework content; these
-      # paths are denylisted by scripts/check-version-bump.sh, so skipping
-      # the workflow for commits that touch ONLY them does not weaken the
-      # gate. Each skipped push saves one billed minute.
-      - '.ai/activity/**'
-      - '.ai/reports/**'
-      - '.ai/research/**'
-      - '.ai/.claim*'
-      - '.ai/.scratch/**'
-      - '.ai/handoffs/to-*/**'
-      - '.ai/handoffs/.claims/**'
-      - '.ai/handoffs/.quarantine/**'
-      - '.claude/settings.local.json'
+    # NOTE: we no longer use paths-ignore. A push that touches ONLY
+    # non-versioned coordination-plane files still produces a green
+    # required "gates" run, but the heavy steps are short-circuited
+    # internally (see Detect non-versioned-only push below). This keeps
+    # required status checks honest while still saving CI minutes.
+    #
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +37,39 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # On push, decide whether ONLY non-versioned coordination-plane files
+      # changed. If so, the heavy substantive steps are skipped, but the job
+      # still reports a green required status. The predicate is the canonical
+      # is_versioned() from scripts/check-version-bump.sh so this cannot drift
+      # from the main-push detective check.
+      - name: Detect non-versioned-only push
+        if: github.event_name == 'push'
+        id: skip
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
+            echo "skip_heavy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$before" HEAD || true)
+          versioned_hit=0
+          CHECK_VERSION_BUMP_LIB=1 . "$GITHUB_WORKSPACE/scripts/check-version-bump.sh"
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if is_versioned "$f"; then
+              versioned_hit=1
+              break
+            fi
+          done <<EOF
+          $changed
+          EOF
+          if [ "$versioned_hit" -eq 0 ]; then
+            echo "skip_heavy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_heavy=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node
         if: github.event_name == 'pull_request'
@@ -85,7 +109,7 @@ jobs:
       # every replica into a temp tree and diffs. On failure it prints the
       # copy-pasteable fix (`bash .ai/tools/sync-replicas.sh`) to stderr.
       - name: SSOT drift check
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .ai/tools/sync-replicas.sh --check
 
       # Landed-blob check: compares the committed blobs of SSOT sources and
@@ -93,28 +117,34 @@ jobs:
       # laundering pattern that working-tree drift checks missed (ADR-0015
       # follow-up, 2026-07-17).
       - name: Landed SSOT blob consistency check
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .ai/tools/check-landed-ssot.sh
 
       - name: Claude hooks test suite
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .claude/hooks/test_hooks.sh
 
       - name: Kimi hooks test suite
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .kimi/hooks/test_hooks.sh
 
       - name: Kiro hooks test suite
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .kiro/hooks/test_hooks.sh
 
       - name: OpenCode guard test suite
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: node .opencode/plugin/test-guard.mjs
 
       - name: Git pre-commit backstop test (ADR-0005)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash scripts/git-hooks/test-pre-commit.sh
+
+      # Verify gates.yml sources the canonical is_versioned() predicate and does
+      # not fall back to a hand-maintained paths-ignore list (ADR-0012 follow-up).
+      - name: Gate policy consistency check
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
+        run: bash .ai/tests/test-gate-policy-consistency.sh
 
       - name: Installer dependency install
         if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
@@ -153,12 +183,19 @@ jobs:
       # before the repo assertion means a non-compliant tree cannot skip it and
       # hide a checker that has quietly stopped biting.
       - name: Tier restatement checker self-test
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .ai/tools/test-check-tier-restatements.sh
 
       - name: Tier restatement check (CLAUDE.md + orchestrator.md vs SSOT §8)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash .ai/tools/check-tier-restatements.sh
+
+      # ADR-0012 follow-up: PRs that touch versioned framework content must
+      # add a bullet under CHANGELOG.md '## [Unreleased]'. This closes the hole
+      # where a bump-only main push silently disabled the version-bump detective.
+      - name: Changelog Unreleased bullet check
+        if: github.event_name == 'pull_request'
+        run: bash .ai/tools/check-changelog-unreleased.sh "origin/${{ github.base_ref }}" HEAD
 
       # ADR-0012: the framework version is assigned at MERGE, not on feature
       # branches, so this is a DETECTIVE check on the resulting main push —
@@ -171,3 +208,7 @@ jobs:
       - name: Framework version-bump check (detective — main push only)
         if: github.event_name == 'push'
         run: bash scripts/check-version-bump.sh "${{ github.event.before }}"
+
+      - name: Report skip
+        if: github.event_name == 'push' && steps.skip.outputs.skip_heavy == 'true'
+        run: echo "Skipped heavy checks for non-versioned-only push"

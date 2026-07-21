@@ -1,0 +1,4 @@
+## 2026-07-21 18:15 (UTC+7) - kimi-cli
+- Action: Completed framework-finalization Phases 0-6 and retired the orchestrator handoff. Phase 5 ADR-0010 freeze-prep handed off to claude-cockpit for CLI-native hook updates. Phase 6 v7 handoff chain (root→claude→kimi/kiro/opencode→aggregator→kimi-cockpit) succeeded with all three markers verified.
+- Files: `.ai/handoffs/to-kimi-cockpit/open/202607210500-kimi-orchestrator-handover.md` → `.ai/handoffs/to-kimi-cockpit/done/`; `.ai/handoffs/to-opencode/open/20260721T085700Z-test-chain-v7-opencode-echo.md` → `.ai/handoffs/to-opencode/done/`; `.ai/handoffs/to-claude-cockpit/open/20260721-adr0010-freeze-execution.md`
+- Decisions: Manually retired the opencode echo child after the aggregator confirmed its return, because opencode did not self-retire. Left the ADR-0010 freeze finish and version-bump/ADR-closure work to claude-cockpit since it touches `.claude/`, `.kimi/`, `.kiro/`, and `opencode.json`.

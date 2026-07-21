@@ -1,3 +1,8 @@
+## 2026-07-21 14:40 (UTC+7) — kimi-cockpit
+- Action: Started framework finalization execution per orchestrator handoff 202607210500. Branch exec/kimi/20260721-framework-finalization created from main 9797a1f. Baseline: clean tree, 0 open issues, 0 open PRs, fleet-health reports 3 stale worktrees (claude/kiro/opencode) and idle opencode heartbeat.
+- Files: .ai/activity/log.md
+- Decisions: Executing all phases sequentially; Phase 5 ADR-0010 freeze stays split (prepare only, route execution to claude-cockpit/owner). Will retire orchestrator handover on completion.
+
 ## 2026-07-21 12:10 (UTC+7) — claude-cockpit
 - Action: Orchestrator seat handed to kimi-cockpit per owner directive ("i need kimi to be the orchestrator for now", "not just 2 and 3, everything"). Wrote `.ai/handoffs/to-kimi-cockpit/open/202607210500-kimi-orchestrator-handover.md` — full state export (all 7 commits of the session, the dual-mode predicate ruling + why the two alternatives are wrong, the red-main incident, release v0.0.52) plus all five open items: (1) CHANGELOG provenance hole, (2) duplicated `paths-ignore`/`is_versioned()` policy, (3) stale `~/.rwn-auto/` embedded framework (0.0.3 vs 0.0.52), (4) stale local exec/kiro branch, (5) ADR-0010 Wave-3 freeze. Deleted the earlier under-scoped draft `202607210500-kimi-ci-gate-provenance-holes.md` (covered only items 1–2, superseded before ever being committed).
 - Files: .ai/handoffs/to-kimi-cockpit/open/202607210500-kimi-orchestrator-handover.md (new), .ai/handoffs/to-kimi-cockpit/open/202607210500-kimi-ci-gate-provenance-holes.md (deleted, uncommitted)

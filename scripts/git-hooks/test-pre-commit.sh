@@ -66,7 +66,7 @@ echo "== cross-CLI territory =="
 assert_block "opencode commits source"   _territory_violation opencode "src/main.ts"
 assert_block "opencode commits .claude"  _territory_violation opencode ".claude/x.md"
 assert_allow "opencode -> .ai/reports"   _territory_violation opencode ".ai/reports/r.md"
-assert_allow "opencode -> activity log"  _territory_violation opencode ".ai/activity/log.md"
+assert_block "opencode -> generated log view" _territory_violation opencode ".ai/activity/log.md"
 assert_block "kimi commits .claude"      _territory_violation kimi-cli ".claude/agents/x.md"
 assert_block "kimi commits .opencode"    _territory_violation kimi-cli ".opencode/agent.md"
 assert_block "kiro commits .kimi"        _territory_violation kiro-cli ".kimi/steering/x.md"
@@ -78,16 +78,16 @@ assert_allow "claude -> .claude"         _territory_violation claude-code ".clau
 assert_allow "kimi -> .kimi"             _territory_violation kimi-cli ".kimi/steering/x.md"
 assert_allow "kimi -> source"            _territory_violation kimi-cli "backend/main.rs"
 
-echo "== OpenCode lane: activity-log entry spool (ADR-0010 blocker, 2026-07-12) =="
+echo "== OpenCode lane: activity-log entry spool (ADR-0010 Wave-3, 2026-07-21) =="
 # The commit-time half of the guard's WRITABLE_LANE. If these two disagree, OpenCode
 # can write an entry and then have the commit rejected — silently, with no error a
-# human sees. Keep in lockstep with .opencode/plugin/framework-guard.js.
+# human sees. Keep in lockstep with .opencode/lib/lane.js.
 #
 # ALLOW: the spool.
 assert_allow "opencode -> spool entry"     _territory_violation opencode ".ai/activity/entries/20260712T101500Z-opencode-x-a1b2.md"
 assert_allow "opencode -> spool nested"    _territory_violation opencode ".ai/activity/entries/2026-07/x.md"
-# NO REGRESSION: the old path is still the live log and must still commit.
-assert_allow "opencode -> log.md (no regression)" _territory_violation opencode ".ai/activity/log.md"
+# DENY: the generated view is no longer directly writable.
+assert_block "opencode -> log.md (generated view)" _territory_violation opencode ".ai/activity/log.md"
 # ALLOW: .github/* — the commit-time half of the repo-ops lane the guard granted
 # in PR #45. The contract assigns OpenCode "CI config/workflow fixes" and "opening
 # PRs"; without this it could WRITE the workflow fix and then be REJECTED at commit.
@@ -407,83 +407,50 @@ else
         "$([ $? -ne 0 ] && echo 0 || echo 1)"
     rm -rf "$d"
 
-    echo "== activity-log gate: dropping a main entry is BLOCKED =="
+    echo "== activity-log gate: deleting an entry file is BLOCKED =="
     d="$(mkrepo)"
     git -C "$d" config user.name claude-code
-    cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 10:00 (UTC+7) — claude-code
-- Action: entry A
-
+    mkdir -p "$d/.ai/activity/entries"
+    cat > "$d/.ai/activity/entries/20260717T090000Z-kimi-cli-entry-b-8f2a.md" <<'EOF'
 ## 2026-07-17 09:00 (UTC+7) — kimi-cli
 - Action: entry B
 
 EOF
-    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
-    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
-    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
-    # Stage a log missing the 09:00 entry.
-    cat > "$d/.ai/activity/log.md" <<'EOF'
+    cat > "$d/.ai/activity/entries/20260717T100000Z-claude-code-entry-a-3c9e.md" <<'EOF'
 ## 2026-07-17 10:00 (UTC+7) — claude-code
 - Action: entry A
 
 EOF
-    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
-    hout="$(cd "$d" && git commit -m "log: drop entry" 2>&1)"; hrc=$?
-    pf "commit dropping a main log entry is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
-    printf '%s' "$hout" | grep -q "LOG-SUPERSET FAIL"
-    pf "refusal names the log-superset gate" "$?"
+    git -C "$d" add .ai/activity/entries >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    git -C "$d" rm -q .ai/activity/entries/20260717T090000Z-kimi-cli-entry-b-8f2a.md
+    hout="$(cd "$d" && git commit -m "entries: drop entry" 2>&1)"; hrc=$?
+    pf "commit deleting an activity-log entry is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "activity-log entry deletion"
+    pf "refusal names the activity-log entry-deletion gate" "$?"
     rm -rf "$d"
 
-    echo "== activity-log gate: PR #107 repro (superset of main, subset of disk) =="
+    echo "== activity-log gate: staging generated log.md is BLOCKED =="
     d="$(mkrepo)"
     git -C "$d" config user.name claude-code
-    cat > "$d/.ai/activity/log.md" <<'EOF'
+    mkdir -p "$d/.ai/activity/entries"
+    cat > "$d/.ai/activity/entries/20260717T100000Z-claude-code-entry-a-3c9e.md" <<'EOF'
 ## 2026-07-17 10:00 (UTC+7) — claude-code
 - Action: entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
-- Action: entry B
-
 EOF
-    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" add .ai/activity/entries >/dev/null 2>&1
     git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
-    git -C "$d" fetch origin -q >/dev/null 2>&1 || true
-    # PR #107 shape: staged candidate is a superset of main (so a naive
-    # additions-only diff against main reads green and git will commit it),
-    # but the working tree still contains an entry the staged candidate omits.
-    # The hook reads the STAGED content as the candidate and compares it against
-    # the working tree, so the commit is blocked.
     cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 12:00 (UTC+7) — kiro-cli
-- Action: staged addition C
-
 ## 2026-07-17 10:00 (UTC+7) — claude-code
-- Action: entry A
-
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
-- Action: entry B
+- Action: generated view
 
 EOF
     git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
-    # Working tree now has an extra entry not present in the staged candidate.
-    cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 11:00 (UTC+7) — opencode
-- Action: uncommitted on disk only
-
-## 2026-07-17 12:00 (UTC+7) — kiro-cli
-- Action: staged addition C
-
-## 2026-07-17 10:00 (UTC+7) — claude-code
-- Action: entry A
-
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
-- Action: entry B
-
-EOF
-    hout="$(cd "$d" && git commit -m "log: additions-only blind gate" 2>&1)"; hrc=$?
-    pf "PR #107 additions-only blind commit is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
-    printf '%s' "$hout" | grep -q "working tree"
-    pf "refusal identifies the working-tree source" "$?"
+    hout="$(cd "$d" && git commit -m "log: stage generated view" 2>&1)"; hrc=$?
+    pf "commit staging generated .ai/activity/log.md is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
+    printf '%s' "$hout" | grep -q "generated activity-log view"
+    pf "refusal names the generated-view gate" "$?"
     echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
     d="$(mkrepo)"
     git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md

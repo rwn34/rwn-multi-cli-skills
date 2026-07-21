@@ -58,107 +58,6 @@ cleanup_stale_dirs() {
     done < <(find "$parent" -maxdepth 1 -type d -name '.ai.stale-*' 2>/dev/null)
 }
 
-# Merge a worktree activity/log.md into the canonical log. If the worktree
-# dropped canonical history (executor overwrite, encoding round-trip, etc.),
-# recover by prepending only the genuinely new entries. This keeps the shared
-# activity ledger append-only.
-merge_activity_log() {
-    local canon="$1" wt="$2"
-    if [ ! -r "$canon" ]; then
-        cat "$wt"
-        return 0
-    fi
-    if command -v python >/dev/null 2>&1; then
-        python - "$canon" "$wt" <<'PY'
-import sys
-# Force UTF-8 for stdout so non-ASCII characters in merged log entries do not
-# crash with UnicodeEncodeError on Windows hosts where the default console
-# encoding is cp1252.
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-canon_path, wt_path = sys.argv[1], sys.argv[2]
-
-def parse(path):
-    try:
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
-            text = f.read()
-    except Exception:
-        return []
-    entries = []
-    current = []
-    for line in text.splitlines():
-        if line.startswith('## '):
-            if current:
-                entries.append('\n'.join(current))
-            current = [line]
-        else:
-            current.append(line)
-    if current:
-        entries.append('\n'.join(current))
-    return entries
-
-canon_entries = parse(canon_path)
-wt_entries = parse(wt_path)
-canon_headers = {e.split('\n')[0] for e in canon_entries}
-wt_headers = {e.split('\n')[0] for e in wt_entries}
-missing = canon_headers - wt_headers
-if missing:
-    print(
-        f"LOG-MERGE WARN: worktree activity/log.md is missing {len(missing)} canonical entry header(s); merging to preserve history",
-        file=sys.stderr,
-    )
-new_entries = [e for e in wt_entries if e.split('\n')[0] not in canon_headers]
-out = '\n\n'.join(new_entries + canon_entries)
-if out and not out.endswith('\n'):
-    out += '\n'
-sys.stdout.write(out)
-PY
-    else
-        # Pure-awk fallback for hosts without python. Same semantics: prepend
-        # worktree entries whose headers are not already in canonical, then emit
-        # the full canonical log.
-        awk -v canon="$canon" -v wt="$wt" '
-            function read_file(path,    line, h, in_e, body, n) {
-                n = 0
-                while ((getline line < path) > 0) {
-                    if (line ~ /^## /) {
-                        if (in_e) { entries[h] = body; order[++n] = h }
-                        h = line; in_e = 1; body = ""
-                    } else if (in_e) {
-                        body = body line "\n"
-                    }
-                }
-                if (in_e) { entries[h] = body; order[++n] = h }
-                close(path)
-                return n
-            }
-            BEGIN {
-                n_canon = read_file(canon)
-                for (i = 1; i <= n_canon; i++) {
-                    canon_headers[order[i]] = 1
-                    delete order[i]
-                }
-                n_wt = read_file(wt)
-                for (i = 1; i <= n_wt; i++) {
-                    h = order[i]
-                    if (!canon_headers[h]) {
-                        print h
-                        printf "%s", entries[h]
-                    }
-                    delete order[i]
-                }
-                n_canon = read_file(canon)
-                for (i = 1; i <= n_canon; i++) {
-                    h = order[i]
-                    print h
-                    printf "%s", entries[h]
-                }
-            }
-        '
-        # TODO: warn on truncation in awk fallback if needed.
-    fi
-}
-
 # Compute a stable manifest: one line per file, "<sha256>  <rel-path>".
 # Output is sorted by path. Files that disappear or become unreadable between
 # find and hash (Windows lock/race during concurrent snapshots, antivirus, or
@@ -195,6 +94,7 @@ manifest_for() {
             ! -path "./$MANIFEST_NAME" \
             ! -path "./handoffs/.quarantine/*" \
             ! -path "./activity/archive/*" \
+            ! -path "./activity/log.md" \
             -print0 2>/dev/null) | LC_ALL=C sort -k2 > "$tmp_manifest" )
         if [ ! -s "$tmp_warnings" ]; then
             cat "$tmp_manifest"
@@ -309,11 +209,6 @@ cmd_sync_back() {
         if [ "$old_hash" != "$new_hash" ]; then
             mkdir -p "$(dirname "$canon_ai/$rel")"
             case "$rel" in
-                activity/log.md)
-                    merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
-                    mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
-                    log "sync-back: $rel"
-                    ;;
                 activity/entries/*)
                     # ADR-0010 invariant: no writer ever rewrites another
                     # writer's entry file. Unlike the generic path below

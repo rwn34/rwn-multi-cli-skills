@@ -1,60 +1,44 @@
-#!/bin/bash
-# render-activity-log.sh — render .ai/activity/log.md from the entry spool.
+#!/usr/bin/env bash
+# render-activity-log.sh — generate a human-readable .ai/activity/log.md view
+# from the entry-per-file spool (ADR-0010 Wave-3).
 #
-# ADR-0010 (docs/architecture/0010-activity-log-entry-spool.md): the activity
-# log is an entry-per-file spool. .ai/activity/entries/*.md is the SOURCE OF
-# TRUTH; log.md is a generated, gitignored VIEW produced by this script.
+# Usage:
+#   bash .ai/tools/render-activity-log.sh [project-dir]
 #
-# Ordering: entry filenames are fixed-width UTC basic form
-# (<YYYYMMDDTHHMMSSZ>-<cli>-<slug>-<rand4>.md), so reverse lexicographic
-# filename order == reverse chronological order. This script never reads
-# .ai/**/archive/** — archived months and the frozen pre-spool log are out of
-# the view by construction; the frozen file gets a one-line pointer at the
-# bottom of the render.
+# Reads .ai/activity/entries/*.md in reverse filename order (newest first),
+# concatenates them, and appends a pointer to the frozen pre-spool archive.
+# Never reads .ai/activity/archive/**.
 #
-# Safety: while log.md is still git-tracked (the pre-freeze transition), this
-# script REFUSES to run — rendering then would clobber the live, shared log.
-# After the Wave-3 freeze (log.md gitignored) the guard passes.
+# The rendered file is a generated view, not a source of truth. It must NOT be
+# committed; .gitignore should exclude .ai/activity/log.md.
 
 set -u
 
-here="$(cd "$(dirname "$0")" && pwd)"
-root="$(cd "$here/../.." && pwd)"
-cd "$root" || exit 1
+ROOT="${1:-$PWD}"
+ENTRIES_DIR="$ROOT/.ai/activity/entries"
+ARCHIVE_DIR="$ROOT/.ai/activity/archive"
+OUTPUT="$ROOT/.ai/activity/log.md"
+PRE_SPOOL="$ARCHIVE_DIR/log-pre-spool.md"
 
-ENTRIES=".ai/activity/entries"
-OUT=".ai/activity/log.md"
-FROZEN=".ai/activity/archive/log-pre-spool.md"
+mkdir -p "$ROOT/.ai/activity"
 
-if git ls-files --error-unmatch "$OUT" >/dev/null 2>&1; then
-    echo "render-activity-log: REFUSING — $OUT is still git-tracked (pre-freeze)." >&2
-    echo "  Rendering now would clobber the live shared log. This guard lifts once" >&2
-    echo "  the ADR-0010 freeze lands (log.md removed from git and gitignored)." >&2
-    exit 1
-fi
-
-tmp="$(mktemp "${TMPDIR:-/tmp}/activity-log-render.XXXXXX")" || exit 1
-trap 'rm -f "$tmp"' EXIT
-
-count=0
 {
-    echo '<!-- GENERATED FILE — do not edit. Source of truth: .ai/activity/entries/ (ADR-0010).'
-    echo '     Regenerate with: bash .ai/tools/render-activity-log.sh -->'
-    echo
-    if ls "$ENTRIES"/*.md >/dev/null 2>&1; then
-        for f in $(ls "$ENTRIES"/*.md | LC_ALL=C sort -r); do
-            count=$((count + 1))
-            cat "$f"
-            echo
+  if [ -d "$ENTRIES_DIR" ]; then
+    # Newest entries first: UTC basic ISO filenames sort lexicographically == chronologically.
+    find "$ENTRIES_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null \
+      | LC_ALL=C sort -z -r \
+      | while IFS= read -r -d '' f; do
+          cat "$f"
+          printf '\n'
         done
-    fi
-    if [ -f "$FROZEN" ]; then
-        echo '---'
-        echo
-        echo "History before the spool cutover is frozen verbatim in $FROZEN (ADR-0010 §6)."
-    fi
-} > "$tmp"
+  fi
 
-mv "$tmp" "$OUT"
-trap - EXIT
-echo "render-activity-log: rendered $OUT from $count entry file(s)"
+  if [ -f "$PRE_SPOOL" ]; then
+    printf -- '\n---\n'
+    printf 'Pre-spool history frozen at %s\n' "$PRE_SPOOL"
+    printf -- '---\n\n'
+  fi
+} > "$OUTPUT.new"
+
+mv "$OUTPUT.new" "$OUTPUT"
+echo "[render-activity-log] wrote $OUTPUT"

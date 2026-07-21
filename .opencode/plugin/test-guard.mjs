@@ -52,7 +52,6 @@ const bash = (command, root = ROOT) => decide({ tool: "bash", args: { command },
 
 // --- whitelist ---
 check("allow .ai/reports write", write(".ai/reports/opencode-test.md"), true);
-check("allow .ai/activity/log.md", write(".ai/activity/log.md"), true);
 check("allow .ai/handoffs write", write(".ai/handoffs/to-claude/open/202607091200-x.md"), true);
 check("allow absolute in-lane write", write(ABS_INLANE), true);
 check("block .ai/activity sibling", write(".ai/activity/other.md"), false);
@@ -206,10 +205,9 @@ check("block bash redirect to .env", bash("echo K=v > .env"), false);
 check("allow ordinary .yml in .github (not a secret)", write(".github/workflows/keys.yml"), true);
 
 // ===========================================================================
-// Activity-log entry spool (ADR-0010 blocker, 2026-07-12) — .ai/activity/entries/**
-// is writable. Without this the FIRST spool entry OpenCode ever writes is blocked
-// by its own guard, silently, on day one. Additive: log.md must keep working, the
-// migration has not happened yet.
+// Activity-log entry spool (ADR-0010 Wave-3, 2026-07-21) — .ai/activity/entries/**
+// is writable. The generated view `.ai/activity/log.md` is NOT writable; it is
+// produced by `bash .ai/tools/render-activity-log.sh`.
 // ===========================================================================
 
 // --- ALLOW: the spool, in every path shape a tool might hand us ---
@@ -229,11 +227,11 @@ check("allow spool entry nested subdir", write(".ai/activity/entries/2026-07/x.m
 check("allow bash redirect into spool", bash(`echo x > .ai/activity/entries/${ENTRY}`), true);
 check("allow bash tee into spool", bash(`cat e.md | tee .ai/activity/entries/${ENTRY}`), true);
 
-// --- NO REGRESSION: the old path still works (it is still the live log) ---
-check("allow .ai/activity/log.md (unchanged)", write(".ai/activity/log.md"), true);
-check("allow .ai/activity/log.md backslash (unchanged)", write(".ai\\activity\\log.md"), true);
-check("allow .ai/activity/log.md absolute (unchanged)", write(path.join(ROOT, ".ai", "activity", "log.md")), true);
-check("allow bash redirect to log.md (unchanged)", bash("echo x >> .ai/activity/log.md"), true);
+// --- DENY: the generated view is no longer writable directly ---
+check("block .ai/activity/log.md write", write(".ai/activity/log.md"), false);
+check("block .ai/activity/log.md backslash write", write(".ai\\activity\\log.md"), false);
+check("block .ai/activity/log.md absolute write", write(path.join(ROOT, ".ai", "activity", "log.md")), false);
+check("block bash redirect to log.md", bash("echo x >> .ai/activity/log.md"), false);
 
 // --- DENY: the spool widening must not leak. It is ONE subtree, not `.ai/activity`. ---
 check("block .ai/activity sibling file (not entries/)", write(".ai/activity/other.md"), false);

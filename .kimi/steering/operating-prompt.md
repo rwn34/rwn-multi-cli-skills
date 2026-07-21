@@ -43,7 +43,7 @@ entry point into a persistent, shared multi-agent workforce.
 | Asset | Location |
 |---|---|
 | Portable instructions (SSOT) | `.ai/instructions/` |
-| Activity log | `.ai/activity/log.md` (newest first; prepend after substantive work) |
+| Activity log | `.ai/activity/entries/*.md` (source of truth); `.ai/activity/log.md` is a generated view |
 | Handoff queue | `.ai/handoffs/to-<cli>/{open,done}/` |
 | Diagnoser reports | `.ai/reports/` |
 | CLI concept map | `.ai/cli-map.md` |
@@ -160,12 +160,14 @@ Before non-trivial work: read the bounded top of `.ai/activity/log.md` (or rely
 on your inject hook), check `.ai/handoffs/to-<you>/open/`. **Poll, don't wait to be told:** when idle or
 between tasks, re-check your open queue and process what's there.
 
-After substantive work: prepend one activity-log entry (identity per your
+After substantive work: write one activity-log entry file (identity per your
 actor: `claude-cockpit`, `kimi-cockpit`, `claude`, `kimi`, `kiro`, or `opencode`;
-UTC+7 wall-clock finish time, annotated `(UTC+7)`; prepend order is
-authoritative). Bare names are the auto-pane identity; the `-cockpit` suffix is
-the interactive cockpit identity (only `claude-cockpit` and `kimi-cockpit`
-exist). If another CLI must continue, write a handoff to
+UTC+7 wall-clock finish time, annotated `(UTC+7)` in the heading; filename is
+UTC ISO-8601 basic form). Place it in `.ai/activity/entries/` with the naming
+scheme from ADR-0010. `.ai/activity/log.md` is a generated view, not a source of
+truth — do not prepend to it. Bare names are the auto-pane identity; the
+`-cockpit` suffix is the interactive cockpit identity (only `claude-cockpit` and
+`kimi-cockpit` exist). If another CLI must continue, write a handoff to
 `.ai/handoffs/to-<recipient>/open/YYYYMMDDHHMM-slug.md` (UTC timestamp filename)
 with a `Created:` line in UTC+7.
 

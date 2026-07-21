@@ -13,6 +13,7 @@ all read from here via thin shim files inside their own native folders.
     │   └── <skill-name>/
     │       ├── principles.md      (steering-class: always-loaded, concise rules)
     │       └── examples.md        (resource-class: on-demand, worked examples)
+    ├── tools/                     (CI/test utilities: drift checks, handoff dispatch, etc.)
     └── activity/
         └── log.md                 (cross-CLI activity log, newest entries at top)
 
@@ -21,8 +22,8 @@ all read from here via thin shim files inside their own native folders.
 Each CLI loads its own native steering file — Claude Code reads `CLAUDE.md` at project
 root, Kimi CLI reads `.kimi/steering/*.md`, Kiro CLI reads `.kiro/steering/*.md`. Those
 files contain the **AI contract**: a short instruction that points the CLI at
-`.ai/instructions/` (canonical content) and `.ai/activity/log.md` (what other CLIs have
-done recently).
+`.ai/instructions/` (canonical content) and `.ai/activity/entries/*.md` (what other
+CLIs have done recently).
 
 When instructions change, edit them in `.ai/instructions/` and re-run the copy commands
 in `sync.md`. Never edit the CLI-native replicas directly — they will drift.
@@ -36,10 +37,11 @@ in `sync.md`. Never edit the CLI-native replicas directly — they will drift.
 
 ## Activity log
 
-`.ai/activity/log.md` is an append-only cross-CLI ledger. Each CLI's AI contract tells
-it to read recent entries at session start and prepend one entry after completing
-substantive work. Keeps all three CLIs aware of each other's actions without
-copy-pasting.
+The activity log is an **entry-per-file spool** under `.ai/activity/entries/*.md`
+(ADR-0010). Each CLI writes one Markdown file after completing substantive work and
+runs `bash .ai/tools/render-activity-log.sh` to regenerate the human-readable
+`.ai/activity/log.md` view. The rendered view is generated and gitignored; the spool
+is the source of truth.
 
 ## Archive folders
 

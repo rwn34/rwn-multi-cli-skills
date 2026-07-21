@@ -58,34 +58,27 @@ Kept for existing callers and docs. It `exec`s
 `sync-replicas.sh --check` with the identical output contract and exit codes.
 New call sites should use the authoritative entry point directly.
 
-## `check-log-superset.sh` — activity-log entry-loss gate
+## `render-activity-log.sh` — generate the human-readable activity log
 
-Verifies that a candidate `.ai/activity/log.md` would not DROP any entry
-headers that already exist in `origin/main`, the current working tree, or any
-`.ai/activity/log.md.bak` / `.ai/activity/log.md.KEEP*` file.
+ADR-0010 Wave-3 replaced the prepend-whole-file `.ai/activity/log.md` model with
+an entry-per-file spool under `.ai/activity/entries/*.md`. This script renders
+those entries into the human-readable `.ai/activity/log.md` view (newest first).
+The rendered file is generated and gitignored; never edit it directly.
 
 **Usage (from repo root):**
 
 ```bash
-bash .ai/tools/check-log-superset.sh <candidate-log.md>
-bash .ai/tools/test-check-log-superset.sh
+bash .ai/tools/render-activity-log.sh
+bash .ai/tests/test-render-activity-log.sh
 ```
 
-**Exit codes:**
-- `0` iff the candidate contains every `^## ` header from every source.
-- `1` on any missing entry, with the verbatim lost headers listed per source.
-- `2` on setup/argument errors (missing argument, unreadable candidate, etc.).
+## `check-log-superset.sh` — legacy activity-log entry-loss gate (deprecated)
 
-**Why this exists:** the log is prepend-order and its timestamps are
-annotations, so diffing a recovery candidate against `main` is structurally
-blind to entries that exist on disk but in no commit. PR #107 nearly lost two
-such entries because an "additions-only" diff against `main` read green while
-the true working-tree diff showed deletions. This checker compares entry
-headers as a **set**, not line counts.
-
-**Pre-commit:** `scripts/git-hooks/pre-commit` runs this on any staged
-`.ai/activity/log.md` and rejects the commit if the staged content is not a
-strict superset of all sources.
+Used during the ADR-0010 transition to verify that a candidate
+`.ai/activity/log.md` would not drop entry headers. With the entry-spool model,
+entry loss is prevented by the pre-commit hook (`scripts/git-hooks/pre-commit`)
+which blocks deletions under `.ai/activity/entries/`. Retained for reference
+until the transition is fully closed.
 
 ## `fleet-health.sh` — pane liveness and queue-dir watchdog
 
