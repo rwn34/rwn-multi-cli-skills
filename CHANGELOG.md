@@ -18,6 +18,11 @@ promotion happened.
 
 ## [Unreleased]
 
+- Hardened `.ai/tools/render-activity-log.sh` to fail closed: it now refuses to render when the pre-spool archive `.ai/activity/archive/log-pre-spool.md` is missing, so snapshot copies outside a git worktree cannot clobber a live shared log.
+- Updated `.ai/instructions/self-grep-verify/principles.md` Tier 2 to describe the ADR-0010 entry-spool model (`entries/*.md`, written as entry files) and regenerated all replicas.
+- Documented the expected ADR-0016 artifact in `.ai/known-limitations.md`: an executor worktree shows every `.ai/` file as unstaged-deleted after snapshot removal, which is normal and not a canonical deletion signal.
+- Closed the asset-drift skip gap in `.github/workflows/gates.yml` by adding an `assets_changed` predicate that triggers the asset-drift check when any sync-assets.ts source changes; updated `tools/multi-cli-install/scripts/sync-assets.ts` to copy only tracked files so runtime/gitignored files (e.g., `.ai/.heartbeat-*.json`) are not bundled into the installer payload.
+- Filed issue #133 to track a behavioral strengthening of `.ai/tests/test-gate-policy-consistency.sh` beyond its current structural coverage.
 - Added PR-time `## [Unreleased]` bullet gate (`.ai/tools/check-changelog-unreleased.sh`): a pull request that touches versioned framework content must add at least one bullet under `CHANGELOG.md ## [Unreleased]`, closing the hole where a bump-only `main` push silently disabled the version-bump detective (ADR-0012 follow-up).
 - Removed `paths-ignore` from `.github/workflows/gates.yml` and replaced it with an internal skip: `push: main` now always produces a green required status, but heavy substantive steps are skipped when only non-versioned coordination-plane files changed. The skip predicate reuses `is_versioned()` from `scripts/check-version-bump.sh` so the two gate policies cannot drift.
 - Refreshed `~/.rwn-auto/rwn-4AI-panes` embedded framework from v0.0.3 to v0.0.52 via `scripts/install-template.sh`, and added a drift detector to `.ai/tools/fleet-health.sh` that warns when the launcher (`pane-runner.ps1`) or embedded framework version diverges from this repo. Added TDD test coverage in `.ai/tests/test-fleet-health-rwn-auto-drift.sh`.

@@ -71,10 +71,10 @@ without a template field, paste the evidence inline under each claim.
 
 ### Tier 2 — Activity log entries (medium)
 
-Entries in `.ai/activity/log.md` that claim file changes should name the
+Entries in `.ai/activity/entries/*.md` that claim file changes should name the
 touched paths and, when claiming a specific construct landed, include a grep
 snippet or the resulting line. Lighter than handoffs because activity entries
-are summary-level and prepended in bulk — but readers (humans and other CLIs)
+are summary-level and written as entry files — but readers (humans and other CLIs)
 still use them to reconstruct what happened, so the same drift rules apply.
 
 ### Tier 3 — In-chat statements (honor-based)
