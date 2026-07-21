@@ -140,6 +140,12 @@ jobs:
         if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
         run: bash scripts/git-hooks/test-pre-commit.sh
 
+      # Verify gates.yml sources the canonical is_versioned() predicate and does
+      # not fall back to a hand-maintained paths-ignore list (ADR-0012 follow-up).
+      - name: Gate policy consistency check
+        if: github.event_name == 'pull_request' || steps.skip.outputs.skip_heavy != 'true'
+        run: bash .ai/tests/test-gate-policy-consistency.sh
+
       - name: Installer dependency install
         if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
         run: npm ci
