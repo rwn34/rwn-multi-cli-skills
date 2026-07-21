@@ -35,6 +35,9 @@
 #  - The versioned-path allowlist (is_versioned) must agree with what the
 #    installers actually ship to adopters (closes the hand-maintained-restatement
 #    hole). This self-check runs when the installer sources are present.
+#    is_versioned() is also sourced by .github/workflows/gates.yml for the
+#    non-versioned-only push skip step; keep the predicate stable so the two
+#    gate policies cannot drift.
 #  - Unparseable/missing version on either side fails CLOSED: a gate that
 #    cannot parse its input refuses, never waves through.
 #
