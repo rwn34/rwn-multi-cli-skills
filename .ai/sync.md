@@ -173,7 +173,9 @@ now legacy — the installer is the supported path.
 cp -R .ai CLAUDE.md .claude .kimi .kiro <target>/
 
 # Reset the activity log in the target so it starts empty:
-printf '# Activity Log\n\nNewest entries at the top. Each CLI prepends before finishing substantive work.\n\n---\n\n' > <target>/.ai/activity/log.md
+rm -rf <target>/.ai/activity/entries
+mkdir -p <target>/.ai/activity/entries
+: > <target>/.ai/activity/entries/.gitkeep
 
 # Reset cross-CLI handoff history — cloned project starts with empty queues
 rm -rf <target>/.ai/handoffs/to-claude/{open,done}/*
@@ -190,14 +192,9 @@ sed -i.bak 's/Copyright (c) 2026 \[TODO: project author \/ organization\]/Copyri
 Copy-Item -Recurse .ai, CLAUDE.md, .claude, .kimi, .kiro <target>/
 
 # Reset activity log
-@"
-# Activity Log
-
-Newest entries at the top. Each CLI prepends before finishing substantive work.
-
----
-
-"@ | Set-Content <target>/.ai/activity/log.md
+Remove-Item -Recurse -Force <target>/.ai/activity/entries -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force <target>/.ai/activity/entries | Out-Null
+Set-Content <target>/.ai/activity/entries/.gitkeep ""
 
 # Reset cross-CLI handoff history
 Remove-Item -Recurse -Force <target>/.ai/handoffs/to-claude/open/*, <target>/.ai/handoffs/to-claude/done/*

@@ -366,7 +366,18 @@ check_rwn_auto_drift() {
 check_shared_encoding() {
   local root="$1"
   local problems=0 f out
-  for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
+  # ADR-0010: source of truth is the entry spool. Check README, rendered view
+  # (during transition), and up to five newest entries.
+  local files="$root/.ai/handoffs/README.md"
+  if [ -f "$root/.ai/activity/log.md" ]; then
+    files="$files $root/.ai/activity/log.md"
+  fi
+  if [ -d "$root/.ai/activity/entries" ]; then
+    for f in $(ls -1 "$root/.ai/activity/entries"/*.md 2>/dev/null | tail -5); do
+      files="$files $f"
+    done
+  fi
+  for f in $files; do
     [ -f "$f" ] || continue
     out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
     if [ -n "$out" ]; then

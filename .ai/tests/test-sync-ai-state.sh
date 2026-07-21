@@ -28,10 +28,15 @@ mkdir -p "$CANON/.ai" "$WT"
 # Helper: create canonical .ai/ state.
 setup_canon() {
     rm -rf "$CANON/.ai"
-    mkdir -p "$CANON/.ai/activity" "$CANON/.ai/handoffs/to-kimi/open" "$CANON/.ai/handoffs/to-kimi/done" "$CANON/.ai/reports"
-    cat > "$CANON/.ai/activity/log.md" <<'EOF'
+    mkdir -p "$CANON/.ai/activity/entries" "$CANON/.ai/handoffs/to-kimi/open" "$CANON/.ai/handoffs/to-kimi/done" "$CANON/.ai/reports"
+    cat > "$CANON/.ai/activity/entries/20260717T100000Z-test-canonical-a1b2.md" <<'EOF'
 ## 2026-07-17 10:00 (UTC+7) - test
 - Action: canonical log entry
+
+EOF
+    cat > "$CANON/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) - test
+- Action: generated view
 
 EOF
     echo 'handoff open' > "$CANON/.ai/handoffs/to-kimi/open/h1.md"
@@ -42,7 +47,8 @@ EOF
 setup_canon
 out="$(bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" 2>&1)"; rc=$?
 check "snapshot exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "snapshot copies log.md" "$([ -f "$WT/.ai/activity/log.md" ] && echo 0 || echo 1)"
+check "snapshot copies spool entry" "$([ -f "$WT/.ai/activity/entries/20260717T100000Z-test-canonical-a1b2.md" ] && echo 0 || echo 1)"
+check "snapshot manifest omits generated log.md" "$(grep -q 'activity/log\.md' "$WT/.ai/.snapshot-manifest" && echo 1 || echo 0)"
 check "snapshot copies handoff" "$([ -f "$WT/.ai/handoffs/to-kimi/open/h1.md" ] && echo 0 || echo 1)"
 check "snapshot writes manifest" "$([ -f "$WT/.ai/.snapshot-manifest" ] && echo 0 || echo 1)"
 
@@ -62,18 +68,18 @@ out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
 check "sync-back new file exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 check "sync-back copies new report to canonical" "$([ -f "$CANON/.ai/reports/r2.md" ] && echo 0 || echo 1)"
 
-# 3. sync-back merges a modified activity/log.md entry.
+# 3. sync-back copies a new entry file and leaves canonical's old entry alone.
 setup_canon
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
-cat > "$WT/.ai/activity/log.md" <<'EOF'
+cat > "$WT/.ai/activity/entries/20260719T110000Z-test-new-entry-b3c4.md" <<'EOF'
 ## 2026-07-19 11:00 (UTC+7) - test
-- Action: modified log entry
+- Action: new entry from worktree
 
 EOF
 out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
-check "sync-back modified file exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "sync-back merges new log entry" "$(grep -q 'modified log entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-check "sync-back keeps old log entry" "$(grep -q 'canonical log entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
+check "sync-back new entry exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back copies new entry file" "$([ -f "$CANON/.ai/activity/entries/20260719T110000Z-test-new-entry-b3c4.md" ] && echo 0 || echo 1)"
+check "sync-back preserves canonical entry" "$([ -f "$CANON/.ai/activity/entries/20260717T100000Z-test-canonical-a1b2.md" ] && echo 0 || echo 1)"
 
 # 4. sync-back replays a handoff move (open -> done).
 setup_canon
@@ -149,72 +155,47 @@ check "sync-back removes own retired open handoff" "$([ ! -f "$CANON/.ai/handoff
 check "sync-back preserves kiro open handoff" "$([ -f "$CANON/.ai/handoffs/to-kiro/open/h2.md" ] && echo 0 || echo 1)"
 check "sync-back preserves opencode open handoff" "$([ -f "$CANON/.ai/handoffs/to-opencode/open/h3.md" ] && echo 0 || echo 1)"
 
-# 11. sync-back merges activity/log.md instead of overwriting it when the
-#     worktree version dropped canonical history (executor bug / encoding issue).
+# 11. sync-back copies new entry files from the worktree spool and does NOT
+#     sync the generated .ai/activity/log.md view.
 setup_canon
-cat > "$CANON/.ai/activity/log.md" <<'EOF'
+mkdir -p "$CANON/.ai/activity/entries"
+cat > "$CANON/.ai/activity/entries/20260718T090000Z-kimi-cli-canonical-a1b2.md" <<'EOF'
 ## 2026-07-18 09:00 (UTC+7) - kimi-cli
 - Action: canonical history entry
 
 EOF
+cat > "$CANON/.ai/activity/log.md" <<'EOF'
+## 2026-07-18 09:00 (UTC+7) - kimi-cli
+- Action: generated view before sync
+
+EOF
 bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
+cat > "$WT/.ai/activity/entries/20260719T080000Z-opencode-executor-b3c4.md" <<'EOF'
+## 2026-07-19 08:00 (UTC+7) - opencode
+- Action: executor entry from worktree
+
+EOF
 cat > "$WT/.ai/activity/log.md" <<'EOF'
 ## 2026-07-19 08:00 (UTC+7) - opencode
-- Action: executor overwrote the log with only its own entry
+- Action: worktree overwrote generated view
 
 EOF
 out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
-check "sync-back log merge exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "sync-back preserves canonical log history" "$(grep -qF 'canonical history entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-check "sync-back prepends executor log entry" "$(grep -qF 'executor overwrote the log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-check "sync-back log has no duplicate headers" "$( [ "$(grep -c '^## ' "$CANON/.ai/activity/log.md")" -eq 2 ] && echo 0 || echo 1)"
+check "sync-back entry-spool exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
+check "sync-back preserves canonical entry" "$([ -f "$CANON/.ai/activity/entries/20260718T090000Z-kimi-cli-canonical-a1b2.md" ] && echo 0 || echo 1)"
+check "sync-back copies new entry file" "$([ -f "$CANON/.ai/activity/entries/20260719T080000Z-opencode-executor-b3c4.md" ] && echo 0 || echo 1)"
+check "sync-back ignores generated log.md" "$(grep -qF 'worktree overwrote generated view' "$CANON/.ai/activity/log.md" && echo 1 || echo 0)"
 
-# 12. log merge also works via the pure-awk fallback when python is not on PATH.
+# 12. snapshot tolerates concurrent canonical modifications of entry files
+#     (tar: file changed as we read it).
 setup_canon
-cat > "$CANON/.ai/activity/log.md" <<'EOF'
-## 2026-07-18 09:00 (UTC+7) - kimi-cli
-- Action: canonical history entry
-
-EOF
-bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
-cat > "$WT/.ai/activity/log.md" <<'EOF'
-## 2026-07-19 08:00 (UTC+7) - opencode
-- Action: executor overwrote the log with only its own entry
-
-EOF
-out="$(env PATH=/usr/bin:/bin bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
-check "sync-back awk fallback exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "awk fallback preserves canonical history" "$(grep -qF 'canonical history entry' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-check "awk fallback prepends executor entry" "$(grep -qF 'executor overwrote the log' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-
-# 13. log merge preserves non-ASCII characters (e.g. UTF-8 arrows) on Windows
-#     hosts where Python defaults stdout to cp1252. Regression for the
-#     UnicodeEncodeError that truncated sync-back.
-setup_canon
-cat > "$CANON/.ai/activity/log.md" <<'EOF'
-## 2026-07-18 09:00 (UTC+7) - kimi-cli
-- Action: canonical entry with arrow →
-
-EOF
-bash "$SYNC" snapshot "$CANON/.ai" "$WT/.ai" >/dev/null 2>&1
-cat > "$WT/.ai/activity/log.md" <<'EOF'
-## 2026-07-19 08:00 (UTC+7) - opencode
-- Action: executor entry with arrow →
-
-EOF
-out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
-check "sync-back UTF-8 merge exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "sync-back UTF-8 merge preserves canonical arrow" "$(grep -qF '→' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-check "sync-back UTF-8 merge preserves executor arrow" "$(grep -q 'executor entry with arrow' "$CANON/.ai/activity/log.md" && echo 0 || echo 1)"
-
-# 14. snapshot tolerates concurrent canonical modifications (tar: file changed).
-setup_canon
-# Start a background writer that appends to canonical activity/log.md every
-# 50ms while the snapshot runs, to trigger tar's "file changed as we read it".
+mkdir -p "$CANON/.ai/activity/entries"
+# Start a background writer that creates entry files every 50ms while the
+# snapshot runs, to trigger tar's "file changed as we read it".
 writer_pid=""
 (
     for i in $(seq 1 100); do
-        printf '## 2026-07-19 12:%02d (UTC+7) - concurrent-writer\n- Action: line %d\n\n' "$i" "$i" >> "$CANON/.ai/activity/log.md"
+        printf '## 2026-07-19 12:%02d (UTC+7) - concurrent-writer\n- Action: line %d\n\n' "$i" "$i" > "$CANON/.ai/activity/entries/20260719T1200$(printf '%02d' "$i")Z-concurrent-writer-c${i}.md"
         sleep 0.05 2>/dev/null || sleep 1
     done
 ) &
@@ -224,7 +205,7 @@ kill "$writer_pid" 2>/dev/null || true
 wait "$writer_pid" 2>/dev/null || true
 check "snapshot concurrent-write exits 0" "$([ "$rc14" -eq 0 ] && echo 0 || echo 1)"
 check "snapshot concurrent-write produces non-empty manifest" "$([ -s "$WT/.ai/.snapshot-manifest" ] && echo 0 || echo 1)"
-check "snapshot concurrent-write copies log.md" "$([ -f "$WT/.ai/activity/log.md" ] && echo 0 || echo 1)"
+check "snapshot concurrent-write copies spool" "$([ -d "$WT/.ai/activity/entries" ] && echo 0 || echo 1)"
 
 # 15. safe_rm_rf renames a busy .ai/ directory instead of hanging forever.
 setup_canon

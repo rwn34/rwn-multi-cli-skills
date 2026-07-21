@@ -150,7 +150,19 @@ fi
 # as binary. Fail-open: repair the common cases, warn+notify if repair fails.
 check_shared_encoding() {
     local f out norm_out
-    for f in "$root/.ai/activity/log.md" "$root/.ai/handoffs/README.md"; do
+    # ADR-0010: source of truth is the entry spool. Check README and up to five
+    # newest entries; also check the rendered view if it still exists during the
+    # transition.
+    local files="$root/.ai/handoffs/README.md"
+    if [ -f "$root/.ai/activity/log.md" ]; then
+        files="$files $root/.ai/activity/log.md"
+    fi
+    if [ -d "$root/.ai/activity/entries" ]; then
+        for f in $(ls -1 "$root/.ai/activity/entries"/*.md 2>/dev/null | tail -5); do
+            files="$files $f"
+        done
+    fi
+    for f in $files; do
         [ -f "$f" ] || continue
         out="$(bash "$root/.ai/tools/check-encoding.sh" "$f" 2>&1)" || true
         if [ -n "$out" ]; then

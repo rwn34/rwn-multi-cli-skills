@@ -82,6 +82,11 @@ id_ed25519*
 # ---- AI framework install rollback marker ----
 .ai-install-rollback-point.txt
 
+# ---- Generated activity-log view (ADR-0010) ----
+# Source of truth is .ai/activity/entries/*.md; this file is produced by
+# bash .ai/tools/render-activity-log.sh and must not be committed.
+.ai/activity/log.md
+
 # ---- Code knowledge graphs (local DBs and caches; config.json may be committed) ----
 .codegraph/*
 !.codegraph/config.json
