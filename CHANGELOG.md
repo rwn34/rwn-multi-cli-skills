@@ -19,6 +19,7 @@ promotion happened.
 ## [Unreleased]
 
 - Added PR-time `## [Unreleased]` bullet gate (`.ai/tools/check-changelog-unreleased.sh`): a pull request that touches versioned framework content must add at least one bullet under `CHANGELOG.md ## [Unreleased]`, closing the hole where a bump-only `main` push silently disabled the version-bump detective (ADR-0012 follow-up).
+- Removed `paths-ignore` from `.github/workflows/gates.yml` and replaced it with an internal skip: `push: main` now always produces a green required status, but heavy substantive steps are skipped when only non-versioned coordination-plane files changed. The skip predicate reuses `is_versioned()` from `scripts/check-version-bump.sh` so the two gate policies cannot drift.
 
 ## [0.0.52] - 2026-07-21
 
