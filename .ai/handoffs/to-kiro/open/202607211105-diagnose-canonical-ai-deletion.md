@@ -111,6 +111,56 @@ working-tree changes. A routine `git add -A && git commit` would land a 438-file
 deletion of the entire coordination plane, and recovery then depends on an
 executor worktree that this same dispatcher is designed to clean up.
 
+## Recurrence #2 — 2026-07-21 23:30 (UTC+7), partial wipe, added by claude-cockpit
+
+A second, **partial** occurrence was observed on branch
+`exec/claude/202607211616-delegate-adr0010-freeze-to-claude` (HEAD `f3d37e9` at
+the time). This one is more diagnostically useful than the first because it
+deleted only 3 tracked files instead of 438 — the failure is not all-or-nothing.
+
+    $ git status --short
+     D .ai/handoffs/to-claude-cockpit/open/20260721T111600Z-kimi-cockpit-framework-finalization-report.md
+     M .ai/handoffs/to-claude/open/202607211616-delegate-adr0010-freeze-to-claude.md
+     D .ai/handoffs/to-kimi-cockpit/open/20260721T143000Z-post-merge-followups-and-freeze-preconditions.md
+     D .ai/handoffs/to-kiro/open/202607211616-delegate-canonical-ai-deletion-to-kiro.md
+
+None of the three has a commit that retires it — every commit touching those
+paths is an add/modify:
+
+    $ git log --oneline -2 -- .ai/handoffs/to-kiro/open/202607211616-delegate-canonical-ai-deletion-to-kiro.md
+    f3d37e9 chore(ai): delegate ADR-0010 freeze and canonical .ai/ deletion root cause to auto panes
+
+**The strongest signal:** that path was *created by `f3d37e9` itself* — the
+commit immediately preceding the observation — and was already gone from the
+working tree. A handoff written one commit ago and never claimed cannot have
+been legitimately retired. Note also the irony worth keeping: the file the bug
+deleted was the handoff delegating *this very diagnosis*.
+
+Restored with `git restore` (byte-identical to HEAD, no content authored);
+restoration is a mitigation, not a fix — the next snapshot/sync cycle can
+re-delete them.
+
+### What this adds to the hypotheses above
+
+- A **partial** deletion set argues against a single `rm -rf` of the whole
+  canonical `.ai/` and toward a **per-file sync-back reconciliation** that
+  decides some files are absent-in-snapshot and therefore should be removed
+  from canonical. Hypothesis 1 (path arithmetic) alone does not explain why
+  exactly these 3 of ~464 files were chosen.
+- All three deleted files are **recent** relative to the snapshot. The obvious
+  candidate mechanism: they were created in canonical *after* the snapshot copy
+  was taken, so sync-back — treating the stale snapshot as authoritative rather
+  than as a one-way source — deleted them as "no longer present". If that is the
+  mechanism, the bug is a **lost-update / stale-snapshot** class problem, and the
+  438-file wipe is the degenerate case where the snapshot was empty or misrooted.
+- Worth checking against `docs/specs/ai-snapshot-sync.md`: does the contract
+  permit sync-back to **delete** canonical files at all, or only to add/update?
+  If deletion is not in the contract, the fix is narrow.
+
+Please fold this into step 2 — reproducing the 3-file case is likely far cheaper
+than reproducing the full wipe, and a fix that explains both is the real
+diagnosis.
+
 ## Report back with
 - (a) the resolved deleting command + path (verbatim trace)
 - (b) the failing-then-passing regression test output
