@@ -160,6 +160,13 @@ jobs:
         if: github.event_name == 'pull_request'
         run: bash .ai/tools/check-tier-restatements.sh
 
+      # ADR-0012 follow-up: PRs that touch versioned framework content must
+      # add a bullet under CHANGELOG.md '## [Unreleased]'. This closes the hole
+      # where a bump-only main push silently disabled the version-bump detective.
+      - name: Changelog Unreleased bullet check
+        if: github.event_name == 'pull_request'
+        run: bash .ai/tools/check-changelog-unreleased.sh "origin/${{ github.base_ref }}" HEAD
+
       # ADR-0012: the framework version is assigned at MERGE, not on feature
       # branches, so this is a DETECTIVE check on the resulting main push —
       # comparing the previous main tip (github.event.before) to the new one.

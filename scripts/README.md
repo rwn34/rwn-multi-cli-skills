@@ -92,6 +92,19 @@ See the script's `--help` for a full phase-by-phase description.
 
 ---
 
+## CI gates and provenance checks
+
+The framework ships several standalone checkers under `.ai/tools/` and
+`scripts/` that are wired into `.github/workflows/gates.yml`:
+
+| Checker | What it enforces | Runs on |
+|---|---|---|
+| `scripts/check-version-bump.sh` | A framework-content change on `main` must strictly bump `tools/multi-cli-install/package.json` .version and promote the matching `## [Unreleased]` bullets into a substantive `## [x.y.z]` CHANGELOG entry (ADR-0012). | `push: main` |
+| `.ai/tools/check-changelog-unreleased.sh` | A PR that touches versioned framework content must add at least one bullet under `CHANGELOG.md ## [Unreleased]`. Closes the hole where a bump-only main push silently disabled the version-bump detective. | `pull_request` |
+
+Both source the same `is_versioned()` predicate so the "framework content"
+definition cannot drift between PR-time and main-push checks.
+
 ## Requirements (both scripts)
 
 Bash, git, sed, awk, find, diff. No jq, no python. Tested on Git Bash

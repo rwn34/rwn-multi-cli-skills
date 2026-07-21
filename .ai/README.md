@@ -13,6 +13,7 @@ all read from here via thin shim files inside their own native folders.
     │   └── <skill-name>/
     │       ├── principles.md      (steering-class: always-loaded, concise rules)
     │       └── examples.md        (resource-class: on-demand, worked examples)
+    ├── tools/                     (CI/test utilities: drift checks, handoff dispatch, etc.)
     └── activity/
         └── log.md                 (cross-CLI activity log, newest entries at top)
 
