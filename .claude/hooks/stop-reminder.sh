@@ -4,9 +4,20 @@
 # (2) Uncommitted changes beyond the activity log → remind to delegate commit.
 # Both non-blocking (exit 0).
 
-# --- Reminder 1: activity log ---
-if [ -f .ai/activity/log.md ] && [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
-    echo "REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending."
+# --- Reminder 1: activity log (dual-mode, ADR-0010) ---
+# Predicate on the FREEZE via a git-tracked test, NOT log.md presence: post-freeze
+# log.md becomes a generated, gitignored VIEW that render-activity-log.sh may leave
+# present-but-untracked on disk. A presence test would then nag about a stale render.
+# Tracked => pre-freeze => log.md authoritative; untracked/absent => frozen =>
+# .ai/activity/entries/ is the source of truth. Same detector as render-activity-log.sh:29.
+if git ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
+    if [ -z "$(find .ai/activity/log.md -mmin -60 2>/dev/null)" ]; then
+        echo "REMINDER: .ai/activity/log.md was not updated in this session. If you made substantive changes (file edits, tests run, decisions), prepend an entry before ending."
+    fi
+else
+    if [ -z "$(find .ai/activity/entries -name '*.md' -mmin -60 2>/dev/null)" ]; then
+        echo "REMINDER: no new file in .ai/activity/entries/ in this session. If you made substantive changes (file edits, tests run, decisions), write an entry file before ending."
+    fi
 fi
 
 # --- Reminder 1b: open + review handoff queues (P4 polling — every session end is a poll point) ---
@@ -51,7 +62,7 @@ fi
 
 # --- Reminder 2: uncommitted changes beyond the activity log ---
 # Filter out the activity log line from git status; if anything else is uncommitted, remind.
-unpushed=$(git status --short 2>/dev/null | grep -vE '\.ai/activity/log\.md$')
+unpushed=$(git status --short 2>/dev/null | grep -vE '\.ai/activity/log\.md$' | grep -vE '\.ai/activity/entries/')
 if [ -n "$unpushed" ]; then
     echo ""
     echo "REMINDER: Uncommitted changes beyond the activity log:"
