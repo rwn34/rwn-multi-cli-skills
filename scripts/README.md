@@ -101,9 +101,21 @@ The framework ships several standalone checkers under `.ai/tools/` and
 |---|---|---|
 | `scripts/check-version-bump.sh` | A framework-content change on `main` must strictly bump `tools/multi-cli-install/package.json` .version and promote the matching `## [Unreleased]` bullets into a substantive `## [x.y.z]` CHANGELOG entry (ADR-0012). | `push: main` |
 | `.ai/tools/check-changelog-unreleased.sh` | A PR that touches versioned framework content must add at least one bullet under `CHANGELOG.md ## [Unreleased]`. Closes the hole where a bump-only main push silently disabled the version-bump detective. | `pull_request` |
+| `.ai/tools/fleet-health.sh` | Pane liveness, worktree hygiene, and drift between this repo and the `~/.rwn-auto/rwn-4AI-panes` embedded install. | local / CI |
 
 Both source the same `is_versioned()` predicate so the "framework content"
 definition cannot drift between PR-time and main-push checks.
+
+## Auto-sync to `~/.rwn-auto/rwn-4AI-panes`
+
+`scripts/sync-4ai-panes-install.ps1` keeps the pane launcher files in the
+user's `~/.rwn-auto/rwn-4AI-panes` directory in sync with `tools/4ai-panes/`.
+It is invoked automatically by the `post-commit`, `post-merge`, and
+`post-checkout` git hooks whenever a commit touches launcher files. The
+embedded framework files inside that install are refreshed separately by
+`scripts/install-template.sh <rwn-auto-path>` (run only when the framework
+version has changed). `fleet-health.sh` reports drift if either copy falls
+behind.
 
 ## Requirements (both scripts)
 

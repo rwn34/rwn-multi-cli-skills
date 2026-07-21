@@ -321,6 +321,45 @@ check_worktree_freshness() {
   echo "$problems"
 }
 
+# S3-2: detect drift between this repo and the ~/.rwn-auto/rwn-4AI-panes
+# embedded framework install. The install is not auto-refreshed, so a stale
+# copy silently seeds new projects with old framework state.
+check_rwn_auto_drift() {
+  local root="$1"
+  local rwn_auto="${RWN_AUTO_PANES:-$HOME/.rwn-auto/rwn-4AI-panes}"
+  local problems=0
+
+  [ -d "$rwn_auto" ] || { echo "0"; return; }
+
+  # Compare pane-runner.ps1 (launcher allowlist sync target).
+  local repo_runner="$root/tools/4ai-panes/pane-runner.ps1"
+  local auto_runner="$rwn_auto/pane-runner.ps1"
+  if [ -f "$repo_runner" ] && [ -f "$auto_runner" ]; then
+    local repo_hash auto_hash
+    repo_hash="$(git hash-object "$repo_runner" 2>/dev/null)"
+    auto_hash="$(git hash-object "$auto_runner" 2>/dev/null)"
+    if [ -n "$repo_hash" ] && [ -n "$auto_hash" ] && [ "$repo_hash" != "$auto_hash" ]; then
+      echo "FRAMEWORK: ~/.rwn-auto/rwn-4AI-panes/pane-runner.ps1 differs from repo — run: powershell -File '$root/scripts/sync-4ai-panes-install.ps1'"
+      problems=$((problems + 1))
+    fi
+  fi
+
+  # Compare embedded framework version against repo package.json version.
+  local repo_pkg="$root/tools/multi-cli-install/package.json"
+  local auto_ver_file="$rwn_auto/.ai/.framework-version"
+  if [ -f "$repo_pkg" ] && [ -f "$auto_ver_file" ]; then
+    local repo_version auto_version
+    repo_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$repo_pkg" | head -1)"
+    auto_version="$(sed -n 's/.*"framework_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$auto_ver_file" | head -1)"
+    if [ -n "$repo_version" ] && [ -n "$auto_version" ] && [ "$repo_version" != "$auto_version" ]; then
+      echo "FRAMEWORK: ~/.rwn-auto/rwn-4AI-panes/.ai/.framework-version ($auto_version) differs from repo package.json ($repo_version) — run: bash '$root/scripts/install-template.sh' '$rwn_auto'"
+      problems=$((problems + 1))
+    fi
+  fi
+
+  echo "$problems"
+}
+
 # S3-1: cheap encoding assertion for shared-state files. Bad encoding makes
 # grep-based history lookups silently lie and git treat the file as binary.
 # fleet-health is detection-only; it does not repair (dispatch-handoffs.sh does).
@@ -371,6 +410,11 @@ main() {
   encoding_report="$(check_shared_encoding "$root")"
   encoding_problems="$(printf '%s\n' "$encoding_report" | tail -1)"
   encoding_report="$(printf '%s\n' "$encoding_report" | sed '$d')"
+
+  local drift_report="" drift_problems=0
+  drift_report="$(check_rwn_auto_drift "$root")"
+  drift_problems="$(printf '%s\n' "$drift_report" | tail -1)"
+  drift_report="$(printf '%s\n' "$drift_report" | sed '$d')"
 
   echo "fleet-health — $(cd "$root" 2>/dev/null && pwd)"
   echo "window: heartbeat/claim stale > ${STALE_MINUTES}m (mirrors pane-runner.ps1); quarantine retry after ${QUARANTINE_STALE_MINUTES}m"
@@ -432,12 +476,15 @@ main() {
   if [ -n "$encoding_report" ]; then
     printf '%s\n' "$encoding_report"
   fi
+  if [ -n "$drift_report" ]; then
+    printf '%s\n' "$drift_report"
+  fi
   if [ "$queue_problems" -gt 0 ]; then
     echo "$queue_problems queue dir(s) missing. Run the fix command above."
   fi
-  local total_problems=$((bad + queue_problems + wt_problems + junction_problems + freshness_problems + encoding_problems))
+  local total_problems=$((bad + queue_problems + wt_problems + junction_problems + freshness_problems + encoding_problems + drift_problems))
   if [ "$total_problems" -gt 0 ]; then
-    echo "$total_problems pane(s)/queue dir(s)/worktree(s) need attention (STALL/WEDGED/missing queue dir/orphaned worktree/junctioned .ai/ stale worktree/encoding). Detection only — restarts stay with the owner/claude."
+    echo "$total_problems pane(s)/queue dir(s)/worktree(s)/install(s) need attention (STALL/WEDGED/missing queue dir/orphaned worktree/junctioned .ai/ stale worktree/encoding/rwn-auto drift). Detection only — restarts stay with the owner/claude."
   else
     echo "all panes OK or down-idle."
   fi
