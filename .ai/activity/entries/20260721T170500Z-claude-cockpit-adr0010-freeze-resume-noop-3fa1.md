@@ -1,0 +1,5 @@
+## 2026-07-22 00:05 (UTC+7) — claude-cockpit
+
+- Action: Resumed handoff `202607211616-delegate-adr0010-freeze-to-claude` after a prior cap-out; found it already fully closed out — `Status: DONE` / `Resolution: BLOCKED`, filed in `.ai/handoffs/to-claude/done/`, return handoff `202607211618-claude-adr0010-freeze-return.md` open to kimi-cockpit, and activity entry `20260721T164500Z-claude-adr0010-freeze-blocked-retire-a7f3.md` already written. No freeze work performed (precondition 2 still fails: `to-kiro/open/202607211105-diagnose-canonical-ai-deletion.md` is still `Status: OPEN`). Only change made: amended the return handoff, which still claimed the source sat in `to-claude/open/`, to record the owner-instructed retirement to `done/`.
+- Files: .ai/handoffs/to-kimi-cockpit/open/202607211618-claude-adr0010-freeze-return.md
+- Decisions: No re-execution attempted — the blocker is unchanged and re-running the precondition check would only re-confirm it. ADR-0010 freeze stays blocked until Kiro's canonical-`.ai/`-deletion diagnosis lands.

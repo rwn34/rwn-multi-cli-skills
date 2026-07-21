@@ -1,9 +1,11 @@
 # Root-cause the canonical .ai/ deletion during dispatch-handoffs.sh --exec
-Status: OPEN
+Status: DONE
+Resolution: FIXED (PR #135)
 Sender: claude-cockpit
 Recipient: kiro
 Owner: kiro
 Created: 2026-07-21 18:05 (UTC+7)
+Closed: 2026-07-22 00:27 (UTC+7)
 Auto: no
 Risk: B
 Observed-in: main@9797a1f16f70eff2edc9b714945db6ff31f20218
@@ -12,6 +14,39 @@ Evidence: VERIFIED (bash .ai/tools/dispatch-handoffs.sh --exec in the claude wor
 > **Auto: no is deliberate.** Do NOT dispatch this handoff by running
 > `dispatch-handoffs.sh --exec` — that is the very command under investigation and
 > it destroys the coordination plane. The owner launches this one manually.
+
+## Resolution
+
+Fix implemented and opened as **PR #135**:
+`fix/sync-ai-state-self-collision-and-dispatch-fail-closed`.
+
+- `.ai/tools/sync-ai-state.sh` `cmd_snapshot()` now refuses to run when source
+  and destination resolve to the same directory, or when destination is an
+  ancestor of source (realpath comparison via `pwd -P`). This prevents a
+  mis-anchored dispatcher call from `rm -rf`-ing the canonical `.ai/` tree.
+- `.ai/tools/dispatch-handoffs.sh` `sync_back_ai()` now fails closed when
+  `$root/.ai/tools/sync-ai-state.sh` is missing, and the dispatch loop writes a
+  `.ai/reports/dispatch-failure-*.md` report instead of silently exiting 0.
+- Regression tests `#20` and `#20b` added to `.ai/tests/test-sync-ai-state.sh`.
+
+### Verification (all green)
+
+- `bash .ai/tests/test-sync-ai-state.sh` → `55 passed, 0 failed`
+- `bash scripts/git-hooks/test-pre-commit.sh` → `126 passed, 0 failed`
+- `bash .ai/tools/sync-replicas.sh --check` → `24 replicas, Drift: 0`
+- `bash .ai/tests/test-gate-policy-consistency.sh` → `6 passed, 0 failed`
+- `node .opencode/plugin/test-guard.mjs` → `PASS 144 / FAIL 0`
+- `bash .ai/tools/lint-handoff.sh` → `OK`
+- `bash .ai/tools/check-asset-drift.sh` → `PASS`
+- `bash .ai/tools/check-changelog-unreleased.sh` → `PASS`
+
+### What is NOT claimed closed
+
+The partial 3-file deletion in Recurrence #2 (files created in canonical after
+snapshot, then removed by sync-back) is mitigated by the existing
+bare-open-handoff deletion guard and the new self-collision guard, but a
+stale-snapshot reconciliation edge may remain. Monitor future dispatches; if a
+similar partial deletion recurs, reopen or file a follow-up handoff.
 
 ## Goal
 

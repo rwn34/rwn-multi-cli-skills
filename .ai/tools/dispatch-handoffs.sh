@@ -327,11 +327,24 @@ snapshot_ai() {
 }
 
 # sync_back_ai <wt_path> — replay worktree .ai/ changes into canonical .ai/ and
-# remove the worktree copy. Fail-open: a sync-back failure is logged but does not
-# abort (the canonical .ai/ may still be usable; a human can reconcile).
+# remove the worktree copy. Mostly fail-open (a sync-back CONTENT failure is
+# logged but does not abort dispatch — the canonical .ai/ may still be usable,
+# a human can reconcile) EXCEPT for a missing sync-ai-state.sh script, which is
+# a signal, not noise (2026-07-21 canonical .ai/ deletion incident trace:
+# "bash .../.ai/tools/sync-ai-state.sh: No such file or directory", previously
+# swallowed by this function's blanket "|| true" and the run still exited 0).
+# A missing script means $root itself is not what the dispatcher thinks it is
+# (a mis-anchored root, a worktree whose .ai/ never got a real snapshot, etc.)
+# and sync-back cannot safely run at all -- surface that as a hard failure
+# instead of silently doing nothing.
 sync_back_ai() {
     local wt_path="$1"
-    bash "$root/.ai/tools/sync-ai-state.sh" sync-back "$wt_path" "$root" 2>&1 || true
+    local sync_script="$root/.ai/tools/sync-ai-state.sh"
+    if [ ! -f "$sync_script" ]; then
+        echo "ERROR: sync_back_ai: $sync_script does not exist -- refusing to no-op silently (this root may be mis-anchored)" >&2
+        return 1
+    fi
+    bash "$sync_script" sync-back "$wt_path" "$root" 2>&1 || true
 }
 
 # ensure_declared_base_branch <wt_path> <cli> <slug> <base> -> 0 on success
@@ -1124,10 +1137,34 @@ for to_dir in "$root"/.ai/handoffs/to-*; do
             rm -f "$out_tmp"
 
             # Sync the worktree's .ai/ changes back to canonical and remove the
-            # worktree copy. Fail-open: sync-back errors are logged but do not
-            # abort dispatch; the recipient's changes are already in the canonical
-            # working tree or recoverable from the worktree.
-            sync_back_ai "$wt_path"
+            # worktree copy. Mostly fail-open (content-level sync-back errors are
+            # logged but do not abort dispatch; the recipient's changes are
+            # already in the canonical working tree or recoverable from the
+            # worktree) EXCEPT a missing sync-ai-state.sh script, which
+            # sync_back_ai() now refuses to no-op on (see its definition) —
+            # write a dispatch-failure report so this is never silent again.
+            if ! sync_back_ai "$wt_path"; then
+                echo "FAIL  [$cli] $rel — sync-back could not run (see error above)" >&2
+                EXEC_FAILED=$((EXEC_FAILED+1))
+                ts=$(date -u +%Y%m%d%H%M%S)
+                report="$root/.ai/reports/dispatch-failure-$ts-$cli-$slug.md"
+                {
+                    echo "# Dispatch failure — $cli (sync-back script missing)"
+                    echo ""
+                    echo "- Handoff: $rel"
+                    echo "- UTC: $ts"
+                    echo "- Framework: $(framework_version)"
+                    echo "- Worktree: ${wt_path#$root/}"
+                    echo "- Stage: sync-back (after CLI invocation) — the CLI already ran; only the .ai/ sync-back failed"
+                    echo ""
+                    echo "Triage: \$root/.ai/tools/sync-ai-state.sh did not exist when sync-back ran. This"
+                    echo "usually means \$root was not the expected checkout (e.g. dispatch-handoffs.sh was"
+                    echo "invoked from inside an executor worktree instead of the primary checkout). Inspect"
+                    echo "$wt_path by hand; its .ai/ may still hold the recipient's changes uncommitted."
+                } > "$report"
+                echo "ALERT: dispatch failed — report written to ${report#$root/}"
+                fleet_notify alert "$project_name" "$slug" "$cli" "$owner" || true
+            fi
 
             # Release the claim: the recipient self-retires the handoff (moves it
             # to done/) or leaves it OPEN/BLOCKED. Either way our lease is over —

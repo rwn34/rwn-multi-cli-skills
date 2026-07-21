@@ -308,6 +308,34 @@ conflict_file="$(ls "$CANON"/.ai/activity/entries/20260720T140000Z-kiro-collide-
 check "sync-back collision preserves worktree body as a conflict file" "$([ -n "$conflict_file" ] && grep -qF 'worktree writer body' "$conflict_file" && echo 0 || echo 1)"
 check "sync-back collision writes a durable marker file in canonical" "$(ls "$CANON"/.ai/.sync-conflict-*.marker >/dev/null 2>&1 && echo 0 || echo 1)"
 
+# 20. cmd_snapshot must refuse when src and dst resolve to the SAME directory
+#     (or one contains the other). Root-cause of the 2026-07-21 canonical .ai/
+#     deletion incident (handoff 202607211105-diagnose-canonical-ai-deletion.md):
+#     cmd_snapshot's first action is safe_rm_rf "$dst" -- unconditional, with no
+#     realpath comparison against $src. If a caller ever computes a worktree
+#     path that collapses onto the canonical .ai/ itself (a bad dirname/basename
+#     substitution, a mis-anchored $root, etc.), this deletes the ONLY copy of
+#     canonical .ai/ before tar ever reads from $src -- and because $src is now
+#     also gone (same path), the subsequent tar read fails too, but by then the
+#     data is already gone. This must be refused BEFORE any deletion happens.
+setup_canon
+before_count="$(find "$CANON/.ai" -type f | wc -l)"
+out20="$(bash "$SYNC" snapshot "$CANON/.ai" "$CANON/.ai" 2>&1)"; rc20=$?
+after_count="$(find "$CANON/.ai" -type f 2>/dev/null | wc -l)"
+check "snapshot src==dst exits non-zero (refuses)" "$([ "$rc20" -ne 0 ] && echo 0 || echo 1)"
+check "snapshot src==dst does not delete canonical files" "$([ "$after_count" -eq "$before_count" ] && echo 0 || echo 1)"
+check "snapshot src==dst names the refusal" "$(echo "$out20" | grep -qi 'same\|identical\|refus' && echo 0 || echo 1)"
+
+# 20b. cmd_snapshot must also refuse when dst is an ANCESTOR of src (deleting dst
+#     would delete src too, since src lives inside it) -- the same hazard, one
+#     path-arithmetic step removed.
+setup_canon
+before_count_b="$(find "$CANON/.ai" -type f | wc -l)"
+out20b="$(bash "$SYNC" snapshot "$CANON/.ai/handoffs" "$CANON/.ai" 2>&1)"; rc20b=$?
+after_count_b="$(find "$CANON/.ai" -type f 2>/dev/null | wc -l)"
+check "snapshot dst-ancestor-of-src exits non-zero (refuses)" "$([ "$rc20b" -ne 0 ] && echo 0 || echo 1)"
+check "snapshot dst-ancestor-of-src does not delete canonical files" "$([ "$after_count_b" -eq "$before_count_b" ] && echo 0 || echo 1)"
+
 echo ""
 echo "==== sync-ai-state suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1

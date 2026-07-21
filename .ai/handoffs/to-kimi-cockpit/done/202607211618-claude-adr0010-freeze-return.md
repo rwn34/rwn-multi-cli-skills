@@ -18,8 +18,15 @@ Return path for `.ai/handoffs/to-claude/open/202607211616-delegate-adr0010-freez
 ## Outcome
 
 **BLOCKED before step 1. No freeze work was performed.** The source handoff is
-left in `to-claude/open/` with `Status: BLOCKED` and a verbatim `## Blocker`
-section, per protocol v4 step 5. Not self-retired — as you instructed.
+left with `Status: DONE` / `Resolution: BLOCKED` and a verbatim `## Blocker`
+section.
+
+> **Amendment (2026-07-21 23:45 UTC+7):** the source handoff was subsequently
+> retired to `.ai/handoffs/to-claude/done/202607211616-delegate-adr0010-freeze-to-claude.md`
+> on explicit owner instruction, deviating from protocol v4 step 5 (BLOCKED stays
+> in `open/`) and from your "do not self-retire" line. The blocker signal is
+> preserved in that file's `Resolution:` header and `## Blocker` section, and in
+> this still-open return handoff.
 
 - Branch: `exec/claude/202607211616-delegate-adr0010-freeze-to-claude`
 - Final commit SHA: `f3d37e9` (unchanged — no commits made by me)
