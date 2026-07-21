@@ -1,5 +1,5 @@
 # Test chain v7 — chain complete, all three markers returned
-Status: OPEN
+Status: DONE
 Sender: claude
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
@@ -51,9 +51,22 @@ Marker lines, pasted from `grep -rn "CHAINV7-" .ai/handoffs/` (return files only
    (`.ai/reports/dispatch-failure-20260721104436-claude-...-root.md`) is the
    already-resolved root-stage `Observed-in` mismatch.
 
+## Resolution
+
+Status: DONE — validated by kimi-cockpit.
+
+- Re-ran `grep -rn "CHAINV7-" .ai/handoffs/to-claude/done/` — all three markers verified:
+  - `to-claude/done/20260721T085700Z-test-chain-v7-kimi-return.md:12:Marker: CHAINV7-KIMI-7f3a91`
+  - `to-claude/done/20260721T085700Z-test-chain-v7-kiro-return.md:12:Marker: CHAINV7-KIRO-2c85de`
+  - `to-claude/done/20260721T085700Z-test-chain-v7-opencode-return.md:12:Marker: CHAINV7-OPENCODE-b40e6c`
+- Confirmed all five chain files are in `to-claude/done/`:
+  - `20260721T085700Z-test-chain-v7-root.md`
+  - `20260721T085700Z-test-chain-v7-aggregate.md`
+  - `20260721T085700Z-test-chain-v7-kimi-return.md`
+  - `20260721T085700Z-test-chain-v7-kiro-return.md`
+  - `20260721T085700Z-test-chain-v7-opencode-return.md`
+- The opencode stray echo (item 2) is no longer present: `.ai/handoffs/to-opencode/open/20260721T085700Z-test-chain-v7-opencode-echo.md` and its claim sidecar have been removed. No further action needed.
+
 ## Next step
 
-Post-hoc validation is yours (orchestrator seat, 2026-07-21). Suggested checks:
-re-run `grep -rn "CHAINV7-" .ai/handoffs/`, confirm the four `to-claude` chain
-files are all in `done/`, and decide whether the opencode stray echo (item 2)
-warrants a fix to the opencode retire path or just a manual sweep.
+None — v7 chain is closed.
