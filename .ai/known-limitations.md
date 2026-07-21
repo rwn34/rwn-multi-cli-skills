@@ -188,6 +188,43 @@ See `docs/architecture/0016-ai-durability-contract.md` for the full contract.
 
 ---
 
+## Executor worktree shows every `.ai/` file as deleted after snapshot removal (ADR-0016)
+
+**Status:** Characterized 2026-07-21.
+
+**What:** After a dispatcher run, the executor worktree may report hundreds of
+`.ai/**` paths as deleted (` D` in column 2 of `git status --short`). This looks
+like a catastrophic wipe, especially inside a worktree whose canonical `.ai/`
+was just snapshotted in.
+
+**Why it is not an incident:** Under ADR-0016 the worktree's `.ai/` is an
+ordinary-file snapshot copy, not a junction. `scripts/wt-bootstrap.sh` and
+`.ai/tools/sync-ai-state.sh` remove that snapshot by design once the executor
+finishes (`safe_rm_rf "$wt_ai"`). Because every `.ai/` file is tracked by git,
+removing the snapshot directory leaves git showing every tracked file as
+unstaged-deleted. That is the expected arithmetic: the files are gone from the
+worktree, but the canonical `.ai/` in the primary checkout is untouched.
+
+**How to tell the difference between this artifact and a real canonical deletion:**
+
+| Signal | Normal ADR-0016 artifact | Real canonical deletion |
+|---|---|---|
+| `git status` column | Column 2: ` D` (unstaged) | Column 1: `D ` (staged) or untracked leftovers |
+| Location | Inside executor worktree only | Primary checkout `.ai/` |
+| Canonical files | Still present in primary checkout | Missing from primary checkout |
+| Sync-back commits | No mass-deletion commit | Commit with mass `.ai/` deletion |
+
+**What to do:** Do not panic-commit the deletions. If the deletions are only in
+the worktree and column 2, the dispatcher has done its job. If you see column-1
+deletions in the primary checkout, that is a real incident — stop and
+investigate.
+
+**Prevention:** Treat `git status` inside an executor worktree as a post-snapshot
+artifact, not as canonical state. Canonical state is authoritative only in the
+primary checkout.
+
+---
+
 ## Kiro CLI — subagent hook inheritance broken
 
 **Status:** Open. Confirmed empirically 2026-04-19 21:22 by kiro-cli.

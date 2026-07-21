@@ -21,6 +21,16 @@ trap cleanup EXIT
 
 mkdir -p "$WORK/.ai/activity/entries" "$WORK/.ai/activity/archive"
 
+# Refuse to render while the pre-spool archive is missing (fail-closed guard).
+if bash "$RENDER" "$WORK" >/dev/null 2>&1; then
+    echo "FAIL: renderer should refuse when pre-spool archive is missing"
+    exit 1
+fi
+check "refuses when pre-spool archive is missing" "0"
+
+# Create the pre-spool archive so subsequent renders succeed.
+printf '# Pre-spool\n' > "$WORK/.ai/activity/archive/log-pre-spool.md"
+
 # Create entries out of order to prove sorting.
 printf '## 2026-07-21 12:00 (UTC+7) - kimi-cli\n- Action: first\n' > "$WORK/.ai/activity/entries/20260721T110000Z-kimi-cli-first-a3f9.md"
 printf '## 2026-07-21 13:00 (UTC+7) - kiro-cli\n- Action: second\n' > "$WORK/.ai/activity/entries/20260721T120000Z-kiro-cli-second-b2e5.md"
@@ -37,7 +47,6 @@ check "newest entry appears first" "$(printf '%s' "$out" | head -1 | grep -q '14
 check "entries are reverse-sorted" "$(printf '%s' "$out" | grep -n '## 2026-07-21' | awk 'NR==1{first=$0} NR==3{third=$0} END{exit(first ~ /14:00/ && third ~ /12:00/ ? 0 : 1)}' && echo 0 || echo 1)"
 
 # Pre-spool pointer appears when archive file exists.
-printf '# Pre-spool\n' > "$WORK/.ai/activity/archive/log-pre-spool.md"
 bash "$RENDER" "$WORK" >/dev/null
 out=$(cat "$WORK/.ai/activity/log.md")
 check "pre-spool pointer is appended" "$(printf '%s' "$out" | grep -q 'log-pre-spool.md' && echo 0 || echo 1)"

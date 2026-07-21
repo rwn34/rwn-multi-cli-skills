@@ -80,9 +80,9 @@ jobs:
           cache-dependency-path: tools/multi-cli-install/package-lock.json
 
       # Cheap change-detection so the Node-heavy installer block (install +
-      # asset drift + typecheck/tests) only runs when installer-related paths
-      # actually changed. The required "gates" status still reports green when
-      # these steps are skipped; they are not required as separate contexts.
+      # typecheck/tests) only runs when installer-related paths actually changed.
+      # Asset-source changes are detected separately so the asset-drift check can
+      # run without paying for npm ci + typecheck on every framework edit.
       - name: Detect installer-related changes
         if: github.event_name == 'pull_request'
         id: installer
@@ -95,6 +95,7 @@ jobs:
             before="${{ github.event.before }}"
             if [[ -z "$before" || "$before" == "0000000000000000000000000000000000000000" ]]; then
               echo "installer_changed=true" >> "$GITHUB_OUTPUT"
+              echo "assets_changed=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             changed=$(git diff --name-only "$before" HEAD || true)
@@ -103,6 +104,14 @@ jobs:
             echo "installer_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "installer_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Asset sources are the dirs/files copied by sync-assets.ts. A change
+          # here may require the asset payload to be regenerated; the asset drift
+          # check catches stale installer copies of live framework files.
+          if echo "$changed" | grep -qE '^(\.ai/|\.claude/|\.kimi/|\.kiro/|\.opencode/|\.archive/|scripts/git-hooks/|CLAUDE\.md|AGENTS\.md|opencode\.json|docs/architecture/0001-root-file-exceptions\.md|\.github/workflows/framework-check\.yml|\.codegraph/config\.json|\.gitignore)$'; then
+            echo "assets_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "assets_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       # The ONE drift authority is the generator itself: --check regenerates
@@ -155,8 +164,9 @@ jobs:
         # Regenerate the asset tree, then gate on it: manifest parity/coverage,
         # no committed generated assets, and every asset file byte-matching its
         # source. This is the gate that catches the 2026-07-12 defect class
-        # (stale asset AGENTS.md + missing .opencode guard layer).
-        if: github.event_name == 'pull_request' && steps.installer.outputs.installer_changed == 'true'
+        # (stale asset AGENTS.md + missing .opencode guard layer). Runs when
+        # either the installer pipeline or the asset sources changed.
+        if: github.event_name == 'pull_request' && (steps.installer.outputs.installer_changed == 'true' || steps.installer.outputs.assets_changed == 'true')
         run: |
           npx tsx scripts/sync-assets.ts
           cd "$GITHUB_WORKSPACE" && bash .ai/tools/check-asset-drift.sh

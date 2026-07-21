@@ -26,10 +26,18 @@ ARCHIVE_DIR="$ROOT/.ai/activity/archive"
 OUTPUT="$ROOT/.ai/activity/log.md"
 PRE_SPOOL="$ARCHIVE_DIR/log-pre-spool.md"
 
-if git -C "$ROOT" ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
-    echo "render-activity-log: REFUSING — .ai/activity/log.md is still git-tracked (pre-freeze)." >&2
-    echo "  Rendering now would clobber the live shared log. This guard lifts once" >&2
-    echo "  the ADR-0010 freeze lands (log.md removed from git and gitignored)." >&2
+# Guard: fail closed. In a git worktree, refuse while log.md is tracked. In a
+# snapshot copy (which may not be a git worktree), refuse if the pre-spool
+# archive does not exist — rendering before the ADR-0010 freeze would clobber
+# the live shared log and has no recovery point.
+if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    if git -C "$ROOT" ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
+        echo "render-activity-log: REFUSING — .ai/activity/log.md is still git-tracked (pre-freeze)." >&2
+        exit 1
+    fi
+fi
+if [ ! -f "$PRE_SPOOL" ]; then
+    echo "render-activity-log: REFUSING — pre-spool archive not found; ADR-0010 freeze may not have landed." >&2
     exit 1
 fi
 

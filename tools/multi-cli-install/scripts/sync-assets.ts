@@ -1,6 +1,7 @@
 import { cpSync, copyFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 // Resolve repo root (walk up from this script)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,13 +23,38 @@ mkdirSync(assetsDir, { recursive: true });
 // amendment 2026-07-09 — the guard layer is WHY OpenCode replaced Crush).
 // Keep in step with FRAMEWORK_DIRS in src/installer/copy-framework.ts —
 // .ai/tools/check-asset-drift.sh FAILS CI if the two manifests diverge.
-for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.opencode', '.archive', 'scripts/git-hooks']) {
-  const src = join(repoRoot, d);
-  if (existsSync(src)) {
-    const dst = join(assetsDir, d);
-    mkdirSync(dirname(dst), { recursive: true });
-    cpSync(src, dst, { recursive: true });
+// Copy only tracked files under each framework dir. Runtime/gitignored files
+// (e.g., .ai/.heartbeat-*.json, .ai/activity/log.md) must not be bundled into
+// the installer payload.
+function copyTrackedDir(srcRel: string, dstRel: string) {
+  const srcRoot = join(repoRoot, srcRel);
+  const dstRoot = join(assetsDir, dstRel);
+  if (!existsSync(srcRoot)) return;
+  let files: string[];
+  try {
+    files = execSync(`git ls-files -- "${srcRel}"`, { cwd: repoRoot, encoding: 'utf-8', shell: 'bash' })
+      .split('\n')
+      .filter(Boolean);
+  } catch {
+    // Not a git repo or git unavailable: fall back to recursive copy. This path
+    // is used only in unusual standalone builds; normal framework development
+    // always runs inside the repo.
+    mkdirSync(dirname(dstRoot), { recursive: true });
+    cpSync(srcRoot, dstRoot, { recursive: true });
+    return;
   }
+  for (const file of files) {
+    const relInside = file.slice(srcRel.length).replace(/^\//, '');
+    if (!relInside) continue;
+    const srcFile = join(repoRoot, file);
+    const dstFile = join(dstRoot, relInside);
+    mkdirSync(dirname(dstFile), { recursive: true });
+    copyFileSync(srcFile, dstFile);
+  }
+}
+
+for (const d of ['.ai', '.claude', '.kimi', '.kiro', '.opencode', '.archive', 'scripts/git-hooks']) {
+  copyTrackedDir(d, d);
 }
 
 // Copy framework files
