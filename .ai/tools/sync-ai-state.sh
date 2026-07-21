@@ -291,6 +291,14 @@ cmd_sync_back() {
     cp "$manifest" "$manifest_old"
     manifest_for "$wt_ai" > "$manifest_new"
 
+    # B4: tracks whether an entries/ filename collision was hit this run, so
+    # the function can signal it via a distinct exit code (2) in addition to
+    # the marker file + warn() written at the point of detection. The sync
+    # itself still completes (canonical is never left inconsistent), but the
+    # caller must be able to tell "completed clean" from "completed with a
+    # conflict needing a human" without scraping dark-gray pane text.
+    local had_conflict=0
+
     # Files in new manifest: copy to canonical if new or changed.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -300,13 +308,64 @@ cmd_sync_back() {
         old_hash="$(awk -v r="$rel" '$2==r {print $1}' "$manifest_old" || true)"
         if [ "$old_hash" != "$new_hash" ]; then
             mkdir -p "$(dirname "$canon_ai/$rel")"
-            if [ "$rel" = "activity/log.md" ]; then
-                merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
-                mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
-            else
-                cp -a "$wt_ai/$rel" "$canon_ai/$rel"
-            fi
-            log "sync-back: $rel"
+            case "$rel" in
+                activity/log.md)
+                    merge_activity_log "$canon_ai/$rel" "$wt_ai/$rel" > "$canon_ai/$rel.merge-tmp"
+                    mv "$canon_ai/$rel.merge-tmp" "$canon_ai/$rel"
+                    log "sync-back: $rel"
+                    ;;
+                activity/entries/*)
+                    # ADR-0010 invariant: no writer ever rewrites another
+                    # writer's entry file. Unlike the generic path below
+                    # (which trusts the worktree-vs-worktree-snapshot diff
+                    # alone and never looks at canonical's current content),
+                    # an entries/ path is compared against canonical's
+                    # current file, byte-for-byte, before any write.
+                    if [ ! -e "$canon_ai/$rel" ] && [ ! -L "$canon_ai/$rel" ]; then
+                        cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+                        log "sync-back: $rel"
+                    elif cmp -s "$wt_ai/$rel" "$canon_ai/$rel"; then
+                        : # identical — idempotent re-sync (e.g. retried dispatch), nothing to do
+                    else
+                        # B3 (2026-07-21, review handoff 202607201755): the
+                        # worktree's .ai/ is removed unconditionally at the end
+                        # of this function (safe_rm_rf "$wt_ai" below), so
+                        # merely warning-and-skipping here permanently loses
+                        # the worktree's entry body the instant the worktree is
+                        # torn down. Preserve BOTH sides: canonical keeps its
+                        # current file untouched (unchanged from before), and
+                        # the worktree body is copied aside into canonical as
+                        # a distinctly-named conflict file so a human can
+                        # reconcile it later instead of it vanishing.
+                        local conflict_hash conflict_rel
+                        conflict_hash="$(sha256sum "$wt_ai/$rel" | awk '{print $1}' | cut -c1-8)"
+                        conflict_rel="${rel%.md}.conflict-${conflict_hash}.md"
+                        mkdir -p "$(dirname "$canon_ai/$conflict_rel")"
+                        cp -a "$wt_ai/$rel" "$canon_ai/$conflict_rel"
+                        # B4: a silent warn() is dark-gray stderr text buried
+                        # among dozens of routine "sync-back: <path>" lines in
+                        # a pane nobody reads during headless dispatch — not a
+                        # guard. Record this refusal in a durable, greppable
+                        # marker file in addition to the loud warn below, so
+                        # fleet-health / a human auditing canonical .ai/ after
+                        # the fact can discover it without having captured the
+                        # pane's live output.
+                        local marker="$canon_ai/.sync-conflict-${conflict_hash}.marker"
+                        {
+                            echo "entries/ filename collision at sync-back"
+                            echo "canonical: $canon_ai/$rel (kept, unchanged)"
+                            echo "worktree copy preserved as: $canon_ai/$conflict_rel"
+                            echo "detected: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                        } > "$marker"
+                        warn "ENTRY FILENAME COLLISION: $rel differs between canonical and worktree. Canonical kept as-is; worktree body preserved at $conflict_rel. Marker: $(basename "$marker"). This must never happen under normal filename generation -- investigate the collision."
+                        had_conflict=1
+                    fi
+                    ;;
+                *)
+                    cp -a "$wt_ai/$rel" "$canon_ai/$rel"
+                    log "sync-back: $rel"
+                    ;;
+            esac
         fi
     done < "$manifest_new"
 
@@ -399,6 +458,16 @@ cmd_sync_back() {
         warn "could not remove $wt_ai immediately; left for later cleanup"
     fi
     log "removed $wt_ai after sync-back"
+
+    # B4: distinct non-zero exit when an entries/ collision was preserved
+    # this run. The sync itself completed successfully (canonical is
+    # consistent, nothing was silently lost) -- this is a "needs a human"
+    # signal, not a failure, so it is deliberately a different code (2) than
+    # the hard-abort deletion-guard's exit 1 above.
+    if [ "$had_conflict" -eq 1 ]; then
+        err "sync-back completed with an entries/ filename collision preserved as a .conflict-*.md file; see the .sync-conflict-*.marker written in canonical .ai/"
+        return 2
+    fi
 }
 
 # ---------- main ----------
