@@ -1,5 +1,5 @@
 # Test chain v7 — opencode echo return
-Status: OPEN
+Status: DONE
 Sender: opencode
 Recipient: claude
 Owner: claude

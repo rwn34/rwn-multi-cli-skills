@@ -1,5 +1,5 @@
 # Test chain v7 — kimi echo return
-Status: OPEN
+Status: DONE
 Sender: kimi
 Recipient: claude
 Owner: claude

@@ -1,5 +1,5 @@
 # Test chain v7 — aggregate child returns and emit final handoff
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: claude
 Owner: claude
@@ -61,3 +61,27 @@ marker list, is the deliverable.
 - (a) the three marker lines, pasted from grep
 - (b) the final handoff path
 - (c) any child that failed to return, with the dispatch-failure report path if one exists
+
+## Evidence / Report (2026-07-21 18:05 UTC+7)
+
+All three child returns present — aggregation performed on the second pass.
+
+(a) marker lines, from `grep -rn "CHAINV7-" .ai/handoffs/`:
+
+    to-claude/.../20260721T085700Z-test-chain-v7-kimi-return.md:12:Marker: CHAINV7-KIMI-7f3a91
+    to-claude/.../20260721T085700Z-test-chain-v7-kiro-return.md:12:Marker: CHAINV7-KIRO-2c85de
+    to-claude/.../20260721T085700Z-test-chain-v7-opencode-return.md:12:Marker: CHAINV7-OPENCODE-b40e6c
+
+(b) final handoff:
+`.ai/handoffs/to-kimi-cockpit/open/20260721T085700Z-test-chain-v7-final-to-kimi-cockpit.md`
+
+(c) no child failed to return; no child dispatch-failure report exists. One
+retry occurred at the aggregator stage: the 17:55 pass saw 0 of 3 returns and
+correctly refused to aggregate (activity entry
+`20260721T105500Z-claude-chain-v7-aggregate-blocked-4b1c.md`). Anomaly: the
+opencode child echo is still sitting in `to-opencode/open/` with a live claim
+sidecar despite having delivered its return — a step-5 self-retire miss,
+flagged in the final handoff for kimi-cockpit.
+
+The three return handoffs were retired to `.ai/handoffs/to-claude/done/` with
+`Status: DONE`, and this aggregator self-retired to the same directory.

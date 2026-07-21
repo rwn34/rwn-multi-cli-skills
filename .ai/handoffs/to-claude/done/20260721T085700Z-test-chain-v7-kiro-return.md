@@ -1,5 +1,5 @@
 # Test chain v7 — kiro echo return
-Status: OPEN
+Status: DONE
 Sender: kiro
 Recipient: claude
 Owner: claude
