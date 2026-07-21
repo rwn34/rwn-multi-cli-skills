@@ -57,6 +57,96 @@ run_test "t11 block credentials.json" "$HOOKS_DIR/sensitive-file-guard.sh" '{"to
 run_test "t11a block ABSOLUTE .env"       "$HOOKS_DIR/sensitive-file-guard.sh" "{\"tool_input\":{\"file_path\":\"$ROOT_W/.env\"}}"        2
 run_test "t11b block ABSOLUTE .aws/config" "$HOOKS_DIR/sensitive-file-guard.sh" "{\"tool_input\":{\"file_path\":\"$ROOT_W/.aws/config\"}}" 2
 
+# --- ADR-0010: activity-log-inject.sh / activity-log-remind.sh dual-mode
+# predicate (B1, review handoff 202607201755) ---
+# The dual-mode predicate is `git ls-files --error-unmatch .ai/activity/log.md`
+# — is log.md GIT-TRACKED, not merely present on disk. This must be exercised
+# in three states: TRACKED+present (pre-freeze, reads log.md), UNTRACKED+present
+# (post-freeze stale render, must read entries/), and ABSENT (post-freeze clean
+# clone, must read entries/). A fixture that only ever has one state (as the
+# suite lacked before this) would stay green even if the predicate were
+# inverted or deleted — see the handoff's own point.
+echo "activity-log-inject.sh / activity-log-remind.sh dual-mode predicate:"
+
+DLM=$(mktemp -d)
+git -C "$DLM" init -q
+git -C "$DLM" config user.email "test@example.com"
+git -C "$DLM" config user.name "test"
+mkdir -p "$DLM/.ai/activity/entries" "$DLM/.ai/handoffs/to-kiro/open"
+
+# TRACKED+present state: log.md committed -> both hooks must read log.md.
+printf '## 2026-01-01 00:00 (UTC+7) - test\n- Action: tracked fixture entry\n' > "$DLM/.ai/activity/log.md"
+git -C "$DLM" add .ai/activity/log.md
+git -C "$DLM" commit -q -m "tracked log.md fixture"
+
+INJECT_OUT=$(cd "$DLM" && bash "$HOOKS_DIR/activity-log-inject.sh" 2>&1)
+if echo "$INJECT_OUT" | grep -q "top of .ai/activity/log.md" && echo "$INJECT_OUT" | grep -q "tracked fixture entry"; then
+  pass=$((pass+1)); echo "  PASS  t51 inject: log.md TRACKED+present -> reads log.md"
+else
+  fail=$((fail+1)); fails+=("t51 inject: log.md TRACKED+present -> reads log.md"); echo "  FAIL  t51 inject: log.md TRACKED+present -> reads log.md"
+fi
+
+REMIND_OUT=$(cd "$DLM" && bash "$HOOKS_DIR/activity-log-remind.sh" 2>&1)
+if ! echo "$REMIND_OUT" | grep -q "no new file in .ai/activity/entries"; then
+  pass=$((pass+1)); echo "  PASS  t52 remind: log.md TRACKED+present -> checks log.md mtime, not entries/"
+else
+  fail=$((fail+1)); fails+=("t52 remind: log.md TRACKED+present -> checks log.md mtime, not entries/"); echo "  FAIL  t52 remind: log.md TRACKED+present -> checks log.md mtime, not entries/"
+fi
+
+# UNTRACKED+present state: log.md exists on disk but is NOT git-tracked (the
+# post-freeze stale-render case) -> both hooks must ignore it and read entries/.
+git -C "$DLM" rm --cached -q .ai/activity/log.md
+git -C "$DLM" commit -q -m "untrack log.md (simulate freeze)"
+printf '## 2026-01-02 00:00Z - kiro - untracked-render-abcd\n- Action: entries fixture (untracked-state)\n' > "$DLM/.ai/activity/entries/20260102T000000Z-kiro-untracked-render-abcd.md"
+# log.md remains present on disk (stale render) but untracked.
+if git -C "$DLM" ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
+  fail=$((fail+1)); fails+=("t53 fixture sanity: log.md must be untracked here"); echo "  FAIL  t53 fixture sanity: log.md must be untracked here"
+else
+  pass=$((pass+1)); echo "  PASS  t53 fixture sanity: log.md is present-but-untracked"
+fi
+
+INJECT_OUT=$(cd "$DLM" && bash "$HOOKS_DIR/activity-log-inject.sh" 2>&1)
+if echo "$INJECT_OUT" | grep -q "entries/" && echo "$INJECT_OUT" | grep -q "entries fixture (untracked-state)"; then
+  pass=$((pass+1)); echo "  PASS  t54 inject: log.md UNTRACKED+present -> reads entries/, ignores stale log.md"
+else
+  fail=$((fail+1)); fails+=("t54 inject: log.md UNTRACKED+present -> reads entries/, ignores stale log.md"); echo "  FAIL  t54 inject: log.md UNTRACKED+present -> reads entries/, ignores stale log.md"
+fi
+
+# ABSENT state: log.md removed entirely (post-freeze clean clone) -> reads entries/.
+rm -f "$DLM/.ai/activity/log.md"
+INJECT_OUT=$(cd "$DLM" && bash "$HOOKS_DIR/activity-log-inject.sh" 2>&1)
+if echo "$INJECT_OUT" | grep -q "entries/" && echo "$INJECT_OUT" | grep -q "entries fixture (untracked-state)"; then
+  pass=$((pass+1)); echo "  PASS  t55 inject: log.md ABSENT -> reads entries/"
+else
+  fail=$((fail+1)); fails+=("t55 inject: log.md ABSENT -> reads entries/"); echo "  FAIL  t55 inject: log.md ABSENT -> reads entries/"
+fi
+
+# B2 regression: outside any git repo, the predicate's stderr (e.g.
+# "fatal: not a git repository") must NOT leak into the injected output —
+# i.e. the `git ls-files` call must redirect stderr, not just stdout.
+NOTGIT=$(mktemp -d)
+mkdir -p "$NOTGIT/.ai/activity/entries" "$NOTGIT/.ai/handoffs/to-kiro/open"
+printf '## 2026-01-03 00:00Z - kiro - notgit-abcd\n- Action: entries fixture (not-a-repo state)\n' > "$NOTGIT/.ai/activity/entries/20260103T000000Z-kiro-notgit-abcd.md"
+INJECT_OUT=$(cd "$NOTGIT" && bash "$HOOKS_DIR/activity-log-inject.sh" 2>&1)
+if ! echo "$INJECT_OUT" | grep -qi "fatal: not a git repository"; then
+  pass=$((pass+1)); echo "  PASS  t56 inject: not-a-repo does not leak git stderr into output"
+else
+  fail=$((fail+1)); fails+=("t56 inject: not-a-repo does not leak git stderr into output"); echo "  FAIL  t56 inject: not-a-repo does not leak git stderr into output"
+fi
+if echo "$INJECT_OUT" | grep -q "entries fixture (not-a-repo state)"; then
+  pass=$((pass+1)); echo "  PASS  t57 inject: not-a-repo falls through to entries/ (fail-direction correct)"
+else
+  fail=$((fail+1)); fails+=("t57 inject: not-a-repo falls through to entries/ (fail-direction correct)"); echo "  FAIL  t57 inject: not-a-repo falls through to entries/ (fail-direction correct)"
+fi
+REMIND_OUT=$(cd "$NOTGIT" && bash "$HOOKS_DIR/activity-log-remind.sh" 2>&1)
+if ! echo "$REMIND_OUT" | grep -qi "fatal: not a git repository"; then
+  pass=$((pass+1)); echo "  PASS  t58 remind: not-a-repo does not leak git stderr into output"
+else
+  fail=$((fail+1)); fails+=("t58 remind: not-a-repo does not leak git stderr into output"); echo "  FAIL  t58 remind: not-a-repo does not leak git stderr into output"
+fi
+
+rm -rf "$DLM" "$NOTGIT"
+
 # --- destructive-cmd-guard ---
 echo "destructive-cmd-guard:"
 run_test "t12 block rm -rf /"              "$HOOKS_DIR/destructive-cmd-guard.sh" '{"tool_input":{"command":"rm -rf /"}}'              2
