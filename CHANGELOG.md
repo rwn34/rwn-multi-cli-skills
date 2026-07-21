@@ -18,6 +18,8 @@ promotion happened.
 
 ## [Unreleased]
 
+- Hardened `.ai/tools/sync-ai-state.sh` `cmd_snapshot()` with a realpath self-collision guard: it now refuses to run when source and destination resolve to the same directory or when the destination is an ancestor of the source, preventing the dispatcher from deleting the canonical `.ai/` tree while snapshotting it.
+- Hardened `.ai/tools/dispatch-handoffs.sh` `sync_back_ai()` to fail closed when `$root/.ai/tools/sync-ai-state.sh` is missing, and to write a dispatch-failure report instead of silently no-oping.
 - Hardened `.ai/tools/render-activity-log.sh` to fail closed: it now refuses to render when the pre-spool archive `.ai/activity/archive/log-pre-spool.md` is missing, so snapshot copies outside a git worktree cannot clobber a live shared log.
 - Updated `.ai/instructions/self-grep-verify/principles.md` Tier 2 to describe the ADR-0010 entry-spool model (`entries/*.md`, written as entry files) and regenerated all replicas.
 - Documented the expected ADR-0016 artifact in `.ai/known-limitations.md`: an executor worktree shows every `.ai/` file as unstaged-deleted after snapshot removal, which is normal and not a canonical deletion signal.

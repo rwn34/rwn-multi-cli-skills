@@ -120,6 +120,30 @@ cmd_snapshot() {
     fi
     [ -d "$src" ] || die "canonical .ai/ missing: $src"
 
+    # Self-collision guard (root cause of the 2026-07-21 canonical .ai/
+    # deletion incident, handoff 202607211105-diagnose-canonical-ai-deletion.md):
+    # this function's very next step is safe_rm_rf "$dst", unconditional. If a
+    # caller ever computes a worktree path that collapses onto (or contains)
+    # the canonical .ai/ itself -- a bad dirname/basename substitution, a
+    # mis-anchored $root from running the dispatcher inside a nested worktree,
+    # etc. -- that rm deletes canonical BEFORE tar ever reads from $src. By the
+    # time tar fails (because $src is now also gone, or missing), the only copy
+    # of the data is already destroyed. Compare resolved realpaths, not string
+    # prefixes, so a symlink/junction/relative-path variant can't slip through.
+    local real_src real_dst
+    real_src="$(cd "$src" 2>/dev/null && pwd -P)" || die "cannot resolve realpath of src: $src"
+    if [ -d "$dst" ]; then
+        real_dst="$(cd "$dst" 2>/dev/null && pwd -P)" || real_dst=""
+        if [ -n "$real_dst" ]; then
+            if [ "$real_src" = "$real_dst" ]; then
+                die "refusing snapshot: src and dst resolve to the same directory ($real_src) -- this would delete the only copy of the data"
+            fi
+            case "$real_src/" in
+                "$real_dst"/*) die "refusing snapshot: dst ($real_dst) is an ancestor of src ($real_src) -- deleting dst would delete src" ;;
+            esac
+        fi
+    fi
+
     # Clean up any stale dirs left by a previous Windows lock.
     cleanup_stale_dirs "$dst"
 
