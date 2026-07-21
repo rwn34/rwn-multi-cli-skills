@@ -6,8 +6,8 @@ share state via `.ai/` so no CLI has to copy-paste another's output to stay cohe
 ## Your identity for the activity log: `kimi-cockpit`
 
 You are the interactive Kimi cockpit session. The bare name `kimi` is the
-headless auto-pane identity; use `kimi-cockpit` for activity-log entries you
-prepend here.
+headless auto-pane identity; use `kimi-cockpit` for activity-log entry files you
+write here.
 
 ## Single source of truth
 
@@ -15,27 +15,32 @@ prepend here.
 files are replicas. If they disagree, `.ai/instructions/` wins — see `.ai/sync.md` to
 regenerate.
 
-## Cross-CLI activity log — `.ai/activity/log.md`
+## Cross-CLI activity log — `.ai/activity/entries/*.md`
 
-**Read** at the start of non-trivial work. Newest entries are at the top — scan recent
-ones to see what other CLIs did here.
+The activity log is an **entry-per-file spool** (ADR-0010). `.ai/activity/log.md`
+is a generated view; do not edit it directly.
 
-**Prepend** one entry after completing substantive work (file edits, running tests,
+**Read** at the start of non-trivial work. List the newest entry files and read the
+relevant ones to see what other CLIs did here.
+
+**Write** one entry file after completing substantive work (file edits, running tests,
 non-obvious decisions, finishing a task):
+
+    .ai/activity/entries/YYYYMMDDTHHMMSSZ-kimi-cockpit-<slug>.md
 
     ## YYYY-MM-DD HH:MM (UTC+7) - kimi-cockpit
     - Action: <one-line summary>
     - Files: <paths, or "-">
     - Decisions: <non-obvious choices, or "-">
 
-**Timestamp rule:** use your current local wall-clock time at the moment you prepend
-the entry — i.e. after the work is finished, not when you started. CLIs running in
+**Timestamp rule:** use your current local wall-clock time at the moment you write
+the file — i.e. after the work is finished, not when you started. CLIs running in
 different timezones or with drifted clocks may produce timestamps that don't sort
-monotonically; **prepend order is the authoritative sequencing**, timestamps are
-annotations.
+monotonically; **filename order is authoritative**, timestamps are annotations.
 
 Terse — one short paragraph max. One entry per substantive action, not per file edit.
-Never rewrite prior entries. Do not log trivial reads.
+Never rewrite or delete prior entries. Regenerate the rendered view with
+`bash .ai/tools/render-activity-log.sh` when you need to inspect it.
 
 ## Cross-CLI handoffs
 
@@ -43,14 +48,14 @@ When another CLI needs you to execute a change in `.kimi/` or in Kimi's portion 
 the shared docs, it writes a paste-ready instruction file to
 `.ai/handoffs/to-kimi/open/YYYYMMDDHHMM-slug.md`. Glance at that directory when a session
 starts or when the user references a handoff. Follow protocol v4 in `.ai/handoffs/README.md`: review, execute the steps,
-prepend an activity-log entry, report back, then self-retire — set the handoff's
+write an activity-log entry file, report back, then self-retire — set the handoff's
 Status to `DONE` and move it from `open/` to `done/` yourself. The sender validates
 post-hoc. If blocked, leave the file in `open/`, set Status to `BLOCKED`, and append
 a `## Blocker` section with the verbatim blocker.
 
 You can send handoffs too — write to `.ai/handoffs/to-claude/open/` or
 `.ai/handoffs/to-kiro/open/` when you need those CLIs to change files in their
-folders. Outbound handoffs follow the same protocol v3 lifecycle; the recipient
+folders. Outbound handoffs follow the same protocol v4 lifecycle; the recipient
 self-retires on completion.
 
 ## Owner delegation — act, don't ask
