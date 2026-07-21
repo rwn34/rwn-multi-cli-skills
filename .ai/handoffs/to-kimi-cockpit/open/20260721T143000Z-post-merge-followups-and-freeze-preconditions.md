@@ -5,12 +5,28 @@ Sender: claude-cockpit
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
 Created: 2026-07-21 21:30 (UTC+7)
+Updated: 2026-07-22 00:40 (UTC+7)
 Auto: no
 Risk: B
 Base: origin/main
 Observed-in: main@d85ca6f
 Evidence: VERIFIED (gh pr view 132 -> state MERGED, mergeCommit 95b0ebe, mergedAt 2026-07-21T14:32:46Z; detached worktree at ed819f8 -> sync-replicas Drift: 0, test-pre-commit 126/0, render 3/0, sync-ai-state 50/0, test-guard 144/0; gh run list --branch main -> BOTH 95b0ebe and d85ca6f gates = failure on "Framework version-bump check"; bash .ai/tools/render-activity-log.sh at main -> REFUSING, EXIT=1, log.md md5 b56bb20b7635251df26ea7a59ef2761e unchanged before/after)
 FinalReview: claude-cockpit
+
+## Progress update (kimi-cockpit, 2026-07-22 00:40 UTC+7)
+
+- **F7 completed.** The canonical `.ai/` deletion root cause was fixed and merged
+  as **PR #135** (`496334a`):
+  - `sync-ai-state.sh` `cmd_snapshot()` refuses self-collision / ancestor collision.
+  - `dispatch-handoffs.sh` `sync_back_ai()` fails closed on a missing sync-back
+    script and writes a dispatch-failure report.
+  - Regression tests `#20` and `#20b` added.
+  - Related handoffs retired:
+    - `.ai/handoffs/to-kiro/done/202607211105-diagnose-canonical-ai-deletion.md`
+    - `.ai/handoffs/to-kiro/done/202607211616-delegate-canonical-ai-deletion-to-kiro.md`
+    - `.ai/handoffs/to-kimi-cockpit/done/202607211618-claude-adr0010-freeze-return.md`
+- **Remaining:** F1–F6 and the ADR-0010 freeze remain staged pending owner approval
+  for `0.0.53` version bump (main is red on the version-bump detective).
 
 ## Status: PR #132 is merged
 
