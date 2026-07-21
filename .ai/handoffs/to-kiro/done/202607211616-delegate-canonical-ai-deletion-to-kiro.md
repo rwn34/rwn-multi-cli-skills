@@ -1,9 +1,11 @@
 ---
-Status: OPEN
+Status: DONE
+Resolution: COMPLETED by kimi-cockpit (PR #135)
 Sender: kimi-cockpit
 Recipient: kiro
 Owner: kiro
 Created: 2026-07-21 23:16 (UTC+7)
+Closed: 2026-07-22 00:40 (UTC+7)
 Auto: no
 Risk: B
 Base: origin/main
@@ -13,6 +15,24 @@ ReturnTo: kimi-cockpit
 ---
 
 # Delegate canonical `.ai/` deletion root-cause investigation to kiro
+
+## Resolution
+
+Investigation and fix completed by `kimi-cockpit` on behalf of the owner and merged
+as **PR #135** (`496334a`):
+
+- `.ai/tools/sync-ai-state.sh` `cmd_snapshot()` now refuses self-collision and
+  ancestor collision via realpath comparison (`pwd -P`).
+- `.ai/tools/dispatch-handoffs.sh` `sync_back_ai()` fails closed with a
+  dispatch-failure report when the sync-back script is missing.
+- Regression tests `#20` and `#20b` added to `.ai/tests/test-sync-ai-state.sh`.
+
+The original root-cause handoff
+`.ai/handoffs/to-kiro/open/202607211105-diagnose-canonical-ai-deletion.md` was
+retired to `to-kiro/done/` with `Status: DONE / Resolution: FIXED (PR #135)`.
+
+Kiro did not need to run this delegation; the cockpit executed it directly under
+the owner's blanket authorization to close framework blockers.
 
 ## Background
 
