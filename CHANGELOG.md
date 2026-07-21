@@ -18,6 +18,8 @@ promotion happened.
 
 ## [Unreleased]
 
+- Added PR-time `## [Unreleased]` bullet gate (`.ai/tools/check-changelog-unreleased.sh`): a pull request that touches versioned framework content must add at least one bullet under `CHANGELOG.md ## [Unreleased]`, closing the hole where a bump-only `main` push silently disabled the version-bump detective (ADR-0012 follow-up).
+
 ## [0.0.52] - 2026-07-21
 
 ### Fixed

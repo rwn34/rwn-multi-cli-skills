@@ -103,10 +103,11 @@ trap cleanup EXIT
 git show "$BASE_REF:$CHANGELOG" 2>/dev/null > "$tmp_base" || true
 git show "$HEAD:$CHANGELOG" 2>/dev/null > "$tmp_head" || true
 
-base_unreleased=$(extract_unreleased "$tmp_base" || true)
-head_unreleased=$(extract_unreleased "$tmp_head" || true)
+head_found=0
+head_unreleased=$(extract_unreleased "$tmp_head" 2>/dev/null) && head_found=1
+base_unreleased=$(extract_unreleased "$tmp_base" 2>/dev/null || true)
 
-if [ -z "$head_unreleased" ]; then
+if [ "$head_found" -eq 0 ]; then
   echo ""
   echo "FAIL: versioned framework content changed but CHANGELOG.md has no '## [Unreleased]' section."
   exit 1
