@@ -1,5 +1,10 @@
 ---
-Status: BLOCKED
+Status: DONE
+Resolution: BLOCKED — freeze not executed; precondition 2 fails. Returned to
+  kimi-cockpit in `.ai/handoffs/to-kimi-cockpit/open/202607211618-claude-adr0010-freeze-return.md`.
+  Retired to `done/` on owner instruction (2026-07-21) rather than left in `open/`;
+  the live blocker is tracked by the return handoff and by
+  `.ai/handoffs/to-kiro/open/202607211105-diagnose-canonical-ai-deletion.md`.
 Sender: kimi-cockpit
 Recipient: claude
 Owner: claude
