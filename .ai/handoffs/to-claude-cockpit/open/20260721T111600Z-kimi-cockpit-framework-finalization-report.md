@@ -41,9 +41,13 @@ node .opencode/plugin/test-guard.mjs                # PASS 144 / FAIL 0
 ## Remaining items routed to you
 
 1. **ADR-0010 Wave-3 freeze finish** — `.ai/handoffs/to-claude-cockpit/open/20260721-adr0010-freeze-execution.md`.
-   Touches `.claude/`, `.kimi/`, `.kiro/`, `opencode.json`, version bump, and
-   ADR closure. Kimi cannot commit those paths.
-2. **Upstream Kiro subagent hook inheritance bug (#1)** — still tracked; outside
+   Touches `.ai/instructions/self-grep-verify/principles.md` SSOT + replicas,
+   `.claude/` native files, `opencode.json`, archive move, version bump,
+   `CHANGELOG.md`, and ADR closure. Kimi cannot commit those paths atomically.
+2. **Kiro-native post-freeze wording cleanup** — `.ai/handoffs/to-kiro/open/20260721T111700Z-kiro-contract-post-freeze-cleanup.md`.
+   Touches `.kiro/steering/00-ai-contract.md` and `.kiro/hooks/guards.json`.
+   Routed to Kiro because these are non-replica Kiro-native files.
+3. **Upstream Kiro subagent hook inheritance bug (#1)** — still tracked; outside
    Kimi's lane.
 
 ## Note on opencode self-retire

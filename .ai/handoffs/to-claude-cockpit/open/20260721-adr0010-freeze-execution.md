@@ -32,45 +32,37 @@ Complete the ADR-0010 Wave-3 freeze: move the project from the prepend-whole-fil
 3. `opencode.json` references the new activity-log protocol.
 4. Framework version is bumped and `CHANGELOG.md` documents the freeze.
 5. `docs/architecture/0010-activity-log-spool.md` (or the relevant ADR) is marked closed/decided.
+6. `.ai/instructions/self-grep-verify/principles.md` SSOT is updated so Tier 2 activity-log discipline describes the entry-spool model, and all replicas are regenerated.
 
 ## Steps
 
-1. In the primary checkout (this repo), switch to or continue on `exec/kimi/20260721-adr0010-freeze-prep`.
+1. In the primary checkout (this repo), switch to or continue on `exec/kimi/20260721-framework-finalization`.
 2. Archive the pre-spool log:
    ```bash
    mkdir -p .ai/activity/archive
    git mv .ai/activity/log.md .ai/activity/archive/log-pre-spool.md
    ```
-3. Ensure `.ai/activity/log.md` is gitignored (already done in edc2183).
-4. Update `.claude/` files that reference prepend/log.md:
-   - `.claude/hooks/stop-reminder.sh`
-   - `.claude/settings.json`
-   - `.claude/agents/orchestrator.md`
-   - `.claude/hooks/README.md`
-   - `.claude/hooks/test_hooks.sh`
+3. Ensure `.ai/activity/log.md` is gitignored (already done in edc2183 / 31fcddd).
+4. Update `.ai/instructions/self-grep-verify/principles.md` SSOT to describe the entry-spool model:
+   - Tier 2 section: change "Entries in `.ai/activity/log.md`" to "Entries in `.ai/activity/entries/*.md`" and "prepended in bulk" to "written as entry files".
+   - Update the committed-object example to grep across `.ai/activity/entries/*.md` rather than reading `.ai/activity/log.md` wholesale.
+5. Run `bash .ai/tools/sync-replicas.sh` to regenerate `.claude/skills/self-grep-verify/SKILL.md`, `.kimi/steering/self-grep-verify.md`, and `.kiro/steering/self-grep-verify.md`. You are the only CLI that can commit all three replica paths atomically with the SSOT change (pre-commit allows claude-code to commit registered replicas under `.kimi/` and `.kiro/`).
+6. Update `.claude/` native files that reference prepend/log.md:
+   - `.claude/hooks/stop-reminder.sh` (reminder 1 pre-freeze branch wording)
+   - `.claude/agents/orchestrator.md` (Activity log section)
+   - `.claude/hooks/README.md` (stop-reminder table row)
+   - `.claude/hooks/test_hooks.sh` (only if still references prepend after replica sync)
    - any `.claude/skills/*` not covered by sync-replicas (operating-prompt/delivery-integrity/self-grep-verify/orchestrator-pattern replicas already regenerated)
-5. Update `.kimi/` files:
-   - `.kimi/steering/00-ai-contract.md`
-   - `.kimi/hooks/activity-log-remind.sh`
-   - `.kimi/hooks/activity-log-inject.sh`
-   - `.kimi/hooks/git-dirty-remind.sh`
-   - `.kimi/hooks/README.md`
-   - `.kimi/hooks/test_hooks.sh`
-6. Update `.kiro/` files:
-   - `.kiro/steering/00-ai-contract.md`
-   - `.kiro/hooks/activity-log-remind.sh`
-   - `.kiro/hooks/activity-log-inject.sh`
-   - `.kiro/hooks/guards.json`
-   - `.kiro/hooks/handoff-queue-count.sh`
-   - `.kiro/hooks/README.md`
-   - `.kiro/hooks/test_hooks.sh`
-   - `.kiro/agents/*.json`
-7. Update `opencode.json` for the new protocol.
-8. Run `bash .ai/tools/sync-replicas.sh --check` and fix any drift.
-9. Bump `.ai/.framework-version` framework_version and installer_version to 0.0.47 (or next appropriate).
+7. Update `.kimi/` native files (Kimi cannot commit these; you can because claude-code is allowed to commit registered replicas, and `.kimi/steering/00-ai-contract.md` plus `.kimi/hooks/*` are NOT replicas — they must be committed by Kimi. **Skip these and route to a separate Kimi handoff if any still need changes.** The current branch already has Kimi's contract/hook updates from commit 297de1a.)
+8. Update `opencode.json` for the new protocol.
+9. Bump `.ai/.framework-version` framework_version and installer_version to the next appropriate version (check current value first).
 10. Add a `CHANGELOG.md` entry under `## Unreleased` documenting the ADR-0010 Wave-3 freeze.
 11. Mark the ADR in `docs/architecture/` as closed/decided (add a "Status: CLOSED" frontmatter line or update the decision section).
 12. Run the verification commands below. If green, commit with a message like `feat(adr0010): Wave-3 freeze — entry spool is the source of truth`.
+
+## What is intentionally NOT in this handoff
+
+- `.kiro/steering/00-ai-contract.md` and `.kiro/hooks/guards.json` still contain "prepend" language. These are **Kiro-native, non-replica files** and cannot be committed by claude-code. They are routed to Kiro in `.ai/handoffs/to-kiro/open/20260721T111700Z-kiro-contract-post-freeze-cleanup.md`.
 
 ## Verification
 
