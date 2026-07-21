@@ -18,6 +18,18 @@ promotion happened.
 
 ## [Unreleased]
 
+## [0.0.52] - 2026-07-21
+
+### Fixed
+
+- Activity-log freeze hooks now decide dual-mode on a **git-tracked** predicate instead of mere file presence (ADR-0010): `.claude/hooks/stop-reminder.sh` and the Kiro hooks `.kiro/hooks/activity-log-inject.sh` / `.kiro/hooks/activity-log-remind.sh` no longer flip a repo into per-entry mode because an untracked local `.ai/activity/entries/` directory happens to exist.
+- `.ai/tools/sync-ai-state.sh` sync-back no longer overwrites or silently drops a canonical `.ai/activity/entries/` file on a filename collision: both sides are preserved (canonical kept untouched, the worktree body copied aside as `<name>.conflict-<hash>.md`), a durable `.sync-conflict-<hash>.marker` is written into canonical `.ai/`, and sync-back returns a distinct exit code 2 so "needs a human" is separable from the deletion-guard's hard-abort exit 1.
+
+### Added
+
+- `.kiro/hooks/test_hooks.sh` — regression coverage for the Kiro activity-log inject/remind hooks in both single-file and dual (per-entry) mode.
+- `.ai/tests/test-sync-ai-state.sh` — coverage for the `entries/` collision guard (preserve-both-sides, marker file, exit 2).
+
 ## [0.0.51] - 2026-07-20
 
 ### Changed
