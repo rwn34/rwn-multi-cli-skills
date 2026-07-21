@@ -1,5 +1,5 @@
 # Test chain v7 — kimi echo child
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: kimi
 Owner: kimi
