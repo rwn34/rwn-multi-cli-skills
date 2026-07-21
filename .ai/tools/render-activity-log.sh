@@ -11,6 +11,12 @@
 #
 # The rendered file is a generated view, not a source of truth. It must NOT be
 # committed; .gitignore should exclude .ai/activity/log.md.
+#
+# Safety: while log.md is still git-tracked (the pre-freeze transition), this
+# script REFUSES to run — rendering then would clobber the live, shared log,
+# which at that point is still the source of truth and has no
+# archive/log-pre-spool.md to recover from. The guard lifts by itself once the
+# ADR-0010 Wave-3 freeze lands (log.md removed from git and gitignored).
 
 set -u
 
@@ -19,6 +25,13 @@ ENTRIES_DIR="$ROOT/.ai/activity/entries"
 ARCHIVE_DIR="$ROOT/.ai/activity/archive"
 OUTPUT="$ROOT/.ai/activity/log.md"
 PRE_SPOOL="$ARCHIVE_DIR/log-pre-spool.md"
+
+if git -C "$ROOT" ls-files --error-unmatch .ai/activity/log.md >/dev/null 2>&1; then
+    echo "render-activity-log: REFUSING — .ai/activity/log.md is still git-tracked (pre-freeze)." >&2
+    echo "  Rendering now would clobber the live shared log. This guard lifts once" >&2
+    echo "  the ADR-0010 freeze lands (log.md removed from git and gitignored)." >&2
+    exit 1
+fi
 
 mkdir -p "$ROOT/.ai/activity"
 
