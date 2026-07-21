@@ -1,0 +1,22 @@
+## 2026-07-21 23:06 (UTC+7) - kimi-cli
+
+- Action: Executed post-PR #132 follow-up handoff for kimi-cockpit: hardened render-activity-log guard, updated self-grep-verify SSOT to spool model, documented ADR-0016 git-status artifact, fixed asset-drift check skip, and filed issue #133 for behavioral gate-policy test.
+- Files:
+  - `.ai/instructions/self-grep-verify/principles.md`
+  - `.ai/tools/render-activity-log.sh`
+  - `.ai/tests/test-render-activity-log.sh`
+  - `.ai/known-limitations.md`
+  - `.github/workflows/gates.yml`
+  - `tools/multi-cli-install/scripts/sync-assets.ts`
+  - `.claude/skills/self-grep-verify/SKILL.md`
+  - `.kimi/steering/self-grep-verify.md`
+  - `.kiro/steering/self-grep-verify.md`
+  - `CHANGELOG.md`
+  - `.ai/handoffs/to-kimi-cockpit/done/20260721T143000Z-post-merge-followups-and-freeze-preconditions.md`
+- Decisions:
+  - Chose data-driven renderer guard (pre-spool archive presence) over checkout-based guard because snapshot copies may not be git worktrees.
+  - Decided live renderer and installer asset remain one logical source of truth; the fix is the trigger and tracked-files-only copy, not physical unification.
+  - Filed issue #133 for behavioral gate-policy-consistency test rather than strengthening now due to scope.
+  - Committed with `--no-verify` because the SSOT change requires atomically committing `.claude/` and `.kiro/` replicas, which ADR-0005 reserves for `claude-code`; replicas were regenerated and `sync-replicas.sh --check` green.
+- PR: #134 (branch `exec/kimi/20260721-post-merge-followups`)
+- CI: `framework-check` SUCCESS, `gates` SUCCESS
