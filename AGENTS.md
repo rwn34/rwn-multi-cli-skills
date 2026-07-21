@@ -68,7 +68,8 @@ items listed above.
 - `.ai/README.md` — full layout explanation
 - `.ai/cli-map.md` — how each CLI's native concepts map to the shared framework
 - `.ai/instructions/` — canonical (SSOT) portable behavioural rules
-- `.ai/activity/log.md` — append-only cross-CLI activity ledger
+- `.ai/activity/entries/*.md` — per-entry activity-log spool (ADR-0010)
+- `.ai/activity/log.md` — generated human-readable view; render with `bash .ai/tools/render-activity-log.sh`; do not edit directly
 
 ## Per-CLI contract entry points
 
@@ -116,15 +117,15 @@ must never auto-promote to production. Full conditions: `.opencode/contract.md`.
 `.opencode/plugin/framework-guard.js`; everything not listed is denied:
 
 <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
-- `.ai/activity/log.md`
 - `.ai/activity/entries/**`
 - `.ai/reports/**`
 - `.ai/handoffs/**`
 - `.github/**`
 <!-- LANE:END -->
 
-`.ai/activity/entries/**` is permission plumbing for the ADR-0010 activity-log
-spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today.
+`.ai/activity/entries/**` is the ADR-0010 activity-log spool. Each CLI writes
+one Markdown file per substantive action and runs `bash .ai/tools/render-activity-log.sh`
+to regenerate the human-readable `.ai/activity/log.md` view locally.
 
 `.github/**` is the only source-adjacent path in the lane. Project source,
 `.claude/`, `.kimi/`, `.kiro/`, `.ai/instructions/` (SSOT), `docs/architecture/`
@@ -133,21 +134,22 @@ spool. Nothing has migrated: log by prepending to `.ai/activity/log.md` as today
 
 ## Activity log protocol (same for all CLIs)
 
-**Never read `.ai/activity/log.md` wholesale.** It is ~600 KB / 2,100+ lines
-(370+ entries) and grows ~5–10 KB/day; a full read costs ~125k tokens on almost
-entirely irrelevant history. Newest entries are at the **top**, so everything you
-actually need sits in the first few dozen lines.
+The activity log is now an **entry spool** under `.ai/activity/entries/*.md`
+(ADR-0010). Each entry is a separate file; `.ai/activity/log.md` is a generated
+view produced by `bash .ai/tools/render-activity-log.sh`.
 
-- **Recent activity** → if your CLI injects the top of the log into context each
-  turn (Claude Code's `UserPromptSubmit` hook does), it is **already in your
-  context before you ask** — use it, do not re-read. If your CLI has no inject
-  hook (OpenCode), read only a **bounded top window** (`head -40
-  .ai/activity/log.md`, or a `Read` with `limit`) — that bounded read *is* the
-  "read at the start of non-trivial work" step.
-- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded
-  read with `limit`/`offset`. Never the whole file, never `cat`.
+- **Recent activity** → list the newest entry files (`ls -1 .ai/activity/entries | tail -5`)
+  and read only the ones relevant to your task. If your CLI has no inject hook
+  (OpenCode), read the rendered view with a bounded window (`head -40
+  .ai/activity/log.md`). Never read the whole log wholesale.
+- **Specific history** → `grep -rn "<topic>" .ai/activity/entries/` or a bounded
+  read of the rendered log.
 
-- **Prepend** one terse entry after substantive work. Format:
+- **Write** one terse entry file after substantive work. Filename (UTC basic ISO):
+
+        .ai/activity/entries/YYYYMMDDTHHMMSSZ-<identity>-<slug>.md
+
+  Format:
 
         ## YYYY-MM-DD HH:MM (UTC+7) - <cli-name>
         - Action: <one-line summary>
@@ -155,12 +157,13 @@ actually need sits in the first few dozen lines.
         - Decisions: <non-obvious choices, or "-">
 
 **Timestamp rule:** the `HH:MM` is your current UTC+7 wall-clock time at the moment
-you prepend — i.e. finish time of the work, not start time. CLIs on different local
-clocks may produce timestamps that don't sort monotonically; prepend order is
-authoritative, timestamps are annotations.
+you write the file — i.e. finish time of the work, not start time. CLIs on different
+local clocks may produce timestamps that don't sort monotonically; filename order
+is authoritative, timestamps are annotations.
 
-Never rewrite prior entries. Do not log trivial reads. Use your CLI's identity name
-(see your contract file).
+Never rewrite or delete prior entries. Do not log trivial reads. Use your CLI's
+identity name (see your contract file). Regenerate the rendered view after writing
+entries if you need to inspect it.
 
 ## Cross-CLI handoffs
 
@@ -192,11 +195,12 @@ with a continuation artifact for anything unfinished. Full rule:
 ## Self-grep-verify (claims must be grounded in the tree)
 
 When a CLI claims completed work — in a completion handoff to
-`.ai/handoffs/to-<other>/open/`, in an `.ai/activity/log.md` entry, or in a
-chat message — every concrete claim must be backed by a `rg`/`grep` snippet
-showing the actual line(s) in the working tree. Enforcement is asymmetric:
-strict for handoffs (where another CLI builds on the work), medium for activity
-log entries, soft for chat (where the user catches drift live).
+`.ai/handoffs/to-<other>/open/`, in an `.ai/activity/entries/*.md` file or the
+generated `.ai/activity/log.md`, or in a chat message — every concrete claim must
+be backed by a `rg`/`grep` snippet showing the actual line(s) in the working tree.
+Enforcement is asymmetric: strict for handoffs (where another CLI builds on the
+work), medium for activity-log entries, soft for chat (where the user catches
+drift live).
 
 Full rule: `.ai/instructions/self-grep-verify/principles.md`.
 

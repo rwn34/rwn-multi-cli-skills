@@ -79,25 +79,20 @@ written rules are the intent behind those guards:
 3. **Your writable lane is ONLY these paths** — everything else is denied by
    default:
 
-   <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/plugin/framework-guard.js by test-guard.mjs. Change both together or the guard suite fails. -->
-   - `.ai/activity/log.md`
+   <!-- LANE:BEGIN — machine-checked against WRITABLE_LANE in .opencode/lib/lane.js by test-guard.mjs. Change both together or the guard suite fails. -->
    - `.ai/activity/entries/**`
    - `.ai/reports/**`
    - `.ai/handoffs/**`
    - `.github/**`
    <!-- LANE:END -->
 
-   `.ai/activity/log.md` = prepend entries. `.ai/reports/**` = your reports.
+   `.ai/activity/entries/**` = ADR-0010 activity-log spool: write one Markdown
+   file per substantive action, then run `bash .ai/tools/render-activity-log.sh`
+   to regenerate the human-readable view. `.ai/reports/**` = your reports.
    `.ai/handoffs/**` = handoff protocol files. `.github/**` = the CI/DevOps
    config half of your GitHub / repo-ops lane (workflows, actions, issue
    templates) — added 2026-07-12, because the lane above assigns you CI/workflow
    fixes and the guard used to block them (handoff 202607120021).
-
-   `.ai/activity/entries/**` is the future entry-per-file activity spool
-   (ADR-0010) — added 2026-07-12 as **permission plumbing only**, so the spool is
-   landable. **Nothing has migrated yet: keep logging exactly as you do today, by
-   prepending to `.ai/activity/log.md`.** The day the protocol flips, the lane
-   will already allow it instead of silently swallowing your entries.
 
    **`.github/**` is the ONLY source-adjacent path you may write.** `infra/`,
    `scripts/`, `Dockerfile`, `docker-compose*` are *not* in your lane even though
@@ -165,28 +160,30 @@ conflicts with it, `.ai/instructions/` wins. Your files (`.opencode/`,
 including this contract) are maintained by Claude Code as custodian — request
 changes via `.ai/handoffs/to-claude/open/`.
 
-## Cross-CLI activity log — `.ai/activity/log.md`
+## Cross-CLI activity log — `.ai/activity/entries/*.md`
 
-**Never read this file wholesale.** It is ~600 KB / 2,100+ lines (370+ entries)
-and grows ~5–10 KB/day; a full read costs ~125k tokens on history that is almost
-entirely irrelevant to your task. Newest entries are at the **top**, so what you
-need is in the first few dozen lines.
+The activity log is an **entry-per-file spool** (ADR-0010). `.ai/activity/log.md`
+is a generated view; do not edit it directly.
 
-- **Recent activity** (the "read at the start of non-trivial work" step) → read a
-  **bounded top window only**: `head -40 .ai/activity/log.md`. Unlike Claude Code,
-  you have no hook that pre-injects the log into your context, so this bounded read
-  is your one fetch — keep it bounded.
-- **Specific history** → `grep -n "<topic>" .ai/activity/log.md`, or a bounded read
-  with a limit/offset. Never `cat` the file, never read it end-to-end.
+- **Recent activity** (the "read at the start of non-trivial work" step) → list
+  the newest entry files (`ls -1 .ai/activity/entries | tail -5`) and read only
+  the relevant ones. If you need a rendered view, read a bounded window only:
+  `head -40 .ai/activity/log.md`.
+- **Specific history** → `grep -rn "<topic>" .ai/activity/entries/`, or a bounded
+  read of the rendered log. Never `cat` the file end-to-end.
 
-**Prepend** one entry after substantive work:
+**Write** one entry file after substantive work:
+
+    .ai/activity/entries/YYYYMMDDTHHMMSSZ-opencode-<slug>.md
 
     ## YYYY-MM-DD HH:MM — opencode
     - Action: <one-line summary>
     - Files: <paths, or "—">
     - Decisions: <non-obvious choices, or "—">
 
-`HH:MM` = local wall-clock at finish time. Never rewrite prior entries.
+`HH:MM` = local wall-clock at finish time. Never rewrite or delete prior entries.
+Regenerate the rendered view with `bash .ai/tools/render-activity-log.sh` when
+you need to inspect it.
 
 ## Cross-CLI handoffs
 

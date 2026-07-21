@@ -96,21 +96,30 @@ here — the fleet keeps paying for Linux assumptions.
 `.ai/instructions/` is canonical. Your `.claude/skills/...` files are replicas. If they
 disagree, `.ai/instructions/` wins — see `.ai/sync.md` to regenerate.
 
-## Cross-CLI activity log — `.ai/activity/log.md`
+## Cross-CLI activity log — `.ai/activity/entries/`
 
-**Do NOT `Read` this file wholesale.** It is ~600 KB / 2,100+ lines and grows
-~5–10 KB/day; reading it costs ~125k tokens and is almost entirely irrelevant
+The activity log is an **entry-per-file spool** (ADR-0010). Each entry is a
+standalone file in `.ai/activity/entries/`; `.ai/activity/log.md` is a generated
+view, not a source of truth.
+
+**Do NOT list or read the entries directory wholesale.** It grows by one file per
+substantive action across all CLIs; a full scan is almost entirely irrelevant
 history. The `UserPromptSubmit` hook **already injects the newest entries into
-your context on every single turn** — you have them before you ask. A wholesale
-`Read` re-fetches what you were just given.
+your context on every single turn** — you have them before you ask.
 
 - **Recent activity** → already in your context. Use it; do not re-read.
-- **Specific history** → `grep` for the term (`grep -n "<topic>" .ai/activity/log.md`),
-  or read a bounded window (`Read` with `limit`/`offset`). Never the whole file.
-- Newest entries are at the top.
+- **Specific history** → `grep` for the term in the spool:
+  `grep -R -n "<topic>" .ai/activity/entries/`, or render and read a bounded
+  window (`bash .ai/tools/render-activity-log.sh` then `Read` with `limit`/`offset`).
+  Never the whole rendered file.
+- Newest entries have the lexicographically largest UTC filename.
 
-**Prepend** one entry after completing substantive work (file edits, running tests,
-non-obvious decisions, finishing a task):
+**Write** one entry file after completing substantive work (file edits, running tests,
+non-obvious decisions, finishing a task). Filename scheme (UTC, ISO-8601 basic form):
+
+    .ai/activity/entries/YYYYMMDDTHHMMSSZ-<identity>-<slug>-<rand4>.md
+
+Body format (unchanged):
 
     ## YYYY-MM-DD HH:MM (UTC+7) — claude-cockpit
     - Action: <one-line summary>
@@ -121,12 +130,11 @@ Use `claude` instead of `claude-cockpit` when the work was performed in headless
 auto-pane mode (`AI_HANDOFF_AUTO=1`).
 
 **Timestamp rule:** `HH:MM` = your current local wall-clock time at the moment you
-prepend (finish time of the work, not start time). Prepend order is the authoritative
-sequencing across CLIs; timestamps are annotations and may not sort monotonically if
-clocks drift.
+finish the work (not start time). Sort order is filename order (UTC timestamp);
+timestamps are annotations and may not sort monotonically if clocks drift.
 
 Terse — one short paragraph max. One entry per substantive action, not per file edit.
-Never rewrite prior entries. Do not log trivial reads.
+Never rewrite prior entries or prepend to `.ai/activity/log.md`. Do not log trivial reads.
 
 ## Cross-CLI handoffs
 
@@ -172,7 +180,7 @@ Folders matching `.ai/**/archive/` (`.ai/activity/archive/`,
 historical content that has been rolled out of the live files. Do NOT read them
 in routine operations — not for activity-log scans, research lookups, or any
 automatic glance. The `UserPromptSubmit` hook only injects from
-`.ai/activity/log.md`, so the archive is already skipped in the auto path.
+`.ai/activity/entries/`, so the archive is already skipped in the auto path.
 
 Only read archive folders when the user explicitly references historical activity
 or archived research (e.g., "what did we decide in Q1?", "pull up the old
