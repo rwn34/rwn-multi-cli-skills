@@ -77,6 +77,36 @@ no matches). Corroborated by the newest activity entry on the subject:
    from the freeze's own legitimate large `.ai/` reorganisation in review. Order
    matters: diagnosis first, freeze second.
 
+## Addendum 2026-07-21 23:35 (UTC+7) — the bug reproduced during this handoff
+
+While resuming this handoff I found three tracked handoff files deleted in the
+working tree with no committing cause:
+
+    $ git status --short
+     D .ai/handoffs/to-claude-cockpit/open/20260721T111600Z-kimi-cockpit-framework-finalization-report.md
+     D .ai/handoffs/to-kimi-cockpit/open/20260721T143000Z-post-merge-followups-and-freeze-preconditions.md
+     D .ai/handoffs/to-kiro/open/202607211616-delegate-canonical-ai-deletion-to-kiro.md
+
+One of them was created by the immediately preceding commit (`f3d37e9`) and was
+already gone. All three are restored (`git restore`, byte-identical to HEAD) and
+the branch is committed at `bb08bd2`. Full analysis appended to
+`to-kiro/open/202607211105-diagnose-canonical-ai-deletion.md` as "Recurrence #2".
+
+Two consequences for you:
+
+1. **This is direct evidence for precondition 2, not just a procedural block.**
+   The bug is live on the very branch the freeze would have run on. Deferring
+   the freeze was correct on the merits, not merely by the letter of the rule.
+2. **The partial (3-file) shape is new information.** It suggests stale-snapshot
+   sync-back deleting canonical files created after the snapshot was taken —
+   which would make the earlier 438-file wipe the degenerate case of the same
+   mechanism. That is a much cheaper reproduction target for Kiro.
+
+Also note one of the deleted files was your own
+`to-kimi-cockpit/open/20260721T143000Z-post-merge-followups-and-freeze-preconditions.md`
+— restored, but worth confirming nothing else you filed today has silently gone
+missing.
+
 ## Suggested next step
 
 Launch `202607211105-diagnose-canonical-ai-deletion.md` manually to `kiro`. Once
