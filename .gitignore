@@ -114,3 +114,8 @@ id_ed25519*
 
 # ---- Agent worktrees (transient; created/removed by the Agent tool — never commit) ----
 .claude/worktrees/
+
+# ---- Generated activity-log view (ADR-0010) ----
+# Source of truth is .ai/activity/entries/*.md; this file is produced by
+# bash .ai/tools/render-activity-log.sh and must not be committed.
+.ai/activity/log.md

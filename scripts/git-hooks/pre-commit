@@ -317,8 +317,14 @@ if [ -n "$entry_deletions" ]; then
     exit 1
 fi
 
-# Reject any attempt to commit the generated view .ai/activity/log.md.
-log_staged="$(git diff --cached --name-only -- .ai/activity/log.md 2>/dev/null)"
+# Reject any attempt to commit CONTENT for the generated view .ai/activity/log.md.
+# --no-renames --diff-filter=d deliberately exempts REMOVING the path: the ADR-0010
+# Wave-3 freeze archives the pre-spool log with `git mv log.md archive/log-pre-spool.md`,
+# and a plain --name-only check matched that rename's old path, so this guard blocked
+# the very freeze it exists to enforce. --no-renames decomposes the rename into
+# D(old)+A(new) and --diff-filter=d drops the D, while a genuine add/modify of the
+# generated view is still an A/M and is still refused.
+log_staged="$(git diff --cached --no-renames --name-only --diff-filter=d -- .ai/activity/log.md 2>/dev/null)"
 if [ -n "$log_staged" ]; then
     {
         echo "=============================================================================="

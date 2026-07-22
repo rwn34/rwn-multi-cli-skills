@@ -2,7 +2,18 @@
 
 ## Status
 
-Accepted (owner-approved 2026-07-11)
+**CLOSED (Wave-3 freeze landed 2026-07-22).** Previously: Accepted
+(owner-approved 2026-07-11).
+
+The freeze described in §6 / "Order of operations" step 2 is complete.
+`.ai/activity/log.md` was moved verbatim (`git mv`, no content transformation) to
+`.ai/activity/archive/log-pre-spool.md`, is no longer tracked by git, and is
+listed in `.gitignore` as a generated artifact. It is now produced on demand by
+`bash .ai/tools/render-activity-log.sh` from `.ai/activity/entries/*.md`, which
+is the sole source of truth for cross-CLI activity. Nothing may prepend to, edit,
+or commit the rendered view; the `scripts/git-hooks/pre-commit` guard rejects
+staging it. Remaining Kiro-native contract wording (`.kiro/steering/`,
+`.kiro/hooks/`) is tracked in its own handoff and does not gate this closure.
 
 This ADR **closes the follow-up that ADR-0004's Amendment (2026-07-11)
 explicitly scoped out**: "The activity-log write race (above) needs its own

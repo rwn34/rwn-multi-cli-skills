@@ -451,6 +451,26 @@ EOF
     pf "commit staging generated .ai/activity/log.md is REFUSED" "$([ $hrc -ne 0 ] && echo 0 || echo 1)"
     printf '%s' "$hout" | grep -q "generated activity-log view"
     pf "refusal names the generated-view gate" "$?"
+
+    echo "== activity-log gate: ARCHIVING the generated log.md is ALLOWED (ADR-0010 freeze) =="
+    # The Wave-3 freeze is `git mv .ai/activity/log.md .ai/activity/archive/log-pre-spool.md`.
+    # The gate must exempt removal of the path, or it blocks the freeze it enforces.
+    d="$(mkrepo)"
+    git -C "$d" config user.name claude-code
+    mkdir -p "$d/.ai/activity/archive"
+    cat > "$d/.ai/activity/log.md" <<'EOF'
+## 2026-07-17 10:00 (UTC+7) — claude-code
+- Action: pre-spool history
+
+EOF
+    git -C "$d" add .ai/activity/log.md >/dev/null 2>&1
+    git -C "$d" commit -q --amend -m init --no-verify >/dev/null 2>&1
+    # -f: mkrepo copies the real tree, which already carries an archived log.
+    mvout="$(git -C "$d" mv -f .ai/activity/log.md .ai/activity/archive/log-pre-spool.md 2>&1)"
+    hout="$(cd "$d" && git commit -m "feat: archive pre-spool activity log" 2>&1)"; hrc=$?
+    pf "commit archiving .ai/activity/log.md via git mv is ALLOWED" "$([ $hrc -eq 0 ] && echo 0 || echo 1)"
+    [ $hrc -eq 0 ] || printf '      git mv: %s\n      commit: %s\n' "$mvout" "$hout"
+
     echo "== regression: sync-replicas aborts when an SSOT source has skip-worktree =="
     d="$(mkrepo)"
     git -C "$d" update-index --skip-worktree .ai/instructions/karpathy-guidelines/principles.md
