@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hook: open handoff queue-counts at Stop (kimi-cli) — gap B4.
+# Hook: open handoff queue-counts at Stop (kimi) — gap B4.
 # Mirrors Claude's stop-reminder.sh "Reminder 1b": print per-queue open counts
 # across every to-*/open queue so each turn end is a poll point. Non-blocking
 # (exit 0); stdout is injected into the agent's context.

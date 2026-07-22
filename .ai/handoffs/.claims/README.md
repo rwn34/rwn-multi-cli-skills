@@ -8,10 +8,9 @@ state and is gitignored (see repo `.gitignore`) - never commit a `.claim.json`.
   is `claude|kimi|kiro|opencode` and `handoff-basename` is the handoff filename
   without its `.md` extension.
 - **Content:** `{ "handoff": "<basename>", "recipient": "<recipient>",
-  "owner": "<claude-code|claude-auto|kimi-cli|kiro-cli|opencode>", "pid": <int>,
+  "owner": "<claude-cockpit|claude|kimi-cockpit|kimi|kiro|opencode>", "pid": <int>,
   "host": "<hostname>", "claimed_at": "<UTC ISO-8601>" }`. `owner` distinguishes
-  the two Claude instances (`claude-code` = interactive app-Claude,
-  `claude-auto` = headless reviewer pane).
+  the cockpit and auto-pane instances of the recipient CLI (e.g. `claude-cockpit` = interactive cockpit, `claude` = headless auto pane).
 - **Acquire (atomic):** create the sidecar with an exclusive-create open
   (fails if it already exists). Win = you may run the handoff; lose = skip it.
 - **Check:** a claim is LIVE only if its `pid` is alive on the same `host` AND

@@ -3,7 +3,7 @@
 **Status:** plan, pre-implementation
 **Scope:** Node installer at `tools/multi-cli-install/` only. Bash installer (`scripts/install-template.sh`) stays first-install-only legacy.
 **Target release:** `0.0.3` (Phase A) and `0.1.0` (Phases B–F).
-**Author:** Plan agent under claude-code orchestrator, 2026-05-29.
+**Author:** Plan agent under claude orchestrator, 2026-05-29.
 
 ## 1. Problem statement
 

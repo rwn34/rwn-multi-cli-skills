@@ -175,9 +175,9 @@ it, and our writers are LLMs following prose.
 shared one.**
 
 ```
-.ai/activity/entries/20260711T222901Z-kiro-cli-dispatch-worktree-a3f9.md
-.ai/activity/entries/20260711T222417Z-kimi-cli-sync-s14-7c10.md
-.ai/activity/entries/20260711T153512Z-claude-code-delegation-economics-b2e5.md
+.ai/activity/entries/20260711T222901Z-kiro-dispatch-worktree-a3f9.md
+.ai/activity/entries/20260711T222417Z-kimi-sync-s14-7c10.md
+.ai/activity/entries/20260711T153512Z-claude-cockpit-delegation-economics-b2e5.md
 ```
 
 `.ai/activity/log.md` **stops being a source of truth** and becomes a generated,
@@ -191,8 +191,8 @@ enforcement layer does not reach.
     .ai/activity/entries/<YYYYMMDDTHHMMSSZ>-<cli-identity>-<slug>-<rand4>.md
 
 - **Timestamp: UTC, second precision, ISO-8601 basic form.**
-- **`<cli-identity>`:** the logging identity (`claude-code`, `claude-auto`,
-  `kimi-cli`, `kiro-cli`, `opencode`) — the same value that appears in the entry
+- **`<cli-identity>`:** the logging identity (`claude-cockpit`, `claude`,
+  `kimi`, `kiro`, `opencode`) — the same value that appears in the entry
   heading.
 - **`<slug>`:** short kebab-case topic, for humans skimming `ls`.
 - **`<rand4>`:** four lowercase hex characters, freshly random per entry.
@@ -214,9 +214,9 @@ which is what makes the renderer a plain `sort -r`.
 
 **Why second precision *and* a random suffix.** Second precision alone is not
 enough. Two *seats of the same CLI* run concurrently by design — ADR-0009 puts
-an interactive Claude and a `claude-auto` worker in the fleet, and its
+an interactive Claude and a `claude` worker in the fleet, and its
 Amendment (2026-07-10) does the same for Kimi (interactive top cockpit +
-`kimi-auto` bottom worker). Identity alone does not separate them if a seat logs
+`kimi` bottom worker). Identity alone does not separate them if a seat logs
 under the same identity string. The 4-hex suffix removes the entire class of
 reasoning for 5 characters. It is deliberately **not** a pid and **not** an
 atomic-create loop: entries are written by an LLM calling its `Write`/`fs_write`
@@ -447,8 +447,8 @@ Other costs:
 - **(C) Per-CLI log shards** — `log-claude.md`, `log-kimi.md`, `log-kiro.md`,
   `log-opencode.md`; each CLI prepends only to its own file, and readers merge.
   **Rejected.** It does not actually eliminate the shared write: **two seats of
-  the same CLI run concurrently by design** (ADR-0009: `claude-code` +
-  `claude-auto`; Amendment 2026-07-10: interactive Kimi + `kimi-auto`), so two
+  the same CLI run concurrently by design** (ADR-0009: `claude-cockpit` +
+  `claude`; Amendment 2026-07-10: interactive Kimi + `kimi`), so two
   processes still rewrite one shard. It shrinks the race window without closing
   it — the worst kind of fix, because it makes the remaining race rarer and
   therefore harder to believe in. And it forces every reader (and the injection

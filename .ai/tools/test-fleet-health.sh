@@ -64,7 +64,7 @@ mkhandoff() {
   cat > "$dir/open/$3.md" <<EOF
 # Test handoff $3
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: $2
 Created: $5
 Auto: yes

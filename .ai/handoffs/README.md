@@ -284,7 +284,7 @@ surfaces counts, or when `fleet-health.sh` reports a STALL/WEDGED pane.
 In handoff status blocks:
 
 - `Sender:` / `Recipient:` / `Owner:` should use the six-actor identity (e.g.
-  `kimi`, `claude-cockpit`). Bare `kimi-cli` or `claude-code` are
+  `kimi`, `claude-cockpit`). Legacy binary names like `kimi-cli` or `claude-code` are
   ambiguous — they do not say whether the actor is the cockpit or the auto pane.
 - `Auto:` remains the single mechanical ownership boundary:
   - `Auto: yes` + Risk A/B → owned by the auto pane.

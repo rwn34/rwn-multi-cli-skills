@@ -227,7 +227,7 @@ primary checkout.
 
 ## Kiro CLI — subagent hook inheritance broken
 
-**Status:** Open. Confirmed empirically 2026-04-19 21:22 by kiro-cli.
+**Status:** Open. Confirmed empirically 2026-04-19 21:22 by kiro.
 
 **What:** `.kiro/agents/*.json` subagent configs correctly declare a `hooks`
 section (wired Wave 4c per handoff 015), but Kiro CLI runtime does NOT fire
@@ -289,7 +289,7 @@ runtime fix is the only hard guarantee.
 
 ## Code graph index staleness (CodeGraph)
 
-**Status:** Characterized 2026-04-26 by kimi-cli. **Scope reduced 2026-07-09:**
+**Status:** Characterized 2026-04-26 by kimi. **Scope reduced 2026-07-09:**
 KimiGraph and KiroGraph were removed entirely (owner directive, ADR-0003
 amendment — single-graph topology), which also retires the KiroGraph
 subagent-hook staleness path below. CodeGraph (Claude) is the only graph.
@@ -314,7 +314,7 @@ writes (platform bug #7671); KimiGraph used `fs.watch`. Both tools removed
 
 ## multi-cli-install v0.0.1 — fixture-only validation (no real-project surface)
 
-**Status:** Characterized 2026-04-27 by claude-code (orchestrator).
+**Status:** Characterized 2026-04-27 by claude (orchestrator).
 
 **What:** `tools/multi-cli-install/` v0.0.1 (the new Node.js installer at
 `npx @rwn34/multi-cli-install`) was validated against fixture projects only —
@@ -354,7 +354,7 @@ v0.x → v1.0.0 stabilization.
 
 ## KiroGraph — `kirograph install` hangs on interactive prompts in non-TTY
 
-**Status:** Characterized 2026-04-26 by kiro-cli during Phase B Part A install.
+**Status:** Characterized 2026-04-26 by kiro during Phase B Part A install.
 **RESOLVED BY REMOVAL 2026-07-09:** KiroGraph was removed entirely (owner
 directive, ADR-0003 amendment) — this limitation is retired with it. Entry
 kept as historical record only.
@@ -384,7 +384,7 @@ adoption, file upstream.
 
 ## Kimi CLI — bash guards wired into global config
 
-**Status:** Characterized 2026-04-19 22:30 by kimi-cli (handoff 031). Snippet created 2026-04-19 23:30 (handoff 032). **Pasted and wired 2026-04-20.**
+**Status:** Characterized 2026-04-19 22:30 by kimi (handoff 031). Snippet created 2026-04-19 23:30 (handoff 032). **Pasted and wired 2026-04-20.**
 
 **What:** Kimi's 4 bash guard scripts (`.kimi/hooks/root-guard.sh`,
 `framework-guard.sh`, `sensitive-guard.sh`, `destructive-guard.sh`) exist,
@@ -446,7 +446,7 @@ to Kimi collided with Claude's 026 to Kimi.
 ## Concurrent activity-log writes
 
 **Status: RESOLVED by ADR-0010 Wave-3 (2026-07-21).** Historical note: first
-observed clobber 2026-07-13, found by claude-code while processing
+observed clobber 2026-07-13, found by claude while processing
 `to-claude/202607130206-activity-log-daily-rotation`.
 
 **Risk (historical):** four CLIs prepending to `.ai/activity/log.md`
@@ -470,7 +470,7 @@ distinct file, so concurrent writes cannot clobber each other. The rendered
   its three body lines (`- Action:` / `- Files:` / `- Decisions:`) survived —
   an orphaned body with no owner. Two CLIs prepended in between (09:42 kiro,
   09:55 claude); one of those whole-file rewrites dropped the line.
-- Repaired 2026-07-13 by claude-code by restoring the exact header line from the
+- Repaired 2026-07-13 by claude by restoring the exact header line from the
   `9371a40` blob (recovered, not reconstructed).
 
 **Why worktrees help now:** under the ADR-0016 snapshot-copy model,
@@ -488,7 +488,7 @@ itself is the structural fix.
 
 ## Annotated tag SHA comparisons — peel before diffing
 
-**Status:** Characterized 2026-05-28 by claude-code (orchestrator) after a false-alarm divergence triggered an unnecessary v0.0.2-pre.4 → pre.5 bump.
+**Status:** Characterized 2026-05-28 by claude (orchestrator) after a false-alarm divergence triggered an unnecessary v0.0.2-pre.4 → pre.5 bump.
 
 **What:** This project's `release.yml` workflow produces **annotated** git tags
 (not lightweight). An annotated tag is a separate git object with its own SHA
@@ -544,7 +544,7 @@ when the false alarm triggers a precautionary version bump.
 
 ## Fleet supervision stops when the machine is off or asleep
 
-**Status:** Accepted limit (owner decision 2026-07-12 — record it, do not solve it). Recorded 2026-07-13 by kimi-cli with the fleet-supervisor build (handoff `to-kimi/202607122130`).
+**Status:** Accepted limit (owner decision 2026-07-12 — record it, do not solve it). Recorded 2026-07-13 by kimi with the fleet-supervisor build (handoff `to-kimi/202607122130`).
 
 **What:** The OS-level fleet supervisor (`tools/4ai-panes/fleet-supervisor.ps1`, a Windows Task Scheduler task) detects dead pane-runners, alerts the owner, and relaunches the fleet — but only while the machine is running and the user is logged on.
 
@@ -609,7 +609,7 @@ queue before peer review ran.
 **Mitigation in effect:**
 
 - The cockpit/auto workflow doc (`docs/specs/saja-akun-cli-workflow.md`) states
-  that review is a precondition: the cockpit (or `claude-auto`) must not create
+  that review is a precondition: the cockpit (or `claude`) must not create
   the final-review handoff until the peer-review handoff is retired to `done/`.
 - The activity log is the audit trail: a final-review entry should reference the
   retired peer-review handoff filename.

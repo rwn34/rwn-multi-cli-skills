@@ -208,7 +208,7 @@ describe('manifest: buildManifestFromInstalledTree', () => {
     // runtime state — must be excluded
     writeFile(join(root, '.ai/handoffs/to-claude/open/dummy.md'), 'handoff\n');
     writeFile(join(root, '.ai/activity/log.md'), 'log\n');
-    writeFile(join(root, '.ai/activity/entries/20260713T000000Z-kimi-cli-x-a1b2.md'), 'entry\n');
+    writeFile(join(root, '.ai/activity/entries/20260713T000000Z-kimi-x-a1b2.md'), 'entry\n');
     writeFile(join(root, '.ai/reports/r.md'), 'report\n');
     writeFile(join(root, '.ai/research/foo.md'), 'research\n');
     writeFile(join(root, '.archive/old.md'), 'archived\n');
@@ -225,7 +225,7 @@ describe('manifest: buildManifestFromInstalledTree', () => {
 
     expect(keys).not.toContain('.ai/handoffs/to-claude/open/dummy.md');
     expect(keys).not.toContain('.ai/activity/log.md');
-    expect(keys).not.toContain('.ai/activity/entries/20260713T000000Z-kimi-cli-x-a1b2.md');
+    expect(keys).not.toContain('.ai/activity/entries/20260713T000000Z-kimi-x-a1b2.md');
     expect(keys).not.toContain('.ai/reports/r.md');
     expect(keys).not.toContain('.ai/research/foo.md');
     expect(keys).not.toContain('.archive/old.md');

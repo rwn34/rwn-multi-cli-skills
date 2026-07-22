@@ -30,7 +30,7 @@ files a handoff on that basis, and the recipient burns its budget discovering th
 premise was false. The cost lands on the executor, not on the sender who made the
 error.
 
-`kimi-auto` drafted `docs/specs/handoff-protocol-v4.md` and implemented three
+`kimi` drafted `docs/specs/handoff-protocol-v4.md` and implemented three
 sender-side evidence fields to catch this mechanically:
 
 - `Observed-in: <branch>@<sha>` — where the asserted facts were observed.
@@ -66,7 +66,7 @@ concluded the v4 work was uncommitted — `git log --all --reflog` over the v4
 paths returned empty. Both were reading a tree two commits stale; `bb3ee4a` is an
 ancestor of `536d0a7`. The first draft of this ADR consequently asserted "nothing
 in v4 is live" and proposed to gate it before shipping. That was false, and it was
-caught only because `kimi-auto`'s activity-log entry ("pushed to main")
+caught only because `kimi`'s activity-log entry ("pushed to main")
 contradicted the investigation and the contradiction was checked rather than
 explained away. This is the **confidently-wrong sender the v4 spec exists to
 catch, reproduced inside the ADR that ratifies it** — which is a point in favor

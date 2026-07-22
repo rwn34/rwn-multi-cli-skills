@@ -35,7 +35,7 @@ cat > "$WORK/.ai/handoffs/to-kimi/open/202607170000-test.md" <<'EOF'
 # Test
 Status: OPEN
 Sender: claude-cockpit
-Recipient: kimi-auto
+Recipient: kimi
 Created: 2026-07-17 12:00 (UTC+7)
 Auto: yes
 Risk: A
@@ -66,7 +66,7 @@ cat > "$WORK2/.ai/handoffs/to-kimi/open/202607170001-test.md" <<'EOF'
 # Test
 Status: OPEN
 Sender: claude-cockpit
-Recipient: kimi-auto
+Recipient: kimi
 Created: 2026-07-17 12:00 (UTC+7)
 Auto: yes
 Risk: A

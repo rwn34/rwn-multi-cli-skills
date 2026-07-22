@@ -18,7 +18,7 @@ live off the repo and off CI runners.
 
 ## Motivation
 
-Two audiences feel this: the framework maintainer (`claude-code` as fleet git
+Two audiences feel this: the framework maintainer (`claude` as fleet git
 operator) and any human who reinstalls or opens the framework on a fresh machine.
 
 **Global config drifts silently, with no repo guard — the concrete incident.**

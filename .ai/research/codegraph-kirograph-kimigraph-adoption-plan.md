@@ -1,7 +1,7 @@
 # Unified Code Graph Adoption Plan (v2 — 3-CLI parity)
 
 **Status:** APPROVED for execution (Kimi input incorporated; pending Claude + Kiro acknowledgment)
-**Author:** kimi-cli (evolving Claude's v1 draft + Kiro's original handoff)
+**Author:** kimi (evolving Claude's v1 draft + Kiro's original handoff)
 **Date:** 2026-04-26
 
 ---

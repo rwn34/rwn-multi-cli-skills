@@ -138,7 +138,7 @@ would both misjudge. Resolving the collision is a follow-up, not a blocker.
 ## Follow-ups
 
 - **Amend ADR-0009** to cross-reference this boundary: ADR-0009 §2 introduced the
-  `claude-auto` / `claude-code` identity split and §3 the claim sidecars, but it
+  `claude` / `claude-cockpit` identity split and §3 the claim sidecars, but it
   predates the cockpit-side rule and still reads as though the claim-lock alone
   arbitrates the queue. It should point at this ADR for the cockpit half, and at
   the owner-string collision above (which affects kimi/kiro/opencode sidecar
@@ -149,7 +149,7 @@ would both misjudge. Resolving the collision is a follow-up, not a blocker.
 - `docs/architecture/0008-self-driving-fleet-pane-runner.md` — the pane-runner,
   the `Auto:`/`Risk:` dispatch gate, and the per-project claim-lock.
 - `docs/architecture/0009-operator-over-fleet-topology.md` — the cockpit/auto-pane
-  topology and the `claude-auto` / `claude-code` identity split; §3 claim sidecars.
+  topology and the `claude` / `claude-cockpit` identity split; §3 claim sidecars.
 - `.ai/instructions/operating-prompt/principles.md` §7 — the rule as written in
   the SSOT.
 - `.ai/handoffs/README.md` — polling / who-watches-the-queues, lifecycle table.

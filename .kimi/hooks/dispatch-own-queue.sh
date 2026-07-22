@@ -5,7 +5,7 @@
 # snippet `.ai/config-snippets/kimi-hooks.toml` reference this script by path.
 #
 # Turns the advisory handoffs-remind ("Process with: dispatch-handoffs.sh ...") into
-# an actual dispatch for Auto:yes Risk-A/B handoffs addressed to kimi-cli. Risk C
+# an actual dispatch for Auto:yes Risk-A/B handoffs addressed to kimi. Risk C
 # stays human-gated (the dispatcher enforces this). Complements handoffs-remind.sh
 # (the human-visible listing) — it does NOT replace it; it closes the loop so noticed
 # handoffs get acted on without a live runner pane. Mirrors
@@ -16,12 +16,12 @@
 #      AI_HANDOFF_DISPATCH=1 — no-op so a dispatched session never re-dispatches.
 #   2. Fast-exit on empty queue: never spawn the dispatcher when there is no
 #      Auto:yes + not-DONE/BLOCKED + Risk-A/B to-kimi handoff to act on.
-#   3. Debounce: a 5-min stamp at .ai/handoffs/.claims/.kimi-auto-dispatch.stamp
+#   3. Debounce: a 5-min stamp at .ai/handoffs/.claims/.kimi-dispatch.stamp
 #      (gitignored) skips repeat dispatch on rapid session restarts.
 #
 # Testability overrides (defaults = live behavior):
 #   HANDOFFS_DIR   candidate queue dir      (default .ai/handoffs/to-kimi/open)
-#   DISPATCH_STAMP debounce stamp path      (default .ai/handoffs/.claims/.kimi-auto-dispatch.stamp)
+#   DISPATCH_STAMP debounce stamp path      (default .ai/handoffs/.claims/.kimi-dispatch.stamp)
 #   DISPATCH_ONLY  --only scope             (default kimi)
 #   DRY_RUN=1      print selection + command, do NOT invoke the dispatcher (offline tests)
 
@@ -31,7 +31,7 @@ set -u
 [ -n "${AI_HANDOFF_DISPATCH:-}" ] && exit 0
 
 HANDOFFS_DIR="${HANDOFFS_DIR:-.ai/handoffs/to-kimi/open}"
-DISPATCH_STAMP="${DISPATCH_STAMP:-.ai/handoffs/.claims/.kimi-auto-dispatch.stamp}"
+DISPATCH_STAMP="${DISPATCH_STAMP:-.ai/handoffs/.claims/.kimi-dispatch.stamp}"
 DISPATCH_ONLY="${DISPATCH_ONLY:-kimi}"
 
 # Must run from repo root (where .ai/ lives).

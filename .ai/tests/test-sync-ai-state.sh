@@ -159,13 +159,13 @@ check "sync-back preserves opencode open handoff" "$([ -f "$CANON/.ai/handoffs/t
 #     sync the generated .ai/activity/log.md view.
 setup_canon
 mkdir -p "$CANON/.ai/activity/entries"
-cat > "$CANON/.ai/activity/entries/20260718T090000Z-kimi-cli-canonical-a1b2.md" <<'EOF'
-## 2026-07-18 09:00 (UTC+7) - kimi-cli
+cat > "$CANON/.ai/activity/entries/20260718T090000Z-kimi-canonical-a1b2.md" <<'EOF'
+## 2026-07-18 09:00 (UTC+7) - kimi
 - Action: canonical history entry
 
 EOF
 cat > "$CANON/.ai/activity/log.md" <<'EOF'
-## 2026-07-18 09:00 (UTC+7) - kimi-cli
+## 2026-07-18 09:00 (UTC+7) - kimi
 - Action: generated view before sync
 
 EOF
@@ -182,7 +182,7 @@ cat > "$WT/.ai/activity/log.md" <<'EOF'
 EOF
 out="$(bash "$SYNC" sync-back "$WT" "$CANON" 2>&1)"; rc=$?
 check "sync-back entry-spool exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-check "sync-back preserves canonical entry" "$([ -f "$CANON/.ai/activity/entries/20260718T090000Z-kimi-cli-canonical-a1b2.md" ] && echo 0 || echo 1)"
+check "sync-back preserves canonical entry" "$([ -f "$CANON/.ai/activity/entries/20260718T090000Z-kimi-canonical-a1b2.md" ] && echo 0 || echo 1)"
 check "sync-back copies new entry file" "$([ -f "$CANON/.ai/activity/entries/20260719T080000Z-opencode-executor-b3c4.md" ] && echo 0 || echo 1)"
 check "sync-back ignores generated log.md" "$(grep -qF 'worktree overwrote generated view' "$CANON/.ai/activity/log.md" && echo 1 || echo 0)"
 

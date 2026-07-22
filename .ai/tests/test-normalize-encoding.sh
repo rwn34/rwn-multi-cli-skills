@@ -67,10 +67,10 @@ check "UTF-8 BOM strip exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
 assert_content "UTF-8 BOM is stripped" "$WORK/utf8bom.md" "## header\n"
 
 # 5. Already valid UTF-8 is left unchanged.
-printf '## 2026-07-17 12:00 (UTC+7) — kimi-cli\n- Action: test\n' > "$WORK/valid.md"
+printf '## 2026-07-17 12:00 (UTC+7) — kimi\n- Action: test\n' > "$WORK/valid.md"
 out="$(bash "$NORMALIZE" "$WORK/valid.md" 2>&1)"; rc=$?
 check "valid UTF-8 exits 0" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
-assert_content "valid UTF-8 unchanged" "$WORK/valid.md" "## 2026-07-17 12:00 (UTC+7) — kimi-cli\n- Action: test\n"
+assert_content "valid UTF-8 unchanged" "$WORK/valid.md" "## 2026-07-17 12:00 (UTC+7) — kimi\n- Action: test\n"
 
 # 6. Mixed corruption is fully repaired.
 printf '\xef\xbb\xbf##\x00 \x002026\x00' > "$WORK/mixed.md"

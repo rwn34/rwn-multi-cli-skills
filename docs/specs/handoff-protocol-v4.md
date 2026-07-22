@@ -24,13 +24,13 @@ valid.
 # Production deploy v2.3.1
 Status: OPEN
 Sender: claude-cockpit
-Recipient: opencode-auto
+Recipient: opencode
 Created: 2026-07-16 19:31 (UTC+7)
 Auto: yes
 Risk: C
 Gate: production deploy
 Gate-satisfied-by: owner@2026-07-16 19:35 (UTC+7)
-Relay: opencode-auto
+Relay: opencode
 Evidence: VERIFIED
 Observed-in: origin/main@a1b2c3d4
 Base: origin/main
@@ -40,7 +40,7 @@ Deploy v2.3.1 to production after CI is green.
 
 ## Evidence
 - CI run: https://github.com/.../actions/runs/12345 (green)
-- Peer review: #88 approved by kiro-auto
+- Peer review: #88 approved by kiro
 ```
 
 ## Field semantics

@@ -21,7 +21,7 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
 # UTF-8 file should pass.
-printf '%s\n' '## 2026-07-17 12:00 (UTC+7) — kimi-cli' '- Action: test' > "$WORK/utf8.md"
+printf '%s\n' '## 2026-07-17 12:00 (UTC+7) — kimi' '- Action: test' > "$WORK/utf8.md"
 out="$(bash "$CHECK" "$WORK/utf8.md" 2>&1)"
 rc=$?
 check "UTF-8 file passes" "$([ "$rc" -eq 0 ] && echo 0 || echo 1)"
