@@ -34,7 +34,7 @@ Each of the three has a sibling in `.kimi/steering/` and `.kiro/steering/` — s
 
 3. **Bundled files** (e.g. `EXAMPLES.md`) go in the same directory. Reference them from `SKILL.md` by filename — Claude loads them lazily when the skill body prompts it to.
 
-4. **Log the addition** in `.ai/activity/log.md` and (if cross-CLI) file handoffs to the other CLIs.
+4. **Log the addition** as an entry file under `.ai/activity/entries/` (ADR-0010) and (if cross-CLI) file handoffs to the other CLIs.
 
 ## Skills vs agents vs hooks
 
