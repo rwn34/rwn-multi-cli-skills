@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hook: Open handoffs reminder at SessionStart (kimi-cli)
+# Hook: Open handoffs reminder at SessionStart (kimi)
 # Lists qualifying handoffs in .ai/handoffs/to-kimi/open/ so an interactive Kimi
 # session does not silently ignore work addressed to it. Non-blocking (exit 0);
 # stdout is injected into the agent's context.
@@ -35,7 +35,7 @@ done
 
 COUNT=${#qualifying[@]}
 if [ "$COUNT" -gt 0 ]; then
-    echo "--- Pending handoffs for kimi-cli ($COUNT, Auto:yes / Risk A|B) ---"
+    echo "--- Pending handoffs for kimi ($COUNT, Auto:yes / Risk A|B) ---"
     for name in "${qualifying[@]}"; do echo "  $name"; done
     echo "Process with: bash .ai/tools/dispatch-handoffs.sh --exec --only kimi"
     echo "--- end ---"

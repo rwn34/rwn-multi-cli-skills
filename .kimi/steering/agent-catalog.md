@@ -111,7 +111,7 @@ config, so a soft restriction is a good-faith instruction the model can ignore. 
 read a soft row as equivalent to a hard one.**
 
 `refactorer`'s command set was not enumerated in its own contract (it said only "test
-runners only"); the list above was chosen by claude-code, 2026-07-12. The other two sets
+runners only"); the list above was chosen by claude, 2026-07-12. The other two sets
 are lifted from the agents' own existing prose.
 
 Scope of this restriction, stated plainly: it lowers the *default* blast radius of these
@@ -120,7 +120,7 @@ adversarial control — a restricted-but-present Bash is still evadable via `eva
 `$(...)`, or base64. See `.ai/known-limitations.md`. The other Bash-bearing agents are
 unchanged: their broad shell surface *is* their declared job.
 
-Design: `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro-cli).
+Design: `.ai/reports/kiro-2026-07-12-bash-exposure-design.md` (kiro).
 
 ## CLI role lanes (ADR-0002)
 

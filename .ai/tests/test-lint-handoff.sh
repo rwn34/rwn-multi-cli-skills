@@ -27,7 +27,7 @@ mk_handoff() {
     cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
 # Test handoff
 Status: $status
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes

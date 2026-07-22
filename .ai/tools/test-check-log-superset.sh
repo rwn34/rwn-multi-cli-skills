@@ -26,13 +26,13 @@ mkrepo() {
     mkdir -p "$d/.ai/activity"
 
     cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
+## 2026-07-17 09:00 (UTC+7) — kimi
 - Action: main entry B
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: duplicated legitimately
 
 EOF
@@ -99,13 +99,13 @@ cat > "$d/.ai/activity/log.md" <<'EOF'
 ## 2026-07-17 11:00 (UTC+7) — opencode
 - Action: uncommitted on disk only
 
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
+## 2026-07-17 09:00 (UTC+7) — kimi
 - Action: main entry B
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: duplicated legitimately
 
 EOF
@@ -115,10 +115,10 @@ rm -rf "$d"
 echo "== candidate drops an entry that exists in main =="
 d="$(mkrepo)"
 cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: duplicated legitimately
 
 EOF
@@ -128,7 +128,7 @@ rm -rf "$d"
 echo "== candidate preserves entries from a KEEP file =="
 d="$(mkrepo)"
 cat > "$d/.ai/activity/log.md.KEEP-202607171200" <<'EOF'
-## 2026-07-17 12:00 (UTC+7) — kiro-cli
+## 2026-07-17 12:00 (UTC+7) — kiro
 - Action: rescued from KEEP
 
 EOF
@@ -139,16 +139,16 @@ echo "== duplicate header in source does not read as loss =="
 d="$(mkrepo)"
 # main has 2026-07-15 07:07 once. Add a second legitimate duplicate in working tree.
 cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
+## 2026-07-17 09:00 (UTC+7) — kimi
 - Action: main entry B
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: first duplicate
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: second duplicate
 
 EOF
@@ -158,19 +158,19 @@ rm -rf "$d"
 echo "== additions are always fine (candidate strictly superset) =="
 d="$(mkrepo)"
 cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 15:12 (UTC+7) — kimi-cli
+## 2026-07-17 15:12 (UTC+7) — kimi
 - Action: new entry on disk
 
 ## 2026-07-17 11:00 (UTC+7) — opencode
 - Action: another new entry
 
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
+## 2026-07-17 09:00 (UTC+7) — kimi
 - Action: main entry B
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: duplicated legitimately
 
 EOF
@@ -185,13 +185,13 @@ cat > "$d/.ai/activity/log.md.bak" <<'EOF'
 
 EOF
 cat > "$d/.ai/activity/log.md" <<'EOF'
-## 2026-07-17 10:00 (UTC+7) — claude-code
+## 2026-07-17 10:00 (UTC+7) — claude
 - Action: main entry A
 
-## 2026-07-17 09:00 (UTC+7) — kimi-cli
+## 2026-07-17 09:00 (UTC+7) — kimi
 - Action: main entry B
 
-## 2026-07-15 07:07 (UTC+7) — kimi-cli
+## 2026-07-15 07:07 (UTC+7) — kimi
 - Action: duplicated legitimately
 
 EOF

@@ -116,8 +116,8 @@ function New-TestHandoff {
     @(
         "# Test handoff $Slug",
         "Status: OPEN",
-        "Sender: claude-code",
-        "Recipient: claude-code",
+        "Sender: claude",
+        "Recipient: claude",
         "Created: 2026-07-09 00:00",
         "Auto: yes",
         "Risk: $Risk",
@@ -279,8 +279,8 @@ function New-KimiHandoff {
     @(
         "# Test handoff $Slug",
         "Status: OPEN",
-        "Sender: claude-code",
-        "Recipient: kimi-cli",
+        "Sender: claude",
+        "Recipient: kimi",
         "Created: 2026-07-09 00:00",
         "Auto: yes",
         "Risk: $Risk",
@@ -339,7 +339,7 @@ function New-DoneHandoff {
         "# Done handoff $Slug",
         "Status: DONE",
         "Sender: claude-cockpit",
-        "Recipient: $CliName-auto",
+        "Recipient: $CliName",
         "Created: 2026-07-18 00:00",
         "Auto: yes",
         "Risk: B"
@@ -615,8 +615,8 @@ function New-BaseDiscoveryProject {
 # Explicit Base: is always read verbatim.
 $habExplicit = Join-Path $openDir 'ab-with-base.md'
 @(
-    "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude-code",
-    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "# Test handoff ab-with-base", "Status: OPEN", "Sender: claude",
+    "Recipient: claude", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "Base: origin/develop", "", "## Goal", "test"
 ) -join "`n" | Set-Content -Path $habExplicit -Encoding utf8
 Assert-Equal 'origin/develop' (Get-DeclaredBase-Real -HandoffPath $habExplicit) 'ab: Base: origin/develop is read verbatim'
@@ -625,8 +625,8 @@ Assert-Equal 'origin/develop' (Get-DeclaredBase-Real -HandoffPath $habExplicit) 
 $infoMaster = New-BaseDiscoveryProject -DefaultBranch 'master'
 $habMaster = Join-Path $infoMaster.Project '.ai/handoffs/to-claude/open/ab-master.md'
 @(
-    "# Test handoff ab-master", "Status: OPEN", "Sender: claude-code",
-    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "# Test handoff ab-master", "Status: OPEN", "Sender: claude",
+    "Recipient: claude", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "", "## Goal", "test"
 ) -join "`n" | Set-Content -Path $habMaster -Encoding utf8
 Assert-Equal 'origin/master' (Get-DeclaredBase-Real -HandoffPath $habMaster) 'ab: repo default=master -> origin/master'
@@ -635,8 +635,8 @@ Assert-Equal 'origin/master' (Get-DeclaredBase-Real -HandoffPath $habMaster) 'ab
 $infoMain = New-BaseDiscoveryProject -DefaultBranch 'main'
 $habMain = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-main.md'
 @(
-    "# Test handoff ab-main", "Status: OPEN", "Sender: claude-code",
-    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "# Test handoff ab-main", "Status: OPEN", "Sender: claude",
+    "Recipient: claude", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "", "## Goal", "test"
 ) -join "`n" | Set-Content -Path $habMain -Encoding utf8
 Assert-Equal 'origin/main' (Get-DeclaredBase-Real -HandoffPath $habMain) 'ab: repo default=main -> origin/main'
@@ -655,8 +655,8 @@ git -C $infoMain.Project symbolic-ref refs/remotes/origin/HEAD refs/remotes/orig
 
 $habStale = Join-Path $infoMain.Project '.ai/handoffs/to-claude/open/ab-stale.md'
 @(
-    "# Test handoff ab-stale", "Status: OPEN", "Sender: claude-code",
-    "Recipient: claude-code", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
+    "# Test handoff ab-stale", "Status: OPEN", "Sender: claude",
+    "Recipient: claude", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A",
     "", "## Goal", "test"
 ) -join "`n" | Set-Content -Path $habStale -Encoding utf8
 $resolvedStale = Get-DeclaredBase-Real -HandoffPath $habStale
@@ -853,7 +853,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         function New-SandboxHandoff {
             param([string]$Dir, [string]$Slug)
             $p = Join-Path $Dir "$Slug.md"
-            @("# $Slug", "Status: OPEN", "Sender: claude-code", "Recipient: x", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A", "", "## Goal", "test") -join "`n" | Set-Content -Path $p -Encoding utf8
+            @("# $Slug", "Status: OPEN", "Sender: claude", "Recipient: x", "Created: 2026-07-09 00:00", "Auto: yes", "Risk: A", "", "## Goal", "test") -join "`n" | Set-Content -Path $p -Encoding utf8
             return $p
         }
         $adHandoffKiro = New-SandboxHandoff -Dir $adOpenKiro -Slug 'ad-kiro-run'
@@ -938,7 +938,7 @@ if ($bashCmd -and $gitCmd -and $bashUsable -and (Test-Path $wtBootstrapPath)) {
         $avOpen = Join-Path $primary '.ai/handoffs/to-kimi/open'
         New-Item -ItemType Directory -Path $avOpen -Force | Out-Null
         $avHandoff = Join-Path $avOpen 'av-snapshot.md'
-        @("# av-snapshot", "Status: OPEN", "Sender: test", "Recipient: kimi-cli", "Created: 2026-07-17 00:00", "Auto: yes", "Risk: A", "", "## Goal", "snapshot-copy probe") -join "`n" | Set-Content -Path $avHandoff -Encoding utf8
+        @("# av-snapshot", "Status: OPEN", "Sender: test", "Recipient: kimi", "Created: 2026-07-17 00:00", "Auto: yes", "Risk: A", "", "## Goal", "snapshot-copy probe") -join "`n" | Set-Content -Path $avHandoff -Encoding utf8
 
         # Mock CLI writes a report into the worktree's snapshot .ai/ and deletes
         # the canonical handoff.

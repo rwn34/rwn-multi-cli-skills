@@ -36,7 +36,7 @@ mk_open() {
     cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
 # Test handoff
 Status: $status
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -55,7 +55,7 @@ mk_review() {
     cat > "$HANDOFFS/to-kiro/review/$name" <<EOF
 # Test handoff
 Status: DONE
-Sender: claude-code
+Sender: claude
 Recipient: kiro
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -74,7 +74,7 @@ mk_done() {
     cat > "$HANDOFFS/to-$cli/done/$name" <<EOF
 # Test handoff
 Status: DONE
-Sender: claude-code
+Sender: claude
 Recipient: $cli
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -93,7 +93,7 @@ mk_open_no_evidence() {
     cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
 # Test handoff
 Status: $status
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -109,7 +109,7 @@ mk_open_impossible() {
     cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
 # Test handoff
 Status: IMPOSSIBLE
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -131,7 +131,7 @@ mk_open_notabug() {
     cat > "$HANDOFFS/to-kimi/open/$name" <<EOF
 # Test handoff
 Status: NOT-A-BUG
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes

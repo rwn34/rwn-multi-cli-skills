@@ -82,9 +82,9 @@ survived with intact content. Re-run with:
 ```bash
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 for i in $(seq 1 40); do ( R=$(printf '%04x' $((RANDOM*RANDOM%65536))); \
-  printf 'test %02d\n' "$i" > ".ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-${R}.md" ) & done; wait
-ls .ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-*.md | wc -l   # expect 40
-# cleanup: rm .ai/activity/entries/${TS}-kimi-cli-concurrency-test-s1-*.md
+  printf 'test %02d\n' "$i" > ".ai/activity/entries/${TS}-kimi-concurrency-test-s1-${R}.md" ) & done; wait
+ls .ai/activity/entries/${TS}-kimi-concurrency-test-s1-*.md | wc -l   # expect 40
+# cleanup: rm .ai/activity/entries/${TS}-kimi-concurrency-test-s1-*.md
 ```
 
 ### Scenario S2 — Handoff numbering collision

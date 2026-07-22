@@ -95,7 +95,7 @@ The human is a gate, not a relay. When in doubt between tiers, take the more res
 ## Activity log
 
 Write one entry file under `.ai/activity/entries/` after substantive work (ADR-0010;
-`.ai/activity/log.md` is a generated, gitignored view — never edit it). Identity: `claude-code`.
+`.ai/activity/log.md` is a generated, gitignored view — never edit it). Identity: `claude`.
 UserPromptSubmit hook injects recent entries at every turn — you always see them.
 
 ## Skills you rely on

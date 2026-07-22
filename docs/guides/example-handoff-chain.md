@@ -13,7 +13,7 @@ project. The feature flows through planning → backend → frontend → peer re
 ## Stage 1 — Architecture plan from the cockpit
 
 `claude-cockpit` decides the feature is architectural enough that it should
-plan it itself, then hand off to `claude-auto` to turn the plan into a
+plan it itself, then hand off to `claude` to turn the plan into a
 spec-shaped handoff chain.
 
 **File:** `.ai/handoffs/to-claude/open/202607181530-plan-qr-feature.md`
@@ -22,8 +22,8 @@ spec-shaped handoff chain.
 # Plan QR feature endpoint and widget
 Status: OPEN
 Sender: claude-cockpit
-Recipient: claude-auto
-Owner: claude-auto
+Recipient: claude
+Owner: claude
 Created: 2026-07-18 22:30 (UTC+7)
 Auto: yes
 Risk: A
@@ -32,7 +32,7 @@ Evidence: VERIFIED (grep -n "qr" docs/specs/api.md -> no existing QR routes)
 
 ## Goal
 Design the backend endpoint `/api/qr` and the frontend top-bar widget, then
-break the work into auto-dispatchable handoffs for kimai-auto and kiro-auto.
+break the work into auto-dispatchable handoffs for kimi and kiro.
 
 ## Current state
 - No QR endpoint exists.
@@ -44,8 +44,8 @@ break the work into auto-dispatchable handoffs for kimai-auto and kiro-auto.
 
 ## Steps
 1. Write `docs/specs/qr-feature.md`.
-2. File `to-kimai-auto/open/202607181600-backend-qr-feature.md`.
-3. File `to-kiro-auto/open/202607181700-frontend-qr-feature.md`.
+2. File `to-kimi/open/202607181600-backend-qr-feature.md`.
+3. File `to-kiro/open/202607181700-frontend-qr-feature.md`.
 
 ## Verification
 - (a) `cat docs/specs/qr-feature.md` shows endpoint + props.
@@ -59,27 +59,27 @@ break the work into auto-dispatchable handoffs for kimai-auto and kiro-auto.
 Recipient self-retires to `to-claude/done/`.
 ```
 
-**Result:** `claude-auto` picks it up, writes the spec, and files the next two
+**Result:** `claude` picks it up, writes the spec, and files the next two
 handoffs.
 
 ---
 
 ## Stage 2 — Backend implementation
 
-**File:** `.ai/handoffs/to-kimai/open/202607181600-backend-qr-feature.md`
+**File:** `.ai/handoffs/to-kimi/open/202607181600-backend-qr-feature.md`
 
 ```markdown
 # Implement /api/qr endpoint
 Status: OPEN
-Sender: claude-auto
-Recipient: kimai-auto
-Owner: kimai-auto
+Sender: claude
+Recipient: kimi
+Owner: kimi
 Created: 2026-07-18 23:00 (UTC+7)
 Auto: yes
 Risk: A
 Observed-in: main@e4f5g6h
 Evidence: VERIFIED (cat docs/specs/qr-feature.md -> contract defined)
-ReviewBy: kiro-auto
+ReviewBy: kiro
 
 ## Goal
 Implement the backend endpoint described in `docs/specs/qr-feature.md`.
@@ -105,11 +105,11 @@ Spec exists; no backend code.
 - (b) test output pasted
 
 ## When complete
-Recipient self-retires to `to-kimai/done/` and emits
+Recipient self-retires to `to-kimi/done/` and emits
 `to-kiro/review/202607181800-review-backend-qr.md`.
 ```
 
-**Result:** `kimai-auto` implements, tests, retires to `done/`, and emits a
+**Result:** `kimi` implements, tests, retires to `done/`, and emits a
 review handoff.
 
 ---
@@ -121,15 +121,15 @@ review handoff.
 ```markdown
 # Implement QR top-bar widget
 Status: OPEN
-Sender: claude-auto
-Recipient: kiro-auto
-Owner: kiro-auto
+Sender: claude
+Recipient: kiro
+Owner: kiro
 Created: 2026-07-18 23:00 (UTC+7)
 Auto: yes
 Risk: A
 Observed-in: main@e4f5g6h
 Evidence: VERIFIED (cat docs/specs/qr-feature.md -> widget spec defined)
-ReviewBy: kimai-auto
+ReviewBy: kimi
 
 ## Goal
 Implement the QR widget in the top bar per `docs/specs/qr-feature.md`.
@@ -156,10 +156,10 @@ Spec exists; no widget code.
 
 ## When complete
 Recipient self-retires to `to-kiro/done/` and emits
-`to-kimai/review/202607181900-review-frontend-qr.md`.
+`to-kimi/review/202607181900-review-frontend-qr.md`.
 ```
 
-**Result:** `kiro-auto` implements, tests, retires, and emits a review handoff.
+**Result:** `kiro` implements, tests, retires, and emits a review handoff.
 
 ---
 
@@ -170,15 +170,15 @@ Recipient self-retires to `to-kiro/done/` and emits
 ```markdown
 # Review backend QR endpoint
 Status: OPEN
-Sender: kimai-auto
-Recipient: kiro-auto
-Owner: kiro-auto
+Sender: kimi
+Recipient: kiro
+Owner: kiro
 Created: 2026-07-18 23:30 (UTC+7)
 Auto: yes
 Risk: A
 Observed-in: exec/kimai/202607181600-backend-qr-feature@i7j8k9l
 Evidence: VERIFIED (git log --oneline exec/kimai/... | head -1 -> i7j8k9l)
-FinalReview: claude-auto
+FinalReview: claude
 
 ## Goal
 Review the backend implementation for contract compliance and edge cases.
@@ -199,14 +199,14 @@ Review the backend implementation for contract compliance and edge cases.
 Recipient self-retires to `to-kiro/done/`.
 ```
 
-**Result:** `kiro-auto` reviews backend, approves. The symmetric review of the
-frontend by `kimai-auto` also approves.
+**Result:** `kiro` reviews backend, approves. The symmetric review of the
+frontend by `kimi` also approves.
 
 ---
 
 ## Stage 5 — Final review
 
-`claude-auto` final-reviews both implementations once both peer reviews are
+`claude` final-reviews both implementations once both peer reviews are
 retired.
 
 **File:** `.ai/handoffs/to-claude/review/202607182000-final-review-qr.md`
@@ -214,9 +214,9 @@ retired.
 ```markdown
 # Final review QR feature
 Status: OPEN
-Sender: claude-auto
-Recipient: claude-auto
-Owner: claude-auto
+Sender: claude
+Recipient: claude
+Owner: claude
 Created: 2026-07-19 00:00 (UTC+7)
 Auto: yes
 Risk: B
@@ -247,7 +247,7 @@ Final-review the QR feature PR and queue staging deploy.
 Recipient self-retires to `to-claude/done/`.
 ```
 
-**Result:** `claude-auto` merges the PR and files the staging deploy handoff.
+**Result:** `claude` merges the PR and files the staging deploy handoff.
 
 ---
 
@@ -258,9 +258,9 @@ Recipient self-retires to `to-claude/done/`.
 ```markdown
 # Deploy QR feature to staging
 Status: OPEN
-Sender: claude-auto
-Recipient: opencode-auto
-Owner: opencode-auto
+Sender: claude
+Recipient: opencode
+Owner: opencode
 Created: 2026-07-19 00:30 (UTC+7)
 Auto: yes
 Risk: B
@@ -276,7 +276,7 @@ Deploy the merged QR feature to the staging environment.
 ## Steps
 1. Dry-run deploy: `bash infra/deploy.sh staging --dry-run`.
 2. If clean, deploy: `bash infra/deploy.sh staging`.
-3. Write `to-kimai/open/202607182200-validate-staging-qr.md` for cockpit validation.
+3. Write `to-kimi/open/202607182200-validate-staging-qr.md` for cockpit validation.
 
 ## Verification
 - (a) Dry-run output pasted.
@@ -291,19 +291,19 @@ Deploy the merged QR feature to the staging environment.
 Recipient self-retires to `to-opencode/done/`.
 ```
 
-**Result:** `opencode-auto` deploys to staging and files a validation handoff
+**Result:** `opencode` deploys to staging and files a validation handoff
 back to a cockpit.
 
 ---
 
 ## Stage 7 — Cockpit validation
 
-**File:** `.ai/handoffs/to-kimai/open/202607182200-validate-staging-qr.md`
+**File:** `.ai/handoffs/to-kimi/open/202607182200-validate-staging-qr.md`
 
 ```markdown
 # Validate QR feature on staging
 Status: OPEN
-Sender: opencode-auto
+Sender: opencode
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
 Created: 2026-07-19 01:00 (UTC+7)
@@ -329,7 +329,7 @@ Validate the staging deployment and decide whether to request production deploy.
 - (b) owner decision on production deploy
 
 ## When complete
-Recipient self-retires to `to-kimai/done/`.
+Recipient self-retires to `to-kimi/done/`.
 ```
 
 **Result:** `kimi-cockpit` validates, asks the owner. If the owner authorizes
@@ -346,8 +346,8 @@ with `Gate-satisfied-by: owner @ 2026-07-19 01:15 (UTC+7)` and `Relay: kimi-cock
 # Deploy QR feature to production
 Status: OPEN
 Sender: kimi-cockpit
-Recipient: opencode-auto
-Owner: opencode-auto
+Recipient: opencode
+Owner: opencode
 Created: 2026-07-19 01:20 (UTC+7)
 Auto: yes
 Risk: C
@@ -378,7 +378,7 @@ Deploy the validated QR feature to production.
 Recipient self-retires to `to-opencode/done/`.
 ```
 
-**Result:** `opencode-auto` deploys to production after the owner confirms.
+**Result:** `opencode` deploys to production after the owner confirms.
 
 ---
 
@@ -387,21 +387,21 @@ Recipient self-retires to `to-opencode/done/`.
 ```text
 claude-cockpit
   → to-claude/open/202607181530-plan-qr-feature.md
-    → claude-auto (plan + file next handoffs)
-      → to-kimai/open/202607181600-backend-qr-feature.md
-        → kimai-auto (backend)
+    → claude (plan + file next handoffs)
+      → to-kimi/open/202607181600-backend-qr-feature.md
+        → kimi (backend)
           → to-kiro/review/202607181800-review-backend-qr.md
-            → kiro-auto (peer review backend)
+            → kiro (peer review backend)
       → to-kiro/open/202607181700-frontend-qr-feature.md
-        → kiro-auto (frontend)
-          → to-kimai/review/202607181900-review-frontend-qr.md
-            → kimai-auto (peer review frontend)
+        → kiro (frontend)
+          → to-kimi/review/202607181900-review-frontend-qr.md
+            → kimi (peer review frontend)
       → to-claude/review/202607182000-final-review-qr.md
-        → claude-auto (merge + deploy handoff)
+        → claude (merge + deploy handoff)
           → to-opencode/open/202607182100-deploy-staging-qr.md
-            → opencode-auto (staging deploy)
-              → to-kimai/open/202607182200-validate-staging-qr.md
+            → opencode (staging deploy)
+              → to-kimi/open/202607182200-validate-staging-qr.md
                 → kimi-cockpit (validation + owner gate)
                   → to-opencode/open/202607190100-deploy-production-qr.md
-                    → opencode-auto (production deploy)
+                    → opencode (production deploy)
 ```

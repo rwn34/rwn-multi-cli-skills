@@ -45,7 +45,7 @@ copy from the repo would clobber all of that. So the manual step is a *targeted*
 copy — which means it depends entirely on a human correctly remembering which
 files are tool files and running the copy after every change.
 
-**The concrete incident (2026-07-10 13:34, `claude-code`, activity log top
+**The concrete incident (2026-07-10 13:34, `claude`, activity log top
 entry):** the `pane-runner.ps1` claim-lock commit (repo mtime 07:44) was never
 copied to the install (last synced 06:59). The result was a **new `Selector.ps1`
 driving a stale `pane-runner.ps1`** — the installed runner (12576 B) was missing
@@ -58,7 +58,7 @@ is the durable fix."* ADR-0009 already **asserts** the install "is updated in
 lockstep" (Consequences → "Launcher change") — but nothing enforces that claim.
 This spec makes lockstep mechanical instead of aspirational.
 
-Audience: the framework maintainer (`claude-code` as fleet git operator, and the
+Audience: the framework maintainer (`claude` as fleet git operator, and the
 human owner) who edits the launcher in-repo and expects the running install to
 follow.
 
@@ -395,7 +395,7 @@ not Windows-only. Until then, non-Windows clones fall back to the manual copy.
 - `docs/architecture/0005-commit-governance-backstop.md` — establishes
   `scripts/git-hooks/` + `git config core.hooksPath scripts/git-hooks`, where the
   new `post-merge`/`post-checkout` hook lives and how installers wire it.
-- `.ai/activity/log.md` — 2026-07-10 13:34 (`claude-code`) — the drift incident
+- `.ai/activity/log.md` — 2026-07-10 13:34 (`claude`) — the drift incident
   that motivates this spec (repo runner @ 07:44 vs install synced 06:59; new
   Selector + stale runner; post-sync MD5 confirmation).
 - `scripts/install-template.sh` — the embedded-framework installer this sync is

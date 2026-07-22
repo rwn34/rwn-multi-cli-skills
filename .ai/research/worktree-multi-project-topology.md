@@ -1,7 +1,7 @@
 # Worktree + multi-project topology for the multi-CLI framework
 
 **Status:** design, accepted (user decisions captured 2026-06-15) — pre-implementation
-**Author:** claude-code orchestrator
+**Author:** claude orchestrator
 **Supersedes/extends:** the single-project `.ai/` coordination model in `CLAUDE.md`,
 `AGENTS.md`, and the per-CLI steering files. Companion ADR:
 `docs/architecture/0004-worktree-multi-project-topology.md` (renumbered from 0002

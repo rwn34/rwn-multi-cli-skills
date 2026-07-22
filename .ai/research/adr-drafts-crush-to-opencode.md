@@ -2,7 +2,7 @@
 
 > **STATUS: LANDED 2026-07-09 into both ADRs (owner-approved).** This file
 > remains as the migration checklist (§3) until tasks 8-10 complete.
-> Prepared 2026-07-09 by claude-code (doc-writer). Nothing under
+> Prepared 2026-07-09 by claude (doc-writer). Nothing under
 > `docs/architecture/` has been modified. Both amendment texts below are
 > paste-ready for insertion into the real ADRs once the owner approves.
 > Owner decision reference: `.ai/activity/log.md` entry 2026-07-09 07:40
@@ -343,7 +343,7 @@ topology.
 ## 4. Proposed activity-log entry stub (prepend to `.ai/activity/log.md` when the ADR amendments LAND — not now)
 
 ```markdown
-## 2026-07-XX HH:MM — claude-code
+## 2026-07-XX HH:MM — claude
 - Action: Landed ADR-0002 + ADR-0001 amendments (owner-approved, Tier C):
   OpenCode replaces Crush as 4th CLI — same lane (general helper + Stage-2
   deploy operator, four conditions verbatim), identity `crush`→`opencode`,
@@ -384,7 +384,7 @@ Historical/no-change files included where useful for the NOT-edited calls.
 - `.ai/tools/dispatch-handoffs.sh:41` — `crush)  printf '%s' "crush run \"$prompt\"" ;;`
 - `.ai/handoffs/README.md:17` — `Also custodian of Crush's files (CRUSH.md, .crush.json) per ADR-0001.`
 - `.ai/handoffs/README.md:41` — `└── to-crush/`
-- `.ai/handoffs/template.md:3` — `Sender: <claude-code | kimi-cli | kiro-cli | crush>`
+- `.ai/handoffs/template.md:3` — `Sender: <claude | kimi | kiro | opencode>`
 - `.ai/instructions/operating-prompt/principles.md:62` — `- **Crush — general helper + DevOps deployment operator (Stage 2).**`
 - `.ai/instructions/orchestrator-pattern/principles.md:119` — `- **Deploy (amended 2026-07-08):** Kimi/Kiro have no deploy lane. Crush is`
 - `.ai/instructions/agent-catalog/principles.md:98` — `- **Crush** — general helper + DevOps deployment operator (Stage 2 granted`

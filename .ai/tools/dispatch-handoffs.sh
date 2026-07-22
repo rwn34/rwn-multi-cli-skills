@@ -173,10 +173,10 @@ check_shared_encoding() {
             fi
             if bash "$root/.ai/tools/check-encoding.sh" "$f" >/dev/null 2>&1; then
                 echo "WARN: encoding repaired: $f" >&2
-                fleet_notify alert "$project_name" "encoding-repaired" "bash" "kimi-cli" >/dev/null 2>&1 || true
+                fleet_notify alert "$project_name" "encoding-repaired" "bash" "kimi" >/dev/null 2>&1 || true
             else
                 echo "WARN: encoding repair failed for $f" >&2
-                fleet_notify alert "$project_name" "encoding-check" "bash" "kimi-cli" >/dev/null 2>&1 || true
+                fleet_notify alert "$project_name" "encoding-check" "bash" "kimi" >/dev/null 2>&1 || true
             fi
         fi
     done

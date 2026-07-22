@@ -177,7 +177,7 @@ _fleet_throttled() {
 #   $2 project short project name (repo basename)
 #   $3 handoff handoff basename (no .md)
 #   $4 cli     recipient CLI key (claude|kimi|kiro|opencode) — reserved/context
-#   $5 owner   that CLI's identity string (e.g. claude-auto, kiro-cli)
+#   $5 owner   that CLI's identity string (e.g. claude, kiro)
 fleet_notify() {
     local kind="$1" project="$2" handoff="$3" cli="$4" owner="$5"
 

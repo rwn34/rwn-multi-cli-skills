@@ -14,7 +14,7 @@ $git_status
 "
 fi
 
-# --- Open handoffs addressed to claude-code ---
+# --- Open handoffs addressed to claude ---
 handoffs=""
 for f in .ai/handoffs/to-claude/open/*.md; do
     [ -e "$f" ] || continue
@@ -29,7 +29,7 @@ for f in .ai/handoffs/to-claude/open/*.md; do
 done
 
 if [ -n "$handoffs" ]; then
-    output="${output}--- Open handoffs addressed to claude-code ---
+    output="${output}--- Open handoffs addressed to claude ---
 $handoffs--- end ---
 "
 fi

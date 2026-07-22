@@ -19,7 +19,7 @@ command — without ever auto-mutating the project.
 
 ## Motivation
 
-Two audiences feel this, both the framework maintainer (`claude-code` as fleet
+Two audiences feel this, both the framework maintainer (`claude` as fleet
 git operator) and any human who opens a previously-onboarded project through the
 4AI Panes launcher.
 
@@ -393,4 +393,4 @@ is an Open question below.
   open question anticipates exactly this on-open drift-check direction. This spec
   is the framework-version analogue of that tool-file sync.
 - `.ai/activity/log.md` — the investigation that surfaced the copy-list drift and
-  the install-once gap (see the `claude-code` entry accompanying this spec).
+  the install-once gap (see the `claude` entry accompanying this spec).

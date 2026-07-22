@@ -132,8 +132,8 @@ Because the guard protects itself, exactly one human action is required to land
 this change, and it is scripted so the owner never reads a diff:
 
 - The owner runs `bash .ai/tools/unlock-hook-policy.sh` **once**.
-- That script is **authored by `kimi-cli`** and **independently reviewed by
-  `kiro-cli` BEFORE the owner runs it** (author ≠ reviewer applies to the
+- That script is **authored by `kimi`** and **independently reviewed by
+  `kiro` BEFORE the owner runs it** (author ≠ reviewer applies to the
   bootstrap itself — the one action no CI gate can cover).
 - After that single run, every subsequent enforcement-layer change follows the
   peer-reviewed-PR path above. The owner's hand is never needed again.
@@ -253,5 +253,5 @@ and a CI verdict attached.
 - `.ai/tools/reverse-write-detector.sh` — the detector that bounds the
   branch-local weakening window.
 - `.ai/tools/unlock-hook-policy.sh` — the one-time bootstrap script. **Does not
-  exist yet**; to be authored by `kimi-cli` and reviewed by `kiro-cli` before the
+  exist yet**; to be authored by `kimi` and reviewed by `kiro` before the
   owner runs it.

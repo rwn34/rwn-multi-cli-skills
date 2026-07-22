@@ -1,7 +1,7 @@
 # multi-cli-install v2 — design plan
 
 **Status:** APPROVED for phased execution (decisions locked + revised 2026-04-27 by user)
-**Author:** claude-code (orchestrator)
+**Author:** claude (orchestrator)
 **Date:** 2026-04-27 (revised from morning draft after objective revisit)
 
 ---

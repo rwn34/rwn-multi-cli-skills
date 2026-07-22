@@ -32,9 +32,9 @@ check "refuses when pre-spool archive is missing" "0"
 printf '# Pre-spool\n' > "$WORK/.ai/activity/archive/log-pre-spool.md"
 
 # Create entries out of order to prove sorting.
-printf '## 2026-07-21 12:00 (UTC+7) - kimi-cli\n- Action: first\n' > "$WORK/.ai/activity/entries/20260721T110000Z-kimi-cli-first-a3f9.md"
-printf '## 2026-07-21 13:00 (UTC+7) - kiro-cli\n- Action: second\n' > "$WORK/.ai/activity/entries/20260721T120000Z-kiro-cli-second-b2e5.md"
-printf '## 2026-07-21 14:00 (UTC+7) - claude-code\n- Action: third\n' > "$WORK/.ai/activity/entries/20260721T130000Z-claude-code-third-c8d1.md"
+printf '## 2026-07-21 12:00 (UTC+7) - kimi\n- Action: first\n' > "$WORK/.ai/activity/entries/20260721T110000Z-kimi-first-a3f9.md"
+printf '## 2026-07-21 13:00 (UTC+7) - kiro\n- Action: second\n' > "$WORK/.ai/activity/entries/20260721T120000Z-kiro-second-b2e5.md"
+printf '## 2026-07-21 14:00 (UTC+7) - claude\n- Action: third\n' > "$WORK/.ai/activity/entries/20260721T130000Z-claude-third-c8d1.md"
 
 bash "$RENDER" "$WORK" >/dev/null
 

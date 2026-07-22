@@ -111,7 +111,7 @@ mk_handoff() {
     cat > "$PROJECT/.ai/handoffs/to-$cli/open/$slug.md" <<EOF
 # Test handoff
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: $cli
 Created: 2026-07-11 00:00 (UTC+7)
 Auto: yes
@@ -303,7 +303,7 @@ mk_handoff_for() {
     cat > "$project/.ai/handoffs/to-$cli/open/$slug.md" <<EOF
 # Test handoff
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: $cli
 Created: 2026-07-11 00:00 (UTC+7)
 Auto: yes
@@ -502,7 +502,7 @@ fi
 cat > "$PROJECT/.ai/handoffs/to-kiro/open/202607110009-s2-5-dirty.md" <<'EOF'
 # Dirty-worktree test
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: kiro
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -542,7 +542,7 @@ Owner: claude-cockpit
 Auto: yes
 Risk: A
 ## Blocker
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 
@@ -587,7 +587,7 @@ rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110011-v4-hypothesis.md"
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110012-v4-risk-c-no-gate.md" <<'EOF'
 # Risk C no-gate test
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -606,7 +606,7 @@ rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110012-v4-risk-c-no-gate.md"
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-hard-gate.md" <<'EOF'
 # Risk C hard-gate test
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -629,7 +629,7 @@ rm -f "$PROJECT/.ai/handoffs/to-kimi/open/202607110013-v4-risk-c-hard-gate.md"
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110013b-v4-risk-c-soft-gate.md" <<'EOF'
 # Risk C soft-gate test
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes
@@ -736,7 +736,7 @@ git -C "$PROJECT_MAIN" push --quiet origin main
 cat > "$PROJECT/.ai/handoffs/to-kimi/open/202607110016-v4-hypothesis-risk-c.md" <<'EOF'
 # HYPOTHESIS + Risk C lint test
 Status: OPEN
-Sender: claude-code
+Sender: claude
 Recipient: kimi
 Created: 2026-07-17 00:00 (UTC+7)
 Auto: yes

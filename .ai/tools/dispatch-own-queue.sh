@@ -6,7 +6,7 @@
 # .claude/ sensitive file) so the wiring only needs one gated one-line reference.
 #
 # Turns the advisory stop-reminder ("Run: dispatch-handoffs.sh") into an actual
-# dispatch for Auto:yes Risk-A/B handoffs addressed to claude-code. Risk C stays
+# dispatch for Auto:yes Risk-A/B handoffs addressed to claude. Risk C stays
 # human-gated (the dispatcher enforces this). Complements stop-reminder.sh — it
 # does NOT replace the human-visible open-queue counts, it just closes the loop
 # so noticed handoffs get acted on without a live runner pane.
@@ -16,7 +16,7 @@
 #      AI_HANDOFF_DISPATCH=1 — no-op so a dispatched session never re-dispatches.
 #   2. Fast-exit on empty queue: never spawn the dispatcher when there is no
 #      Auto:yes + OPEN + Risk-A/B to-claude handoff to act on.
-#   3. Debounce: a 5-min stamp at .ai/handoffs/.claims/.claude-auto-dispatch.stamp
+#   3. Debounce: a 5-min stamp at .ai/handoffs/.claims/.claude-dispatch.stamp
 #      (gitignored) skips repeat dispatch on rapid session restarts.
 
 set -u
@@ -45,7 +45,7 @@ done
 [ -z "$candidate" ] && exit 0
 
 # --- Guardrail 3: 5-min debounce ---
-stamp=".ai/handoffs/.claims/.claude-auto-dispatch.stamp"
+stamp=".ai/handoffs/.claims/.claude-dispatch.stamp"
 mkdir -p .ai/handoffs/.claims 2>/dev/null
 if [ -f "$stamp" ] && [ -n "$(find "$stamp" -mmin -5 2>/dev/null)" ]; then
     echo "[dispatch-own-queue] debounced (ran <5min ago); skipping auto-dispatch."

@@ -125,7 +125,7 @@ auto-continue MAX-cap as the two cost controls.
 
 ## 7. [RISK, not feature] Concurrency safety of shared `.ai/` files
 
-**Why:** OBSERVED today — two kiro-cli instances clobbered an activity-log header
+**Why:** OBSERVED today — two kiro instances clobbered an activity-log header
 (one overwrote the other's entry) and two grabbed the same handoff (13:58/14:02).
 `.ai/tests/concurrency-test-protocol.md` exists but was NEVER run. A self-driving
 fleet (P1) writing to shared `.ai/activity/log.md` + handoff queues across 28
@@ -137,7 +137,7 @@ shared state.
 
 ## 8. [SECURITY, found 2026-07-10] Plaintext GitHub PAT in global Kiro config
 
-**Found:** while cleaning Kiro startup noise, kiro-cli flagged that
+**Found:** while cleaning Kiro startup noise, kiro flagged that
 `~/.kiro/settings/mcp.json` stored a **plaintext GitHub Personal Access Token**
 in the `github` MCP server's `env`. The config-side exposure was removed
 2026-07-10 (owner approved deleting the `github` MCP server entirely — token no

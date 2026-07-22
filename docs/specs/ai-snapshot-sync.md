@@ -1,7 +1,7 @@
 # Snapshot-copy sync model for `.ai/` shared state
 
 **Status:** design + implementation in progress  
-**Owner:** kimi-cli  
+**Owner:** kimi  
 **Related:** ADR-0004 worktree topology, S1-4 field-report finding, saja-qr deletion incident (2026-07-16/17)
 
 ## Problem
