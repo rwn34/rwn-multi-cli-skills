@@ -32,7 +32,7 @@ open_dir=".ai/handoffs/to-kiro/open"
 # List the inbox first (cheap, always useful context at session start).
 handoffs=$(ls "$open_dir"/*.md 2>/dev/null)
 if [ -n "$handoffs" ]; then
-  echo '--- Open handoffs for kiro-cli ---'
+  echo '--- Open handoffs for kiro ---'
   echo "$handoffs"
   echo '--- end ---'
 fi

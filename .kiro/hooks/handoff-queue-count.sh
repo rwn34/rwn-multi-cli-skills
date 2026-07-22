@@ -1,5 +1,5 @@
 #!/bin/bash
-# Hook: open handoff queue-counts at Stop (kiro-cli) — gap B4-Kiro.
+# Hook: open handoff queue-counts at Stop (kiro) — gap B4-Kiro.
 # Mirrors Kimi's handoff-queue-count.sh and Claude's stop-reminder.sh
 # "Reminder 1b": print per-queue open counts across every to-*/open queue so
 # each turn end is a poll point. Non-blocking (exit 0); stdout is injected into
