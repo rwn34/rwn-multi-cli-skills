@@ -1,15 +1,16 @@
 # v0.0.53 released, main green — remaining queue + the freeze is now unblocked
 
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
 Created: 2026-07-22 02:00 (UTC+7)
+Completed: 2026-07-22 15:26 (UTC+7)
 Auto: no
 Risk: B
 Base: origin/main
-Observed-in: main@914298f
-Evidence: VERIFIED (gh run list --branch main -> gates 29874821161 success 13s, release 29874821175 success 37s on 914298f; gh release view v0.0.53 -> 4 assets all state=uploaded, matches EXPECTED_ASSET_COUNT: 4; bash .ai/tests/test-render-activity-log.sh -> 4 passed 0 failed EXIT=0; diff .ai/tools/render-activity-log.sh tools/multi-cli-install/assets/.ai/tools/render-activity-log.sh -> IDENTICAL; gh pr list --state open -> empty)
+Observed-in: main@3598ab5
+Evidence: VERIFIED (gh run list --branch main -> gates 29874821161 success 13s, release 29874821175 success 37s on 914298f; gh release view v0.0.53 -> 4 assets all state=uploaded, matches EXPECTED_ASSET_COUNT: 4; bash .ai/tests/test-render-activity-log.sh -> 4 passed 0 failed EXIT=0; diff .ai/tools/render-activity-log.sh tools/multi-cli-install/assets/.ai/tools/render-activity-log.sh -> IDENTICAL; gh pr list --state open -> empty; git log --oneline exec/kimi/20260721-adr0010-freeze-prep..main -> 8 commits behind; bash .ai/tests/test-sync-ai-state.sh -> 55 passed 0 failed EXIT=0)
 FinalReview: claude-cockpit
 
 ## State: green, released, no open PRs
@@ -164,6 +165,50 @@ Recording them here so they are not lost, and so you do not spend effort on them
   wrong about the renderer divergence (F2), wrong to suspect your `sync-ai-state.sh`
   changes caused the deletion (they did not), and wrong that the review handoff was
   untracked when you had already retired it. Check me rather than inherit it.
+
+## Completion notes (kimi-cockpit, 2026-07-22 15:26 UTC+7)
+
+### R1 — DONE via PR #137 (`fix/handoff-retirement-duplicate-lint`)
+
+- Deleted stale duplicate `.ai/handoffs/to-claude-cockpit/open/20260721T111600Z-kimi-cockpit-framework-finalization-report.md`.
+- Chose the **lint-rule** enforcement: `lint-handoff.sh` now rejects any basename that
+  appears in more than one of `open/`, `review/`, `done/` under the same recipient.
+- Rejected a standalone `retire-handoff.sh` because a lint check catches duplicates
+  regardless of how they were created (manual edits, tool bugs, sync-back edge cases),
+  while a retire-time move only prevents one creation path.
+- Regression tests #9 and #10 demonstrate the guard failing on a deliberate duplicate
+  and passing once cleaned:
+  - `bash .ai/tests/test-lint-handoff.sh` → **13 passed, 0 failed**.
+
+### R2 — DONE via PR #139 (`fix/framework-version-stale-ownership`)
+
+- Conclusion: `.ai/.framework-version` is a **per-project install record**, not the
+  repo SSOT version. It tracks what the installer last stamped into a target project.
+- The repo copy + fallback literals in `scripts/install-template.sh` and
+  `tools/4ai-panes/Selector.ps1` were refreshed to `0.0.53`.
+- The release-engineer refresh checklist is documented in
+  `docs/architecture/0012-version-assigned-at-merge.md` so the value is updated at the
+  same time `package.json` is bumped.
+
+### R3 — CONFIRMED: freeze staging has drifted and must rebase
+
+- The freeze handoff pins `exec/kimi/20260721-adr0010-freeze-prep@edc2183`.
+- `git log --oneline exec/kimi/20260721-adr0010-freeze-prep..main` shows **8 commits**
+  the freeze branch is behind `main` (including PRs #137, #138, #139).
+- Re-measured at current `main@3598ab5`:
+  - `bash .ai/tests/test-render-activity-log.sh` → **4 passed, 0 failed** (freeze handoff says 3).
+  - `bash .ai/tests/test-sync-ai-state.sh` → **55 passed, 0 failed** (freeze handoff says 50).
+  - `bash .ai/tools/sync-replicas.sh --check` → **Drift: 0**.
+  - `node .opencode/plugin/test-guard.mjs` → **PASS 144 / FAIL 0**.
+- The freeze handoff evidence is stale. Before claude-cockpit executes the irreversible
+  archive move, the freeze branch must rebase onto `main` and the evidence line must be
+  refreshed. The ordering constraint still stands: `git mv .ai/activity/log.md …`
+  before untracking `log.md`.
+
+### R4 — Owner items, not actioned
+
+- Branch-protection bypass observation and the "route version bumps through PR" process
+  change remain for claude-cockpit / owner. H1/H2 below implemented the technical side.
 
 ## Next step / future note
 

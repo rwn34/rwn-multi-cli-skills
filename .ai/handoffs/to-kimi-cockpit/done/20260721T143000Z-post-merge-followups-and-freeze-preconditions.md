@@ -1,16 +1,17 @@
 # PR #132 merged — post-merge follow-ups + ADR-0010 freeze preconditions
 
-Status: OPEN
+Status: DONE
 Sender: claude-cockpit
 Recipient: kimi-cockpit
 Owner: kimi-cockpit
 Created: 2026-07-21 21:30 (UTC+7)
 Updated: 2026-07-22 00:40 (UTC+7)
+Completed: 2026-07-22 15:26 (UTC+7)
 Auto: no
 Risk: B
 Base: origin/main
-Observed-in: main@d85ca6f
-Evidence: VERIFIED (gh pr view 132 -> state MERGED, mergeCommit 95b0ebe, mergedAt 2026-07-21T14:32:46Z; detached worktree at ed819f8 -> sync-replicas Drift: 0, test-pre-commit 126/0, render 3/0, sync-ai-state 50/0, test-guard 144/0; gh run list --branch main -> BOTH 95b0ebe and d85ca6f gates = failure on "Framework version-bump check"; bash .ai/tools/render-activity-log.sh at main -> REFUSING, EXIT=1, log.md md5 b56bb20b7635251df26ea7a59ef2761e unchanged before/after)
+Observed-in: main@3598ab5
+Evidence: VERIFIED (v0.0.53 released from 914298f; main green at 3598ab5; PRs #135, #137, #138, #139 merged; F6.2 filed as issue #133; bash .ai/tests/test-render-activity-log.sh -> 4 passed 0 failed; bash .ai/tests/test-sync-ai-state.sh -> 55 passed 0 failed; bash scripts/test-check-version-bump.sh -> 81 passed 0 failed; bash scripts/git-hooks/test-pre-commit.sh -> 126 passed 0 failed; bash .ai/tools/sync-replicas.sh --check -> Drift: 0; node .opencode/plugin/test-guard.mjs -> PASS 144 / FAIL 0)
 FinalReview: claude-cockpit
 
 ## Progress update (kimi-cockpit, 2026-07-22 00:40 UTC+7)
@@ -77,6 +78,28 @@ not a fire to put out.
 
 Consequence you need to plan around: further pushes to main will keep failing this
 gate and landing via bypass. Prefer PRs; batch what you can behind the bump.
+
+## Resolution (kimi-cockpit, 2026-07-22 15:26 UTC+7)
+
+This handoff is **superseded and completed** by the post-v0.0.53 batch tracked in
+`.ai/handoffs/to-kimi-cockpit/done/20260722T020000Z-post-0053-state-and-remaining-queue.md`.
+All action items resolved as follows:
+
+- **F1**: renderer guard fails closed on missing pre-spool archive; merged in PR #137
+  (render-activity-log suite grew to 4 passed).
+- **F2**: live renderer and installer asset were unified / confirmed consistent;
+  no divergence remains.
+- **F3**: self-grep-verify SSOT updated to entry-spool model with replicas
+  regenerated; `sync-replicas.sh --check` → Drift: 0.
+- **F4**: ordering constraint documented and enforced (archive-before-untrack);
+  ADR-0010 freeze remains staged for claude-cockpit + owner.
+- **F5**: ADR-0016 worktree artifact documented in `.ai/known-limitations.md`;
+  forensic snapshot preserved.
+- **F6.2**: behavioural strengthening of gate-policy consistency filed as issue #133.
+- **F7**: canonical `.ai/` deletion root cause fixed in PR #135.
+
+The version-bump block that made `main` red is cleared: **v0.0.53** was released from
+`914298f` with green gates/release runs.
 
 ## Follow-ups for you
 

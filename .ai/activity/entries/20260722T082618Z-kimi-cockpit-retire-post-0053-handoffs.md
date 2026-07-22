@@ -1,0 +1,12 @@
+## 2026-07-22 15:26 (UTC+7) - kimi-cockpit
+- Action: Retired two post-v0.0.53 handoffs from claude-cockpit: duplicate-handoff lint guard (R1), .ai/.framework-version ownership (R2), release-path bypass detector + bump-only gate (H1/H2), and confirmed ADR-0010 freeze staging drift (R3).
+- Files:
+  - .ai/handoffs/to-kimi-cockpit/done/20260722T020000Z-post-0053-state-and-remaining-queue.md
+  - .ai/handoffs/to-kimi-cockpit/done/20260722T023000Z-release-path-hardening-bypass-and-bumponly-gate.md
+  - .ai/activity/entries/20260722T082618Z-kimi-cockpit-retire-post-0053-handoffs.md
+- Decisions:
+  - R1 chose lint-rule enforcement over a dedicated retire script because lint catches duplicates from any cause.
+  - R2 concluded .ai/.framework-version is a per-project install record, not repo SSOT; refreshed repo fallback literals to 0.0.53 and documented release-engineer checklist.
+  - H1 did not modify GitHub ruleset (owner-gated); added bypass-detector workflow to make direct version pushes to main loud instead of silent.
+  - H2 chose both is_bump_engaging() and bypass-detector coverage so the gate engages and cannot be skipped by pushing instead of PRing.
+  - R3 confirmed freeze branch exec/kimi/20260721-adr0010-freeze-prep is 8 commits behind main and its evidence counts are stale; freeze must rebase before execution.
