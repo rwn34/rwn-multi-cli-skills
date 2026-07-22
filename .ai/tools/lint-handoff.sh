@@ -105,6 +105,33 @@ for dir in "$handoffs_dir"/to-*/open "$handoffs_dir"/to-*/review; do
     done
 done
 
+# Check for the same handoff basename present in more than one state directory
+# (open/review/done) under the same recipient queue. A retired handoff must be
+# moved, not copied, or it keeps presenting as live work. Duplicates across
+# different recipient queues (e.g. a return copied to multiple done/ queues) are
+# legitimate and are not flagged.
+for recipient_dir in "$handoffs_dir"/to-*; do
+    [ -d "$recipient_dir" ] || continue
+    unset handoff_locations
+    declare -A handoff_locations
+    for state_dir in "$recipient_dir"/open "$recipient_dir"/review "$recipient_dir"/done; do
+        [ -d "$state_dir" ] || continue
+        for f in "$state_dir"/*.md; do
+            [ -f "$f" ] || continue
+            rel="${f#$handoffs_dir/}"
+            bn="$(basename "$f")"
+            if [ -v "handoff_locations[$bn]" ]; then
+                echo "ERROR: duplicate handoff basename across queue states: $bn"
+                echo "  ${handoff_locations[$bn]}"
+                echo "  $rel"
+                errors=$((errors+1))
+            else
+                handoff_locations[$bn]="$rel"
+            fi
+        done
+    done
+done
+
 if [ "$errors" -eq 0 ]; then
     echo "OK: handoff lint passed"
     exit 0

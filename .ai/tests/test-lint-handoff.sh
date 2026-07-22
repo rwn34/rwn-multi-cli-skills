@@ -114,6 +114,27 @@ out8="$(run_lint 2>&1)"
 rc8=$?
 check "test8: lint passes for HYPOTHESIS without priority/Risk C" "$([ "$rc8" -eq 0 ] && echo 0 || echo 1)"
 
+# ==============================================================================
+# 7. Same basename in open/ and done/ under the same recipient queue is a duplicate.
+# ==============================================================================
+reset_open
+mkdir -p "$HANDOFFS/to-kimi/done"
+mk_handoff "202607170009-dup-in-both.md" "OPEN" $'Risk: A\n## Evidence\nok\n'
+cp "$HANDOFFS/to-kimi/open/202607170009-dup-in-both.md" "$HANDOFFS/to-kimi/done/202607170009-dup-in-both.md"
+out9="$(run_lint 2>&1)"
+rc9=$?
+check "test9: lint fails for same basename in open/ and done/" "$([ "$rc9" -ne 0 ] && echo 0 || echo 1)"
+check "test9: mentions duplicate handoff basename" "$(echo "$out9" | grep -q 'duplicate handoff basename' && echo 0 || echo 1)"
+
+# Same basename in done/ of two different recipient queues is allowed (return copies).
+reset_open
+mkdir -p "$HANDOFFS/to-claude/done"
+mk_handoff "202607170010-shared-return.md" "OPEN" $'Risk: A\n## Evidence\nok\n'
+cp "$HANDOFFS/to-kimi/open/202607170010-shared-return.md" "$HANDOFFS/to-claude/done/202607170010-shared-return.md"
+out10="$(run_lint 2>&1)"
+rc10=$?
+check "test10: lint passes for same basename across different recipient done/ queues" "$([ "$rc10" -eq 0 ] && echo 0 || echo 1)"
+
 echo ""
 echo "==== lint-handoff suite: $pass passed, $fail failed ===="
 [ "$fail" -eq 0 ] || exit 1
