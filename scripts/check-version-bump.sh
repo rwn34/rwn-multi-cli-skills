@@ -155,6 +155,18 @@ is_denylisted() {
   esac
 }
 
+# Bump-engaging paths: changes to these files always trigger the version/changelog
+# checks, even when no framework content changed. A release bump that touches only
+# package.json + package-lock.json must still be verified for correct promotion;
+# without this, the gate short-circuits to "no versioned content changed — PASS"
+# and a malformed bump-only commit lands undetected.
+is_bump_engaging() {
+  case "$1" in
+    tools/multi-cli-install/package.json|tools/multi-cli-install/package-lock.json) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Is a changed path versioned framework content? Denylist (runtime / generated)
 # is checked FIRST so it wins over the broader allowlist prefixes (e.g.
 # .claude/settings.local.json is excluded even though .claude/* is versioned).
@@ -497,25 +509,35 @@ main() {
   fi
 
   versioned_hits=""
+  bump_engaging_hits=""
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     if is_versioned "$f"; then
       versioned_hits="${versioned_hits}${f}"$'\n'
     fi
+    if is_bump_engaging "$f"; then
+      bump_engaging_hits="${bump_engaging_hits}${f}"$'\n'
+    fi
   done <<EOF
 $changed
 EOF
 
-  if [ -z "$versioned_hits" ]; then
-    echo "check-version-bump: no versioned framework content changed — PASS"
+  if [ -z "$versioned_hits" ] && [ -z "$bump_engaging_hits" ]; then
+    echo "check-version-bump: no versioned framework content or bump-engaging files changed — PASS"
     exit 0
   fi
 
   old_version=$(git show "$BASE_REF:$PKG" 2>/dev/null | extract_version)
   new_version=$(extract_version < "$PKG" 2>/dev/null)
 
-  echo "Versioned framework content changed:"
-  printf '%s' "$versioned_hits" | sed 's/^/  - /'
+  if [ -n "$versioned_hits" ]; then
+    echo "Versioned framework content changed:"
+    printf '%s' "$versioned_hits" | sed 's/^/  - /'
+  fi
+  if [ -n "$bump_engaging_hits" ]; then
+    echo "Bump-engaging files changed:"
+    printf '%s' "$bump_engaging_hits" | sed 's/^/  - /'
+  fi
   echo "package.json .version: base='$old_version' head='$new_version'"
 
   if ! is_semver "$new_version"; then
