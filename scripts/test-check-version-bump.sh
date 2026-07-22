@@ -610,3 +610,77 @@ echo "=============================================="
 echo "RESULT: $pass passed, $fail failed"
 echo "=============================================="
 [ "$fail" -eq 0 ]
+
+# -----------------------------------------------------------------------------
+echo
+
+echo "== Part 8: bump-only commits engage the gate (closes ADR-0012 bypass hole) =="
+# A release commit that changes only package.json + package-lock.json (and
+# promotes CHANGELOG) must still be verified. Without bump-engaging paths, the
+# gate short-circuits to PASS and a malformed bump-only release lands unseen.
+
+assert_true  "is_bump_engaging package.json"   is_bump_engaging "tools/multi-cli-install/package.json"
+assert_true  "is_bump_engaging lockfile"       is_bump_engaging "tools/multi-cli-install/package-lock.json"
+assert_false "is_bump_engaging random source"  is_bump_engaging ".ai/tools/tool.sh"
+assert_false "is_bump_engaging CHANGELOG"      is_bump_engaging "CHANGELOG.md"
+
+# Bump-only: correct promotion -> PASS.
+setup_repo 0.0.40 0.0.41 yes none
+assert_gate "bump-only: correct promotion PASS" 0
+
+# Bump-only: version bumped but CHANGELOG entry missing -> FAIL.
+setup_repo 0.0.40 0.0.41 no none
+assert_gate "bump-only: bump without CHANGELOG entry FAIL" 1
+out="$(cd "$R" && bash "$GATE" "$BASE_SHA" 2>&1)"
+case "$out" in
+    *"## [0.0.41]"*) pass=$((pass + 1)); printf 'PASS  bump-only changelog-fail message names ## [0.0.41]\n' ;;
+    *) fail=$((fail + 1)); printf 'FAIL  bump-only changelog-fail message missing heading; got: %s\n' "$out" ;;
+esac
+
+# Bump-only: package.json changed but version NOT bumped -> FAIL.
+# setup_repo writes identical package.json when old==new, so we need a variant
+# where package.json is genuinely different but the version field is unchanged.
+setup_repo_bump_only_no_version_change() {
+    old="$1"; tag="$2"
+    R="$WORK/repo-bump-no-ver-$tag"
+    mkdir -p "$R/tools/multi-cli-install" "$R/.ai/tools"
+    git -C "$R" -c init.defaultBranch=main init -q
+    git -C "$R" config user.email test@test
+    git -C "$R" config user.name test
+    git -C "$R" config core.autocrlf false
+
+    printf '{\n  "name": "t",\n  "version": "%s"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
+    printf '# Changelog\n\n## [Unreleased]\n\n- release\n\n## [%s] - 2026-01-01\n\n### Fixed\n\n- base\n' "$old" > "$R/CHANGELOG.md"
+    git -C "$R" add -A && git -C "$R" commit -qm base
+    BASE_SHA="$(git -C "$R" rev-parse HEAD)"
+
+    # package.json changes (description added) but version stays the same.
+    printf '{\n  "name": "t",\n  "version": "%s",\n  "description": "changed"\n}\n' "$old" > "$R/tools/multi-cli-install/package.json"
+    git -C "$R" add -A && git -C "$R" commit -qm head
+}
+
+setup_repo_bump_only_no_version_change 0.0.41 no_bump
+assert_gate "bump-only: package touched but version unchanged FAIL" 1
+out="$(cd "$R" && bash "$GATE" "$BASE_SHA" 2>&1)"
+case "$out" in
+    *"not bumped"*) pass=$((pass + 1)); printf 'PASS  bump-only no-bump message names the failure\n' ;;
+    *) fail=$((fail + 1)); printf 'FAIL  bump-only no-bump message unclear; got: %s\n' "$out" ;;
+esac
+
+# Bump-only: invented bullets (not promoted from Unreleased) -> FAIL.
+setup_repo_promotion 0.0.40 0.0.41 bump_invented \
+    "- Real note from Unreleased." \
+    "- Different note not from Unreleased." \
+    ""
+assert_gate "bump-only: invented bullets FAIL" 1
+
+# No bump-engaging and no versioned change -> still PASS.
+setup_repo 0.0.41 0.0.41 no docs
+assert_gate "docs-only change still PASS" 0
+
+echo
+
+echo "=============================================="
+echo "RESULT: $pass passed, $fail failed"
+echo "=============================================="
+[ "$fail" -eq 0 ]

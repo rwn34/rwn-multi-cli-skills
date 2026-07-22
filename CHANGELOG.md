@@ -19,6 +19,8 @@ promotion happened.
 ## [Unreleased]
 
 - Hardened `.ai/tools/lint-handoff.sh` to detect duplicate handoff basenames across `open/`/`review/`/`done/` within the same recipient queue, preventing retirement from leaving a stale `open/` copy that continues to present as live work.
+- Hardened `scripts/check-version-bump.sh` to engage on changes to `tools/multi-cli-install/package.json` and `package-lock.json`, closing the bump-only blind spot where a release commit with no other versioned changes silently bypassed promotion verification.
+- Added `.github/workflows/bypass-detector.yml` to detect and fail when `tools/multi-cli-install/package.json` / `package-lock.json` changes are pushed directly to `main` without a pull request, making bypassed version bumps visible without modifying the GitHub ruleset.
 
 ## [0.0.53] - 2026-07-22
 

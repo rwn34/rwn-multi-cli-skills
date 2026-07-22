@@ -1,0 +1,53 @@
+name: bypass-detector
+
+# Makes direct pushes to main loud when they change the version SSOT.
+#
+# Context (ADR-0012 follow-up): the repo's branch-protection ruleset allows a
+# privileged identity to bypass the two required status checks (framework-check,
+# gates). The checks still run afterwards, but they do not gate the push. A
+# version-bump commit that lands directly on main — rather than through a PR —
+# can therefore publish a release from a tree no gate ever green-lit.
+#
+# This workflow does NOT change the ruleset (that is owner-gated and out of
+# lane). It simply detects the bypass and fails, so the bypass is no longer
+# silent. Version bumps must route through a PR so required checks actually gate.
+#
+# Scope: only package.json / package-lock.json changes, because those are the
+# files that trigger release.yml to auto-cut a release.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tools/multi-cli-install/package.json'
+      - 'tools/multi-cli-install/package-lock.json'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  detect-bypass:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check this change came through a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          count=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq 'length' 2>/dev/null || echo 0)
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: $SHA changed tools/multi-cli-install/package.json (or package-lock.json)"
+            echo "       on main via a direct push, not through a pull request."
+            echo ""
+            echo "Version-bump changes must route through a PR so that the required"
+            echo "status checks (framework-check, gates) gate them before they reach main."
+            echo "The current ruleset allows a bypass; this detector makes that bypass"
+            echo "visible. Open a PR for the bump and merge it — do not push directly."
+            exit 1
+          fi
+          prs=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq 'map(.number) | join(", #")' 2>/dev/null || true)
+          echo "OK: change is associated with PR(s): #$prs"
