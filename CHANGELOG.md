@@ -18,6 +18,8 @@ promotion happened.
 
 ## [Unreleased]
 
+- Hardened `.ai/tools/lint-handoff.sh` to detect duplicate handoff basenames across `open/`/`review/`/`done/` within the same recipient queue, preventing retirement from leaving a stale `open/` copy that continues to present as live work.
+
 ## [0.0.53] - 2026-07-22
 
 - Hardened `.ai/tools/sync-ai-state.sh` `cmd_snapshot()` with a realpath self-collision guard: it now refuses to run when source and destination resolve to the same directory or when the destination is an ancestor of the source, preventing the dispatcher from deleting the canonical `.ai/` tree while snapshotting it.
