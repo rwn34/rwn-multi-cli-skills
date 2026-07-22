@@ -84,6 +84,28 @@ Concretely:
    event guard). Making `gates` a **required** status check is branch protection
    — a repo setting, out of scope for this ADR and this file.
 
+## Framework-version marker ownership
+
+`.ai/.framework-version` is a **per-project install record**, not a repo-level
+source of truth. It is written by `scripts/install-template.sh` (and the
+`Selector.ps1` fallback) at install time and records the framework version that
+was stamped into the project. The authoritative version SSOT remains
+`tools/multi-cli-install/package.json` `.version`.
+
+Because `.ai/.framework-version` is shipped as a template file, the repo's own
+copy and the two fallback literals (`FRAMEWORK_VERSION` in
+`scripts/install-template.sh` and `$fwVersion` in `tools/4ai-panes/Selector.ps1`)
+are kept in sync with the current framework version as a hygiene measure. They
+are overwritten at install time by the runtime package.json read, so drift here
+does not affect newly installed projects; it only misleads humans or tests that
+read the template file directly.
+
+Release-engineer checklist at merge: when bumping `package.json` `.version`, also
+refresh:
+- `.ai/.framework-version` (`framework_version` and `installer_version`)
+- `scripts/install-template.sh` fallback literal `FRAMEWORK_VERSION`
+- `tools/4ai-panes/Selector.ps1` fallback literal `$fwVersion`
+
 ## Consequences
 
 ### Load-bearing constraint preserved — adopter drift-detection

@@ -18,7 +18,7 @@ ROLLBACK_FILE=".ai-install-rollback-point.txt"
 # Phase A: framework version stamped into .ai/.framework-version on install.
 # Resolved at runtime from tools/multi-cli-install/package.json (SSOT) once the
 # template dir is known; this literal is only the fallback if that file is unreadable.
-FRAMEWORK_VERSION="0.0.5"
+FRAMEWORK_VERSION="0.0.53"
 
 # ---------- globals set later ----------
 TEMPLATE_DIR=""
