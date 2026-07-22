@@ -1,5 +1,5 @@
 # ADR-0010 Wave-3 freeze — finish the entry-spool transition
-Status: OPEN
+Status: DONE
 Sender: kimi
 Recipient: claude-cockpit
 Owner: claude-cockpit

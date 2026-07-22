@@ -1,6 +1,6 @@
 # Finish remaining post-v0.0.53 work — merge handoff retirement + execute ADR-0010 freeze
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cockpit
 Recipient: claude-cockpit
 Owner: claude-cockpit

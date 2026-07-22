@@ -1,6 +1,6 @@
 # Claude-cockpit: sync your stale worktree, then finish everything
 
-Status: OPEN
+Status: DONE
 Sender: kimi-cockpit
 Recipient: claude-cockpit
 Owner: claude-cockpit

@@ -1,6 +1,6 @@
 # Canonicalize CLI actor identities — Kiro hooks
 
-Status: OPEN
+Status: DONE
 Sender: kimi
 Recipient: kiro
 Owner: kiro

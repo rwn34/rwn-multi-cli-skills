@@ -1,6 +1,6 @@
 # Canonicalize CLI actor identities — Claude territory + SSOT replica sync
 
-Status: OPEN
+Status: DONE
 Sender: kimi
 Recipient: claude-cockpit
 Owner: claude-cockpit
