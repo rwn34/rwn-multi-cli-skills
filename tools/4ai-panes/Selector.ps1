@@ -600,7 +600,7 @@ function Install-Framework($targetDir) {
         # framework repo's installer package.json at runtime; fall back to the
         # last-known literal only if it is unreadable.
         try {
-            $fwVersion = '0.0.5'
+            $fwVersion = '0.0.53'
             try {
                 $pkgPath = Join-Path $frameworkRepo 'tools/multi-cli-install/package.json'
                 $pkgVersion = (Get-Content $pkgPath -Raw -ErrorAction Stop | ConvertFrom-Json).version
