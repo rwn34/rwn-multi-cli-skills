@@ -183,8 +183,9 @@ CLIs may concurrently share a working tree / HEAD.**
 - **Each CLI's `infra-engineer`.** Branch, commit, and push happen **inside that
   CLI's own worktree**, from the declared base. `git checkout` inside a worktree
   moves only that worktree's HEAD, so it can no longer revert another CLI's files
-  on disk. Push-to-feature-branch remains Tier A; merge to main remains Tier C
-  with Claude.
+  on disk. Push-to-feature-branch remains Tier A; **merge to main is Tier B**
+  (fleet-executed after peer review and green CI, per ADR-0011), while
+  **production deploy remains Tier C** with the owner gate.
 - **Branch topology.** `exec/<cli>/*` (or the handoff's named branch) cut from
   the resolved declared base (the repo's default branch, or the handoff's
   explicit `Base:`). Sibling-cut branches are a defect to be caught in review,
