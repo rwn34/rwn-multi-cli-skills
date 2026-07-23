@@ -18,6 +18,7 @@ promotion happened.
 
 ## [Unreleased]
 
+- Aligned `.ai/instructions/agent-catalog/principles.md` and ADRs 0004/0009 with the ADR-0011 autonomy tiers: routine git/GitHub mechanics (merge to main, PR open/merge, branch/worktree cleanup, ADR authorship/amendment, staging deploy) are Tier B, not Tier C; only production deploy, publish/tag, and destructive ops on shared history remain Tier C. Regenerated all replicas so every agent contract reads the same tier map.
 - Completed the ADR-0010 Wave-3 freeze: the pre-spool `.ai/activity/log.md` was archived verbatim to `.ai/activity/archive/log-pre-spool.md`, removed from git tracking, and added to `.gitignore`. `.ai/activity/entries/*.md` is now the sole source of truth for cross-CLI activity, and `.ai/activity/log.md` is a generated view produced by `bash .ai/tools/render-activity-log.sh`. ADR-0010 is marked CLOSED.
 - Fixed the `scripts/git-hooks/pre-commit` generated-view gate, which used a plain `git diff --cached --name-only` and therefore matched the *old* path of the `git mv` that archives the log — blocking the exact ADR-0010 freeze it exists to enforce. It now uses `--no-renames --diff-filter=d` so removing the path is allowed while adding or modifying the generated view is still refused, with regression coverage in `scripts/git-hooks/test-pre-commit.sh`.
 - Hardened `.ai/tools/lint-handoff.sh` to detect duplicate handoff basenames across `open/`/`review/`/`done/` within the same recipient queue, preventing retirement from leaving a stale `open/` copy that continues to present as live work.

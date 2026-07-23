@@ -47,10 +47,12 @@ top operator is superseded — see Amendment (2026-07-10): the top row now carri
 ### 2. `claude` auto-pane role and identity
 
 - **`claude`** is a headless Claude auto pane **limited to Tier A/B work** on the
-  `to-claude` queue: review, verification, and chaining follow-up handoffs. It
-  **never** performs Tier C (merge to main, ADR create/amend, deploy,
-  publish/tag, force-push, destructive ops) — those remain exclusively with
-  app-Claude + the human gate (ADR-0002 autonomy tiers).
+  `to-claude` queue: review, verification, chaining follow-up handoffs, and
+  other Tier-A/B actions. It **never** performs Tier C (**production deploy,
+  publish/tag, force-push, destructive ops on shared history, secrets changes**)
+  — those remain exclusively with app-Claude + the human gate (ADR-0002/ADR-0011
+  autonomy tiers). Merge to main and ADR authorship/amendment are Tier B, not
+  Tier C, but they are outside this pane's queue lane.
 - **Distinct identity `claude`** (separate from `claude-cockpit`) for *both*
   activity-log attribution *and* claim-lock ownership, so the two Claude
   instances are always distinguishable in the shared state.
